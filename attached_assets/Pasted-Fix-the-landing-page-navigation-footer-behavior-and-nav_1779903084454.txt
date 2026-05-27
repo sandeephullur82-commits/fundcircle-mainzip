@@ -1,0 +1,83 @@
+Fix the landing page navigation, footer behavior, and navbar consistency.
+
+NAVBAR FIXES:
+1. Navbar must remain fixed/sticky on scroll.
+2. Add smooth glassmorphism blur effect while scrolling.
+3. Navbar should NOT disappear or change layout between pages.
+4. Use the SAME navbar component globally across:
+   - Landing page
+   - Features
+   - Pricing
+   - Analytics
+   - Reports
+   - About
+   - Blog
+   - Careers
+   - Support
+
+5. Navbar links:
+   - Features
+   - Workflow
+   - Pricing
+   - Contact
+
+6. Right side:
+   - Sign In
+   - Get Started
+
+7. Active route highlighting required.
+
+8. Add smooth scroll animations.
+
+STICKY NAVBAR:
+- fixed top-0
+- z-index high
+- backdrop blur
+- transparent initially
+- dark glass background after scroll
+
+FOOTER FIXES:
+1. Footer Product links should behave exactly like navbar links.
+2. Footer links should scroll or navigate to existing sections/pages.
+3. Footer links must NOT create duplicate or separate pages.
+
+FOOTER LINK MAPPING:
+- Features → existing features page/section
+- Pricing → existing pricing page/section
+- Analytics → existing analytics section
+- Reports → existing reports section
+
+PLATFORM LINKS:
+- Clerk Auth → scroll to auth section
+- Firestore → scroll to database section
+- Multi-Tenant → scroll to SaaS architecture section
+- Role Access → scroll to RBAC section
+
+COMPANY LINKS:
+- About → existing about section/page
+- Blog → existing blog section/page
+- Careers → existing careers section/page
+- Support → existing support section/page
+
+GLOBAL UI REQUIREMENTS:
+1. Same dark premium theme everywhere.
+2. Same navbar height and spacing.
+3. Same typography.
+4. Same button styles.
+5. Same animation system.
+6. No layout shift between pages.
+7. Mobile responsive navbar with hamburger menu.
+8. Smooth page transitions.
+9. Prevent duplicate routes/components.
+10. No blank pages.
+11. No broken redirects.
+12. Footer visible on all public pages.
+
+SCROLL EFFECTS:
+- Smooth scrolling enabled globally.
+- Navbar changes opacity on scroll.
+- Section reveal animations on scroll.
+- Hero gradient animations preserved.
+
+FINAL REQUIREMENT:
+The entire public website must feel like one premium production-grade SaaS platform with fully consistent navigation, sticky navbar behavior, reusable layout system, and connected footer navigation.
