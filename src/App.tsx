@@ -23,6 +23,7 @@ import CustomerDashboard from "./pages/customer/CustomerDashboard";
 import OrgCreate from "./pages/organization/OrgCreate";
 import OrgInvitation from "./pages/organization/OrgInvitation";
 import UserProfilePage from "./pages/UserProfilePage";
+import WorkspaceSelectionPage from "./pages/WorkspaceSelectionPage";
 import DebugUserDoc from "./components/DebugUserDoc";
 
 const clerkPubKey = import.meta.env.VITE_CLERK_PUBLISHABLE_KEY;
@@ -30,7 +31,7 @@ const clerkPubKey = import.meta.env.VITE_CLERK_PUBLISHABLE_KEY;
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const { isLoaded, isSignedIn } = useUser();
 
-  if (!isLoaded) return <div className="min-h-screen flex items-center justify-center">Loading...</div>;
+  if (!isLoaded) return <div className="min-h-screen flex items-center justify-center"><div className="animate-spin rounded-full h-10 w-10 border-b-2 border-sky-600" /></div>;
   if (!isSignedIn) return <Navigate to="/sign-in" replace />;
 
   return <>{children}</>;
@@ -62,7 +63,7 @@ function RoleProtectedRoute({ allowedRoles, children }: { allowedRoles: string[]
   const { data: membershipDoc, loading: membershipDocLoading } = useDocumentRealtime<any>("organizationMembers", membershipId);
 
   if (!isLoaded || !isOrgListLoaded || membershipDocLoading) {
-    return <div className="min-h-screen flex items-center justify-center">Loading...</div>;
+    return <div className="min-h-screen flex items-center justify-center bg-slate-50"><div className="text-center"><div className="animate-spin rounded-full h-10 w-10 border-b-2 border-sky-600 mx-auto mb-4" /><p className="text-slate-500 text-sm">Loading your workspace...</p></div></div>;
   }
 
   if (!isSignedIn || !user) {
@@ -91,7 +92,7 @@ function RoleRouter() {
   const selectedOrgs = userMemberships?.data || [];
   const activeOrgId = organization?.id || selectedOrgs?.[0]?.organization?.id;
   const membershipDocId = user && activeOrgId ? membershipIdFor(activeOrgId, user.id) : null;
-  const { data: membershipDoc, loading: membershipDocLoading } = useDocumentRealtime<any>("memberships", membershipDocId);
+  const { data: membershipDoc, loading: membershipDocLoading } = useDocumentRealtime<any>("organizationMembers", membershipDocId);
 
   useEffect(() => {
     const loadMembershipRole = async () => {
@@ -108,7 +109,7 @@ function RoleRouter() {
       }
 
       if (membershipDoc) {
-        setFirestoreMembershipRole((membershipDoc.role || null)?.toString() || null);
+        setFirestoreMembershipRole((membershipDoc.clerkRole || membershipDoc.role || null)?.toString() || null);
       } else {
         setFirestoreMembershipRole(null);
       }
@@ -139,8 +140,8 @@ function RoleRouter() {
   if (!isOrgListLoaded || membershipLoading) return (
     <div className="min-h-screen flex items-center justify-center bg-slate-50">
       <div className="text-center">
-        <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-slate-900 mx-auto mb-4" />
-        <p className="text-slate-500 text-sm">Loading your workspace membership...</p>
+        <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-sky-600 mx-auto mb-4" />
+        <p className="text-slate-500 text-sm">Loading your workspace...</p>
       </div>
     </div>
   );
@@ -169,21 +170,22 @@ export default function App() {
   if (!clerkPubKey) {
     return (
       <div className="min-h-screen flex items-center justify-center p-4 text-center">
-        <div className="max-w-md w-full bg-red-50 p-6 rounded-lg text-red-900 border border-red-200">
+        <div className="max-w-md w-full bg-red-50 p-6 rounded-2xl text-red-900 border border-red-200 shadow-lg">
           <h1 className="text-lg font-bold mb-2">Clerk API Key Missing</h1>
-          <p>Please configure the VITE_CLERK_PUBLISHABLE_KEY in your environment variables to use this application.</p>
+          <p className="text-sm">Please configure the VITE_CLERK_PUBLISHABLE_KEY in your environment variables to use this application.</p>
         </div>
       </div>
     );
   }
 
   return (
-    <ClerkProvider publishableKey={clerkPubKey} afterSignInUrl="/router" afterSignUpUrl="/router">
+    <ClerkProvider publishableKey={clerkPubKey} fallbackRedirectUrl="/router">
       <BrowserRouter>
         <AuthRedirectManager />
         <Routes>
           <Route path="/" element={<LandingPage />} />
 
+          <Route path="/workspace-selection" element={<WorkspaceSelectionPage />} />
           <Route path="/sign-in/*" element={<SignInPage />} />
           <Route path="/sign-up/*" element={<SignUpPage />} />
           <Route path="/auth/callback" element={<AuthCallbackPage />} />
@@ -228,7 +230,6 @@ export default function App() {
           } />
           <Route path="/dashboard/operator/*" element={<Navigate to="/dashboard/owner" replace />} />
           <Route path="/dashboard/collector/*" element={<Navigate to="/dashboard/agent" replace />} />
-
           <Route path="/dashboard/*" element={<Navigate to="/dashboard/owner" replace />} />
 
           <Route path="/debug-user" element={
@@ -247,4 +248,3 @@ export default function App() {
     </ClerkProvider>
   );
 }
-

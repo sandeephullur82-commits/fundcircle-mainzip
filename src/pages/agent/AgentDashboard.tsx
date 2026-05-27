@@ -1,11 +1,25 @@
 import { useUser, useOrganization, SignOutButton } from "@clerk/clerk-react";
-import { LogOut, Users, Wallet, CreditCard, CalendarDays, Contact, Menu } from "lucide-react";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import {
+  LogOut, Users, History,
+  AlertCircle, Menu, LayoutDashboard,
+} from "lucide-react";
+import { Tabs, TabsContent } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
+import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { useState } from "react";
 import { Navigate } from "react-router-dom";
 import AgentOverview from "./AgentOverview";
 import AgentCustomers from "./AgentCustomers";
+import AgentPending from "./AgentPending";
+import AgentHistory from "./AgentHistory";
+
+const menuItems = [
+  { id: "overview", label: "Today's Summary", icon: LayoutDashboard },
+  { id: "pending", label: "Pending Visits", icon: AlertCircle },
+  { id: "customers", label: "My Customers", icon: Users },
+  { id: "history", label: "Collection History", icon: History },
+];
 
 export default function AgentDashboard() {
   const { isLoaded: isUserLoaded, isSignedIn, user } = useUser();
@@ -16,91 +30,126 @@ export default function AgentDashboard() {
     return (
       <div className="min-h-screen bg-slate-50 flex items-center justify-center">
         <div className="text-center">
-          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-emerald-600 mx-auto mb-4"></div>
+          <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-emerald-600 mx-auto mb-4" />
           <p className="text-slate-500 text-sm">Loading your agent console...</p>
         </div>
       </div>
     );
   }
 
-  if (!isSignedIn || !user) {
-    return <Navigate to="/agent/login" replace />;
-  }
+  if (!isSignedIn || !user) return <Navigate to="/sign-in" replace />;
 
   return (
     <div className="min-h-screen bg-slate-50 flex flex-col md:flex-row">
-      {/* Desktop Sidebar */}
-      <div className="hidden md:flex flex-col w-64 bg-white border-r border-slate-200 h-screen sticky top-0">
-        <div className="p-6 border-b border-slate-100">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 bg-emerald-100 rounded-lg flex items-center justify-center text-emerald-600">
-              <Contact className="w-6 h-6" />
-            </div>
-            <div>
-              <h1 className="font-bold text-slate-900 truncate">Agent Portal</h1>
-              <p className="text-xs text-slate-500">{organization?.name}</p>
-            </div>
+      {/* Mobile Header */}
+      <div className="md:hidden bg-white border-b border-slate-100 px-4 py-3 flex items-center justify-between sticky top-0 z-20 shadow-sm">
+        <div className="flex items-center gap-2.5">
+          <div className="h-8 w-8 rounded-xl bg-gradient-to-br from-emerald-500 to-teal-400 flex items-center justify-center text-white text-xs font-bold shadow-md">
+            FC
+          </div>
+          <div>
+            <p className="text-xs font-semibold text-slate-900">Agent Portal</p>
+            <p className="text-xs text-slate-400">{organization?.name}</p>
           </div>
         </div>
-        
-        <div className="flex-1 py-6 px-4 space-y-1">
-          <button
-            onClick={() => setActiveTab("overview")}
-            className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-left transition-colors ${
-              activeTab === "overview" ? "bg-emerald-50 text-emerald-700 font-medium" : "text-slate-600 hover:bg-slate-50"
-            }`}
-          >
-            <CalendarDays className="w-5 h-5" />
-            <span>Today's Plan</span>
-          </button>
-          <button
-            onClick={() => setActiveTab("customers")}
-            className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-left transition-colors ${
-              activeTab === "customers" ? "bg-emerald-50 text-emerald-700 font-medium" : "text-slate-600 hover:bg-slate-50"
-            }`}
-          >
-            <Users className="w-5 h-5" />
-            <span>My Customers</span>
-          </button>
-        </div>
-
-        <div className="p-4 border-t border-slate-100">
-          <SignOutButton>
-            <Button variant="outline" className="w-full justify-start text-slate-600">
-              <LogOut className="w-4 h-4 mr-2" />
-              Sign Out
+        <Sheet>
+          <SheetTrigger render={
+            <Button variant="ghost" size="icon">
+              <Menu className="w-5 h-5" />
             </Button>
-          </SignOutButton>
-        </div>
+          } />
+          <SheetContent side="left" className="w-[280px] p-0">
+            <AgentSidebar activeTab={activeTab} setActiveTab={setActiveTab} user={user} organization={organization} />
+          </SheetContent>
+        </Sheet>
+      </div>
+
+      {/* Desktop Sidebar */}
+      <div className="hidden md:flex flex-col w-64 bg-white border-r border-slate-100 h-screen sticky top-0 shadow-sm">
+        <AgentSidebar activeTab={activeTab} setActiveTab={setActiveTab} user={user} organization={organization} />
       </div>
 
       {/* Main Content */}
       <main className="flex-1 p-4 md:p-8 overflow-y-auto w-full max-w-5xl mx-auto">
-        <div className="md:hidden flex justify-between items-center mb-6 bg-white p-4 rounded-xl shadow-sm border border-slate-200">
-           <div className="flex items-center gap-2">
-            <Contact className="w-6 h-6 text-emerald-600" />
-            <span className="font-bold">Agent Portal</span>
-           </div>
-           <SignOutButton>
-            <Button variant="ghost" size="icon" className="text-slate-500"><LogOut className="w-5 h-5" /></Button>
-           </SignOutButton>
-        </div>
-
         <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-          {/* Mobile Tabs List */}
-          <TabsList className="grid w-full grid-cols-2 md:hidden mb-6">
-            <TabsTrigger value="overview">Today</TabsTrigger>
-            <TabsTrigger value="customers">Customers</TabsTrigger>
-          </TabsList>
-          
+          <div className="hidden" />
           <TabsContent value="overview" className="mt-0">
             <AgentOverview />
+          </TabsContent>
+          <TabsContent value="pending" className="mt-0">
+            <AgentPending />
           </TabsContent>
           <TabsContent value="customers" className="mt-0">
             <AgentCustomers />
           </TabsContent>
+          <TabsContent value="history" className="mt-0">
+            <AgentHistory />
+          </TabsContent>
         </Tabs>
       </main>
+    </div>
+  );
+}
+
+function AgentSidebar({ activeTab, setActiveTab, user, organization }: any) {
+  return (
+    <div className="flex flex-col h-full">
+      {/* Logo */}
+      <div className="p-5 border-b border-slate-100">
+        <div className="flex items-center gap-3">
+          <div className="h-10 w-10 rounded-xl bg-gradient-to-br from-emerald-500 to-teal-400 flex items-center justify-center text-white text-sm font-bold shadow-md shrink-0">
+            FC
+          </div>
+          <div className="min-w-0">
+            <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400">Agent Portal</p>
+            <p className="text-sm font-bold text-slate-900 truncate">{organization?.name || "FundCircle"}</p>
+          </div>
+        </div>
+      </div>
+
+      {/* Nav */}
+      <div className="flex-1 py-3 px-3 space-y-0.5">
+        {menuItems.map((item) => {
+          const Icon = item.icon;
+          const isActive = activeTab === item.id;
+          return (
+            <button
+              key={item.id}
+              onClick={() => setActiveTab(item.id)}
+              className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-left transition-all text-sm ${
+                isActive
+                  ? "bg-emerald-50 text-emerald-700 font-semibold shadow-sm"
+                  : "text-slate-600 hover:bg-slate-50 hover:text-slate-900"
+              }`}
+            >
+              <Icon className={`h-4.5 w-4.5 shrink-0 ${isActive ? "text-emerald-600" : "text-slate-400"}`} />
+              <span className="flex-1">{item.label}</span>
+            </button>
+          );
+        })}
+      </div>
+
+      {/* User */}
+      <div className="p-3 border-t border-slate-100">
+        <div className="flex items-center gap-3 rounded-xl bg-slate-50 p-3 mb-2 border border-slate-100">
+          <Avatar className="h-8 w-8">
+            <AvatarImage src={user?.imageUrl} />
+            <AvatarFallback className="bg-emerald-100 text-emerald-700 text-sm font-bold">
+              {user?.firstName?.charAt(0) || "A"}
+            </AvatarFallback>
+          </Avatar>
+          <div className="flex-1 min-w-0">
+            <p className="text-xs font-semibold text-slate-900 truncate">{user?.fullName || "Agent"}</p>
+            <p className="text-xs text-slate-400 truncate">{user?.primaryEmailAddress?.emailAddress}</p>
+          </div>
+        </div>
+        <SignOutButton>
+          <Button variant="ghost" className="w-full justify-start text-slate-500 hover:text-red-600 hover:bg-red-50 text-sm h-9 gap-2">
+            <LogOut className="h-4 w-4" />
+            Sign Out
+          </Button>
+        </SignOutButton>
+      </div>
     </div>
   );
 }

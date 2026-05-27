@@ -2,8 +2,8 @@ import { useEffect, useState } from "react";
 import { useUser } from "@clerk/clerk-react";
 import { useLocation, useNavigate } from "react-router-dom";
 
-const authEntryPaths = [
-  "/",
+// Paths that should redirect signed-in users to their dashboard
+const signedInRedirectPaths = [
   "/sign-in",
   "/sign-up",
   "/organization/signin",
@@ -12,8 +12,23 @@ const authEntryPaths = [
   "/customer/signin",
 ];
 
-const isAuthEntryPath = (pathname: string) => {
-  return authEntryPaths.some((path) => pathname === path || pathname.startsWith(`${path}/`));
+// Paths accessible regardless of auth state
+const publicPaths = [
+  "/",
+  "/workspace-selection",
+  "/organization/invitation",
+];
+
+const isSignedInRedirectPath = (pathname: string) => {
+  return signedInRedirectPaths.some(
+    (path) => pathname === path || pathname.startsWith(`${path}/`)
+  );
+};
+
+const isPublicPath = (pathname: string) => {
+  return publicPaths.some(
+    (path) => pathname === path || pathname.startsWith(`${path}/`)
+  );
 };
 
 export default function AuthRedirectManager() {
@@ -22,7 +37,6 @@ export default function AuthRedirectManager() {
   const navigate = useNavigate();
   const location = useLocation();
   const path = location.pathname;
-  const onAuthEntry = isAuthEntryPath(path);
 
   useEffect(() => {
     if (!isLoaded) {
@@ -30,25 +44,30 @@ export default function AuthRedirectManager() {
       return;
     }
 
+    // Signed-in users visiting sign-in/sign-up → send to dashboard
+    if (isSignedIn && user && isSignedInRedirectPath(path)) {
+      navigate("/auth/callback", { replace: true });
+      setChecking(false);
+      return;
+    }
+
+    // Unauthenticated users visiting protected pages → send to sign-in
     if (!isSignedIn || !user) {
-      if (!onAuthEntry && path !== "/organization/invitation") {
+      if (!isPublicPath(path) && !isSignedInRedirectPath(path) && path !== "/auth/callback") {
         navigate("/sign-in", { replace: true });
       }
       setChecking(false);
       return;
     }
 
-    if (onAuthEntry && path !== "/auth/callback") {
-      navigate("/auth/callback", { replace: true });
-    }
     setChecking(false);
-  }, [isLoaded, isSignedIn, user, navigate, path, onAuthEntry]);
+  }, [isLoaded, isSignedIn, user, navigate, path]);
 
-  if (!isLoaded || (onAuthEntry && checking)) {
+  if (!isLoaded && !isPublicPath(path)) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-slate-50">
         <div className="text-center">
-          <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-slate-900 mx-auto mb-4" />
+          <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-sky-600 mx-auto mb-4" />
           <p className="text-sm text-slate-500">Checking your session…</p>
         </div>
       </div>

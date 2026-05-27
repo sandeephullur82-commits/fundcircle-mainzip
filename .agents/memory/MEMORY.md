@@ -1,0 +1,3 @@
+- [FundCircle stack and routing](fundcircle-stack.md) — Vite+React+TS+Tailwind v4+Clerk+Firestore; path alias `@` maps to project root (not src/); UI components live at `components/ui/`, not `src/components/ui/`.
+- [FundCircle auth patterns](fundcircle-auth.md) — Membership doc ID = `${organizationId}_${clerkUserId}`; roles stored as OWNER/AGENT/CUSTOMER (uppercase in Firestore); normalize with `normalizeClerkRole()`; ClerkProvider use `fallbackRedirectUrl` not deprecated `afterSignInUrl`.
+- [FundCircle rollup fix](fundcircle-rollup.md) — Missing `@rollup/rollup-linux-x64-gnu` fixed by `npm install --include=optional` + `chmod +x node_modules/.bin/vite`; workflow must use port 5000 for webview outputType.

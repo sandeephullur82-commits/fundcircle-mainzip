@@ -1,0 +1,506 @@
+You are a world-class Principal SaaS Architect, Enterprise Full Stack Engineer, Firebase Architect, Clerk Authentication Specialist, Multi-Tenant Systems Architect, Realtime Database Engineer, and FinTech Product Engineer.
+
+Your task is to rebuild and productionize the complete FundCircle platform into a fully working enterprise-grade realtime multi-tenant pigmy collection SaaS platform.
+
+==================================================
+PROJECT NAME
+==================================================
+
+FundCircle
+
+==================================================
+PROJECT TYPE
+==================================================
+
+Realtime Multi-Tenant Pigmy Collection SaaS Platform
+
+==================================================
+TECH STACK
+==================================================
+
+Frontend:
+- Next.js App Router
+- TypeScript
+- Tailwind CSS
+- Shadcn UI
+- Framer Motion
+
+Authentication:
+- Clerk Authentication
+- Clerk Organizations
+- Clerk Invitations
+- Clerk Sessions
+- Clerk Custom Roles
+
+Database:
+- Firebase Firestore
+- Firestore Realtime Listeners
+- Firebase Storage
+
+Architecture:
+- Multi-Tenant
+- Role-Based Access
+- Invitation-Based Onboarding
+- Realtime Firestore Sync
+- Offline-First
+
+==================================================
+CORE BUSINESS MODEL
+==================================================
+
+ONLY organization owners can register publicly.
+
+Pigmy Collectors and Customers:
+- cannot register directly
+- cannot access public signup
+- join ONLY through Clerk organization invitations
+
+==================================================
+SYSTEM ROLES
+==================================================
+
+1. Owner
+2. Pigmy Collector
+3. Customer
+
+==================================================
+CLERK ORGANIZATION ROLES
+==================================================
+
+Create custom Clerk roles:
+
+- org:owner
+- org:pigmy_collector
+- org:customer
+
+==================================================
+LANDING PAGE FLOW
+==================================================
+
+Landing page must include:
+
+- Navbar
+- Hero section
+- Features
+- Analytics preview
+- Realtime dashboard mockup
+- Pricing
+- Role cards
+- CTA section
+- Footer
+
+==================================================
+ROLE CARDS
+==================================================
+
+1. Owner
+2. Pigmy Collector
+3. Customer
+
+==================================================
+LANDING PAGE BUTTON FLOW
+==================================================
+
+Owner Register Organization
+→ /sign-up
+
+Owner Login
+→ /sign-in?role=owner
+
+Pigmy Collector Login
+→ /sign-in?role=agent
+
+Customer Login
+→ /sign-in?role=customer
+
+Navbar Sign In
+→ /workspace-selection
+
+Get Started
+→ /sign-up
+
+==================================================
+WORKSPACE SELECTION PAGE
+==================================================
+
+Route:
+/workspace-selection
+
+Show:
+- Owner
+- Pigmy Collector
+- Customer
+
+Selecting role:
+saves preferredLoginRole
+then redirects:
+/sign-in
+
+==================================================
+SIGN-UP FLOW
+==================================================
+
+ONLY owners can signup.
+
+Fields:
+- Organization Name
+- Owner Name
+- Email
+- Phone
+- Password
+
+Flow:
+
+Create Clerk user
+↓
+OTP verification
+↓
+Create Clerk organization
+↓
+Create Firestore organization
+↓
+Create organizationMembers document
+↓
+Assign:
+org:owner
+↓
+Redirect:
+/dashboard/owner
+
+==================================================
+SIGN-IN FLOW
+==================================================
+
+Shared Clerk sign-in for:
+- owners
+- collectors
+- customers
+
+After login:
+- detect organization membership
+- detect Clerk role
+- redirect dashboard automatically
+
+==================================================
+ROLE REDIRECTS
+==================================================
+
+org:owner
+→ /dashboard/owner
+
+org:pigmy_collector
+→ /dashboard/agent
+
+org:customer
+→ /dashboard/customer
+
+==================================================
+INVITATION FLOW
+==================================================
+
+Owners can:
+- invite collectors
+- invite customers
+
+==================================================
+INVITE MODAL
+==================================================
+
+ONLY fields:
+- email
+- assigned area (optional)
+
+==================================================
+INVITE FLOW
+==================================================
+
+Owner submits invite
+↓
+Create Firestore document instantly
+↓
+Dashboard updates realtime
+↓
+Send Clerk invitation
+↓
+Invitation mail delivered
+
+==================================================
+INITIAL FIRESTORE MEMBER DOCUMENT
+==================================================
+
+{
+  email,
+  role,
+  organizationId,
+
+  fullName: "",
+  phone: "",
+  assignedArea: "",
+
+  profileCompleted: false,
+
+  status: "INVITED",
+
+  clerkUserId: null,
+}
+
+==================================================
+REALTIME DASHBOARD REQUIREMENT
+==================================================
+
+ANY Firestore change
+→ instantly updates dashboard
+
+ANY dashboard action
+→ instantly updates Firestore
+
+Use ONLY:
+Firestore realtime listeners
+
+USING:
+onSnapshot()
+
+==================================================
+OWNER DASHBOARD
+==================================================
+
+Features:
+- Analytics
+- Customers
+- Pigmy Collectors
+- Collections
+- Daily Reports
+- EMI
+- Savings
+- Transactions
+- Notifications
+- Settings
+
+==================================================
+OWNER ALSO ACTS AS AGENT
+==================================================
+
+Owner can:
+- manage organization
+- collect payments
+- add collections
+- visit customers
+
+Create:
+Admin Mode / Collector Mode switch.
+
+==================================================
+PIGMY COLLECTOR DASHBOARD
+==================================================
+
+Features:
+- Assigned customers
+- Daily collections
+- Visit tracking
+- Pending payments
+- Collection history
+- Realtime sync
+
+==================================================
+CUSTOMER DASHBOARD
+==================================================
+
+Features:
+- Savings balance
+- Collection history
+- Payment records
+- EMI tracking
+- Notifications
+
+==================================================
+INVITATION ACCEPT FLOW
+==================================================
+
+Collector/customer receives invitation mail
+↓
+Accept invitation
+↓
+Set password
+↓
+Clerk session created
+↓
+Join organization
+↓
+Redirect:
+/auth/callback
+
+==================================================
+AUTH CALLBACK RESPONSIBILITIES
+==================================================
+
+1. detect session
+2. detect organization membership
+3. sync Firestore
+4. attach clerkUserId
+5. check profileCompleted
+6. redirect correct page
+
+==================================================
+PROFILE COMPLETION FLOW
+==================================================
+
+If profile incomplete:
+redirect:
+/complete-profile
+
+==================================================
+AGENT PROFILE FORM
+==================================================
+
+Fields:
+- Full Name
+- Phone
+- Assigned Area
+
+==================================================
+CUSTOMER PROFILE FORM
+==================================================
+
+Fields:
+- Full Name
+- Phone
+- Address
+
+==================================================
+AFTER PROFILE COMPLETION
+==================================================
+
+Update Firestore:
+
+{
+  profileCompleted: true,
+  status: "ACTIVE"
+}
+
+==================================================
+REALTIME TABLES
+==================================================
+
+Owner dashboard tables must update instantly:
+
+- invited users
+- active users
+- collections
+- savings
+- payments
+
+WITHOUT refresh.
+
+==================================================
+STATUS SYSTEM
+==================================================
+
+INVITED
+ACTIVE
+INACTIVE
+BLOCKED
+
+==================================================
+STATUS COLORS
+==================================================
+
+INVITED = orange
+ACTIVE = green
+INACTIVE = gray
+BLOCKED = red
+
+==================================================
+DATABASE COLLECTIONS
+==================================================
+
+organizations
+organizationMembers
+pendingInvites
+collections
+transactions
+customers
+agents
+notifications
+emi
+reports
+
+==================================================
+REALTIME COLLECTION FLOW
+==================================================
+
+Collector adds collection
+↓
+Firestore updates
+↓
+Owner dashboard updates instantly
+↓
+Customer dashboard updates instantly
+↓
+Analytics update instantly
+
+==================================================
+SECURITY
+==================================================
+
+Protect dashboards using Clerk roles.
+
+Owner:
+org:owner
+
+Collector:
+org:pigmy_collector
+
+Customer:
+org:customer
+
+==================================================
+SESSION FLOW
+==================================================
+
+Once logged in:
+keep dashboard session active until logout.
+
+Refreshing page:
+must restore dashboard automatically.
+
+==================================================
+LOGOUT FLOW
+==================================================
+
+Logout
+↓
+Destroy Clerk session
+↓
+Redirect landing page
+
+==================================================
+UI REQUIREMENTS
+==================================================
+
+Style:
+- Premium fintech SaaS
+- Light theme
+- Glassmorphism
+- Modern enterprise UI
+- White cards
+- Blue/indigo gradients
+- Soft shadows
+- Responsive
+- Mobile-first
+
+==================================================
+FINAL RESULT
+==================================================
+
+Generate a COMPLETE production-grade FundCircle platform with:
+
+- Clerk Organizations
+- Invitation-based onboarding
+- Firestore realtime sync
+- Multi-tenant architecture
+- Role-based dashboards
+- Owner/Collector/Customer workflows
+- Realtime analytics
+- Enterprise authentication
+- Fully responsive premium SaaS UI
+- Production-ready architecture
