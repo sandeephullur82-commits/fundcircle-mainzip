@@ -791,6 +791,84 @@ export default function LandingPage() {
           </div>
         </section>
 
+        {/* Privacy Policy */}
+        <section id="privacy" className="scroll-mt-24 rounded-[2rem] border border-slate-200 bg-white p-8 md:p-12 shadow-lg shadow-slate-200/40">
+          <div className="max-w-3xl space-y-6">
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-[0.35em] text-sky-500 mb-2">Legal</p>
+              <h2 className="text-3xl font-bold text-slate-950">Privacy Policy</h2>
+              <p className="text-sm text-slate-500 mt-1">Last updated: January 2026</p>
+            </div>
+            <div className="space-y-5 text-sm leading-7 text-slate-600">
+              <div>
+                <h3 className="font-bold text-slate-900 mb-1">1. Information We Collect</h3>
+                <p>FundCircle collects information you provide when registering an organization, inviting agents, or onboarding customers. This includes names, phone numbers, email addresses, and collection transaction data. All data is stored securely in Google Firestore with multi-tenant isolation.</p>
+              </div>
+              <div>
+                <h3 className="font-bold text-slate-900 mb-1">2. How We Use Your Information</h3>
+                <p>We use collected data solely to provide the FundCircle platform — enabling organizations to track pigmy collections, manage agents, and generate reports. We do not sell, rent, or share your data with third parties for marketing purposes.</p>
+              </div>
+              <div>
+                <h3 className="font-bold text-slate-900 mb-1">3. Data Security</h3>
+                <p>All data is encrypted in transit (TLS) and at rest. Authentication is handled by Clerk, which provides enterprise-grade security including OTP verification and session management. Firestore security rules enforce strict per-organization data isolation.</p>
+              </div>
+              <div>
+                <h3 className="font-bold text-slate-900 mb-1">4. Data Retention</h3>
+                <p>Organization data is retained as long as the account is active. Upon account deletion, all associated data is permanently removed within 30 days. Collection transaction logs may be retained for regulatory compliance for up to 7 years.</p>
+              </div>
+              <div>
+                <h3 className="font-bold text-slate-900 mb-1">5. Your Rights</h3>
+                <p>You have the right to access, correct, or delete your personal information at any time. Contact your organization owner or reach our support team through the Contact section above.</p>
+              </div>
+              <div>
+                <h3 className="font-bold text-slate-900 mb-1">6. Cookies</h3>
+                <p>FundCircle uses only essential cookies required for authentication sessions. We do not use tracking or advertising cookies.</p>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        {/* Terms of Service */}
+        <section id="terms" className="scroll-mt-24 rounded-[2rem] border border-slate-200 bg-white p-8 md:p-12 shadow-lg shadow-slate-200/40">
+          <div className="max-w-3xl space-y-6">
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-[0.35em] text-sky-500 mb-2">Legal</p>
+              <h2 className="text-3xl font-bold text-slate-950">Terms of Service</h2>
+              <p className="text-sm text-slate-500 mt-1">Last updated: January 2026</p>
+            </div>
+            <div className="space-y-5 text-sm leading-7 text-slate-600">
+              <div>
+                <h3 className="font-bold text-slate-900 mb-1">1. Acceptance of Terms</h3>
+                <p>By registering an organization or using the FundCircle platform in any capacity — as an owner, pigmy collector, or customer — you agree to be bound by these Terms of Service.</p>
+              </div>
+              <div>
+                <h3 className="font-bold text-slate-900 mb-1">2. Use of the Platform</h3>
+                <p>FundCircle is a software platform for managing pigmy collections and daily savings operations. You agree to use the platform only for lawful financial operations and not to attempt to access data belonging to other organizations.</p>
+              </div>
+              <div>
+                <h3 className="font-bold text-slate-900 mb-1">3. Organization Responsibility</h3>
+                <p>Organization owners are responsible for all activity within their workspace, including agent conduct and accurate recording of customer transactions. FundCircle provides infrastructure only and is not liable for financial disputes between organizations and their members.</p>
+              </div>
+              <div>
+                <h3 className="font-bold text-slate-900 mb-1">4. Subscription and Billing</h3>
+                <p>The Starter plan is free with defined usage limits. Paid plans (Growth, Enterprise) are billed monthly. Downgrading or cancelling a plan takes effect at the end of the current billing cycle. No refunds are issued for partial months.</p>
+              </div>
+              <div>
+                <h3 className="font-bold text-slate-900 mb-1">5. Service Availability</h3>
+                <p>We target 99.9% uptime and provide maintenance windows with advance notice. FundCircle is not liable for data loss or business impact resulting from outages beyond our reasonable control, including third-party service failures (Clerk, Firebase).</p>
+              </div>
+              <div>
+                <h3 className="font-bold text-slate-900 mb-1">6. Termination</h3>
+                <p>We reserve the right to suspend or terminate accounts found to be in violation of these terms, engaged in fraud, or using the platform for illegal purposes. You may terminate your account at any time from your organization settings.</p>
+              </div>
+              <div>
+                <h3 className="font-bold text-slate-900 mb-1">7. Governing Law</h3>
+                <p>These terms are governed by the laws of India. Any disputes shall be subject to the exclusive jurisdiction of the courts in Bengaluru, Karnataka.</p>
+              </div>
+            </div>
+          </div>
+        </section>
+
         {/* Footer */}
         <footer id="footer" className="rounded-[2rem] border border-slate-200 bg-white p-8 shadow-lg shadow-slate-200/40">
           <div className="grid gap-8 md:grid-cols-5">
@@ -856,16 +934,16 @@ export default function LandingPage() {
             <div>
               <h3 className="text-sm font-bold uppercase tracking-[0.3em] text-slate-900 mb-4">Legal</h3>
               <ul className="space-y-2 text-sm">
-                <li><button onClick={() => scrollTo("footer")} className="text-slate-600 hover:text-slate-900 transition-colors">Privacy Policy</button></li>
-                <li><button onClick={() => scrollTo("footer")} className="text-slate-600 hover:text-slate-900 transition-colors">Terms of Service</button></li>
+                <li><button onClick={() => scrollTo("privacy")} className="text-slate-600 hover:text-slate-900 transition-colors">Privacy Policy</button></li>
+                <li><button onClick={() => scrollTo("terms")} className="text-slate-600 hover:text-slate-900 transition-colors">Terms of Service</button></li>
               </ul>
             </div>
           </div>
           <div className="mt-8 pt-6 border-t border-slate-100 flex flex-col sm:flex-row items-center justify-between gap-4">
             <p className="text-xs text-slate-500">© 2026 FundCircle. All rights reserved.</p>
             <div className="flex gap-4 text-xs text-slate-500">
-              <button onClick={() => scrollTo("footer")} className="hover:text-slate-800 transition-colors">Privacy Policy</button>
-              <button onClick={() => scrollTo("footer")} className="hover:text-slate-800 transition-colors">Terms of Service</button>
+              <button onClick={() => scrollTo("privacy")} className="hover:text-slate-800 transition-colors">Privacy Policy</button>
+              <button onClick={() => scrollTo("terms")} className="hover:text-slate-800 transition-colors">Terms of Service</button>
             </div>
           </div>
         </footer>
