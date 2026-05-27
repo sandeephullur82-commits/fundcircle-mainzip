@@ -1,5 +1,6 @@
-import { motion } from "framer-motion";
+import { motion, AnimatePresence } from "framer-motion";
 import { useNavigate, Link } from "react-router-dom";
+import { useState, useEffect } from "react";
 import {
   Building2,
   Users,
@@ -20,6 +21,8 @@ import {
   FileText,
   TrendingUp,
   Star,
+  Menu,
+  X,
 } from "lucide-react";
 
 const featureItems = [
@@ -108,6 +111,139 @@ const pricingPlans = [
   },
 ];
 
+const LANDING_NAV = [
+  { label: "Features", id: "features" },
+  { label: "Workflow", id: "workflow" },
+  { label: "Pricing", id: "pricing" },
+  { label: "Contact", id: "contact" },
+];
+
+function scrollTo(id: string) {
+  document.getElementById(id)?.scrollIntoView({ behavior: "smooth", block: "start" });
+}
+
+function LandingNavbar({
+  onSignIn,
+  onSignUp,
+}: {
+  onSignIn: () => void;
+  onSignUp: () => void;
+}) {
+  const [scrolled, setScrolled] = useState(false);
+  const [mobileOpen, setMobileOpen] = useState(false);
+
+  useEffect(() => {
+    const handler = () => setScrolled(window.scrollY > 20);
+    window.addEventListener("scroll", handler, { passive: true });
+    handler();
+    return () => window.removeEventListener("scroll", handler);
+  }, []);
+
+  return (
+    <header
+      className={`sticky top-0 z-50 w-full transition-all duration-300 ${
+        scrolled
+          ? "bg-slate-900/85 backdrop-blur-xl border-b border-white/10 shadow-lg shadow-black/20"
+          : "bg-white/90 backdrop-blur-xl border-b border-slate-200/80"
+      }`}
+    >
+      <div className="mx-auto flex max-w-[1440px] items-center justify-between px-4 py-4 sm:px-6 lg:px-10">
+        <button onClick={() => scrollTo("hero")} className="flex items-center gap-3 focus:outline-none">
+          <div className="grid h-10 w-10 place-items-center rounded-xl bg-gradient-to-br from-sky-500 to-violet-500 text-white font-bold text-sm shadow-md shadow-sky-300/30 shrink-0">
+            FC
+          </div>
+          <div className="hidden sm:block">
+            <p className="text-[10px] uppercase tracking-[0.3em] text-slate-400">FundCircle</p>
+            <p className={`text-sm font-bold leading-tight transition-colors duration-300 ${scrolled ? "text-white" : "text-slate-900"}`}>
+              Enterprise Collection Platform
+            </p>
+          </div>
+        </button>
+
+        <nav className="hidden md:flex items-center gap-1">
+          {LANDING_NAV.map((item) => (
+            <button
+              key={item.id}
+              onClick={() => scrollTo(item.id)}
+              className={`rounded-lg px-3.5 py-2 text-sm font-medium transition-all duration-200 ${
+                scrolled
+                  ? "text-slate-300 hover:bg-white/10 hover:text-white"
+                  : "text-slate-600 hover:bg-slate-50 hover:text-slate-900"
+              }`}
+            >
+              {item.label}
+            </button>
+          ))}
+        </nav>
+
+        <div className="flex items-center gap-2">
+          <button
+            onClick={onSignIn}
+            className={`hidden sm:block rounded-xl border px-4 py-2 text-sm font-semibold transition-all duration-200 ${
+              scrolled
+                ? "border-white/20 text-slate-200 hover:bg-white/10"
+                : "border-slate-200 text-slate-700 hover:bg-slate-50"
+            }`}
+          >
+            Sign In
+          </button>
+          <button
+            onClick={onSignUp}
+            className="rounded-xl bg-gradient-to-r from-sky-500 to-violet-500 px-4 py-2 text-sm font-semibold text-white shadow-md shadow-sky-300/30 transition hover:brightness-110 flex items-center gap-1.5"
+          >
+            Get Started <ArrowRight className="w-3.5 h-3.5" />
+          </button>
+          <button
+            onClick={() => setMobileOpen((v) => !v)}
+            className={`md:hidden rounded-lg p-2 transition-colors duration-200 ${
+              scrolled ? "text-slate-300 hover:bg-white/10" : "text-slate-600 hover:bg-slate-100"
+            }`}
+            aria-label="Toggle menu"
+          >
+            {mobileOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
+          </button>
+        </div>
+      </div>
+
+      <AnimatePresence>
+        {mobileOpen && (
+          <motion.div
+            initial={{ opacity: 0, height: 0 }}
+            animate={{ opacity: 1, height: "auto" }}
+            exit={{ opacity: 0, height: 0 }}
+            transition={{ duration: 0.2 }}
+            className={`md:hidden overflow-hidden border-t ${
+              scrolled ? "bg-slate-900/95 border-white/10" : "bg-white border-slate-100"
+            }`}
+          >
+            <nav className="flex flex-col gap-1 px-4 pb-4 pt-2">
+              {LANDING_NAV.map((item) => (
+                <button
+                  key={item.id}
+                  onClick={() => { scrollTo(item.id); setMobileOpen(false); }}
+                  className={`rounded-lg px-3.5 py-2.5 text-sm font-medium text-left transition-colors ${
+                    scrolled ? "text-slate-300 hover:bg-white/10 hover:text-white" : "text-slate-600 hover:bg-slate-50"
+                  }`}
+                >
+                  {item.label}
+                </button>
+              ))}
+              <button
+                onClick={() => { onSignIn(); setMobileOpen(false); }}
+                className={`mt-2 rounded-lg border px-3.5 py-2.5 text-sm font-semibold text-center transition-colors ${
+                  scrolled ? "border-white/20 text-slate-200" : "border-slate-200 text-slate-700"
+                }`}
+              >
+                Sign In
+              </button>
+            </nav>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </header>
+  );
+}
+
 export default function LandingPage() {
   const navigate = useNavigate();
 
@@ -119,7 +255,9 @@ export default function LandingPage() {
   const handleRoleCardCustomerLogin = () => navigate("/sign-in?role=customer");
 
   return (
-    <div className="min-h-screen overflow-hidden bg-slate-50 text-slate-950">
+    <div className="min-h-screen bg-slate-50 text-slate-950 overflow-x-hidden">
+      <LandingNavbar onSignIn={handleNavbarSignIn} onSignUp={handleSignupIntent} />
+
       {/* Background blobs */}
       <div className="pointer-events-none fixed inset-x-0 top-0 z-0 h-[700px] overflow-hidden">
         <div className="absolute left-[-140px] top-10 h-72 w-72 rounded-full bg-sky-200/50 blur-[130px]" />
@@ -127,49 +265,8 @@ export default function LandingPage() {
         <div className="absolute left-[35%] top-16 h-72 w-72 rounded-full bg-indigo-100/80 blur-[120px]" />
       </div>
 
-      <div className="relative mx-auto flex min-h-screen w-full max-w-[1440px] flex-col gap-24 px-4 py-10 sm:px-6 lg:px-10">
-        {/* Navbar */}
-        <header className="relative z-10 flex flex-col gap-4 rounded-[2rem] border border-slate-200 bg-white/90 px-6 py-5 shadow-xl shadow-slate-200/60 backdrop-blur-xl md:flex-row md:items-center md:justify-between">
-          <div className="flex items-center gap-3">
-            <div className="grid h-12 w-12 place-items-center rounded-2xl bg-gradient-to-br from-sky-500 to-violet-500 text-white shadow-lg shadow-sky-300/40 font-bold text-sm">
-              FC
-            </div>
-            <div>
-              <p className="text-xs uppercase tracking-[0.35em] text-slate-500">FundCircle</p>
-              <p className="text-base font-semibold text-slate-950">Enterprise Collection Platform</p>
-            </div>
-          </div>
-
-          <nav className="flex flex-wrap items-center justify-center gap-6 text-sm text-slate-600">
-            {[
-              { label: "Features", href: "#features" },
-              { label: "Workflow", href: "#workflow" },
-              { label: "Pricing", href: "#pricing" },
-              { label: "Contact", href: "#footer" },
-            ].map((item) => (
-              <a key={item.label} href={item.href} className="transition hover:text-slate-900 font-medium">
-                {item.label}
-              </a>
-            ))}
-          </nav>
-
-          <div className="flex flex-wrap items-center gap-3">
-            <button
-              onClick={handleNavbarSignIn}
-              className="rounded-full border border-slate-200 bg-white px-5 py-2 text-sm font-semibold text-slate-950 transition hover:bg-slate-50 hover:border-slate-300"
-            >
-              Sign In
-            </button>
-            <button
-              onClick={handleSignupIntent}
-              className="rounded-full bg-gradient-to-r from-sky-500 to-violet-500 px-5 py-2 text-sm font-semibold text-white shadow-lg shadow-sky-200/50 transition hover:brightness-110"
-            >
-              Get Started
-            </button>
-          </div>
-        </header>
-
-        <main className="relative z-10 flex flex-col gap-24">
+      <div className="relative mx-auto flex w-full max-w-[1440px] flex-col gap-24 px-4 pb-10 pt-10 sm:px-6 lg:px-10">
+        <main id="hero" className="relative z-10 flex flex-col gap-24">
           {/* Hero */}
           <section className="grid gap-12 lg:grid-cols-[1.1fr_0.9fr] lg:items-center">
             <motion.div
@@ -414,7 +511,7 @@ export default function LandingPage() {
           </section>
 
           {/* Analytics Preview */}
-          <section className="rounded-[2.5rem] border border-slate-200 bg-gradient-to-br from-slate-900 via-slate-800 to-indigo-900 p-8 md:p-12 shadow-2xl">
+          <section id="analytics" className="rounded-[2.5rem] border border-slate-200 bg-gradient-to-br from-slate-900 via-slate-800 to-indigo-900 p-8 md:p-12 shadow-2xl">
             <div className="grid gap-10 lg:grid-cols-2 lg:items-center">
               <div className="space-y-6">
                 <p className="text-xs font-semibold uppercase tracking-[0.35em] text-sky-400">Analytics Preview</p>
@@ -603,7 +700,7 @@ export default function LandingPage() {
           </section>
 
           {/* Security & Trust */}
-          <section className="space-y-10">
+          <section id="reports" className="space-y-10">
             <div className="max-w-2xl">
               <p className="text-xs font-semibold uppercase tracking-[0.35em] text-sky-500 mb-3">Security</p>
               <h2 className="text-3xl font-bold text-slate-950 sm:text-4xl">Built on trusted enterprise security.</h2>
@@ -636,7 +733,7 @@ export default function LandingPage() {
           </section>
 
           {/* CTA */}
-          <section id="cta" className="rounded-[2.5rem] border border-slate-200 bg-gradient-to-br from-slate-50 via-sky-50 to-violet-50 p-8 md:p-12 shadow-xl shadow-slate-200/40">
+          <section id="contact" className="rounded-[2.5rem] border border-slate-200 bg-gradient-to-br from-slate-50 via-sky-50 to-violet-50 p-8 md:p-12 shadow-xl shadow-slate-200/40">
             <div className="flex flex-col gap-8 lg:flex-row lg:items-center lg:justify-between">
               <div className="max-w-2xl">
                 <p className="text-xs font-semibold uppercase tracking-[0.35em] text-sky-500 mb-3">Get Started Today</p>
@@ -680,13 +777,18 @@ export default function LandingPage() {
               <h3 className="text-sm font-bold uppercase tracking-[0.3em] text-slate-900 mb-4">Product</h3>
               <ul className="space-y-2 text-sm">
                 {[
-                  { label: "Features", href: "/features" },
-                  { label: "Pricing", href: "/pricing" },
-                  { label: "Analytics", href: "/analytics" },
-                  { label: "Reports", href: "/reports" },
+                  { label: "Features", id: "features" },
+                  { label: "Pricing", id: "pricing" },
+                  { label: "Analytics", id: "analytics" },
+                  { label: "Reports", id: "reports" },
                 ].map((item) => (
-                  <li key={item.href}>
-                    <Link to={item.href} className="text-slate-600 hover:text-slate-900 transition-colors">{item.label}</Link>
+                  <li key={item.id}>
+                    <button
+                      onClick={() => scrollTo(item.id)}
+                      className="text-slate-600 hover:text-slate-900 transition-colors"
+                    >
+                      {item.label}
+                    </button>
                   </li>
                 ))}
               </ul>

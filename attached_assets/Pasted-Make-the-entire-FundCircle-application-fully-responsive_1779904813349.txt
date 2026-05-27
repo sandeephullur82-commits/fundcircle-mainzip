@@ -1,0 +1,125 @@
+Make the entire FundCircle application fully responsive across all devices.
+
+RESPONSIVE REQUIREMENTS:
+Support:
+- Mobile phones
+- Tablets
+- Laptops
+- Desktop monitors
+- Ultra wide screens
+
+BREAKPOINTS:
+- xs: 320px
+- sm: 640px
+- md: 768px
+- lg: 1024px
+- xl: 1280px
+- 2xl: 1536px
+
+GLOBAL RESPONSIVE FIXES:
+1. Remove horizontal scrolling everywhere.
+2. Prevent overflow-x issues.
+3. All pages must fit properly on small screens.
+4. All layouts must stack correctly on mobile.
+5. Add responsive spacing and typography.
+6. Use fluid widths instead of fixed widths.
+7. Replace hardcoded px sizes with responsive Tailwind classes.
+
+NAVBAR RESPONSIVE:
+1. Desktop:
+   - full navbar layout
+2. Mobile:
+   - hamburger menu
+   - animated slide menu
+   - full-screen mobile navigation
+3. Sticky navbar must work correctly on mobile.
+4. Prevent navbar overlap with content.
+
+LANDING PAGE RESPONSIVE:
+1. Hero section:
+   - stack content vertically on mobile
+   - responsive text scaling
+   - responsive dashboard preview
+2. Cards:
+   - 1 column mobile
+   - 2 columns tablet
+   - 3-4 columns desktop
+
+FOOTER RESPONSIVE:
+1. Stack footer sections vertically on mobile.
+2. Center align content on small screens.
+3. Prevent text clipping.
+
+AUTH PAGES RESPONSIVE:
+- Sign In
+- Sign Up
+- OTP Verification
+- Workspace Selection
+- Onboarding
+
+Requirements:
+1. Mobile-first design.
+2. Full-width forms on mobile.
+3. Responsive Clerk components.
+4. No cutoff forms.
+5. Proper spacing and scrolling.
+
+DASHBOARD RESPONSIVE:
+OWNER DASHBOARD:
+- responsive sidebar
+- collapsible mobile sidebar
+- responsive tables
+- responsive charts
+- card layouts wrap properly
+
+AGENT DASHBOARD:
+- mobile collection cards
+- responsive customer list
+- responsive forms
+
+CUSTOMER DASHBOARD:
+- responsive savings cards
+- responsive payment history
+- responsive profile layout
+
+TABLE RESPONSIVENESS:
+1. Add horizontal scroll containers.
+2. Use responsive table wrappers.
+3. Convert large tables into cards on mobile if needed.
+
+MODAL RESPONSIVENESS:
+1. Centered on desktop.
+2. Full width with margins on mobile.
+3. Prevent overflow outside viewport.
+
+FORM RESPONSIVENESS:
+1. Inputs full width on mobile.
+2. Responsive grid layouts.
+3. Proper keyboard spacing on phones.
+
+IMAGE RESPONSIVENESS:
+1. Use:
+   - object-cover
+   - max-w-full
+   - h-auto
+2. Prevent stretched images.
+
+TAILWIND REQUIREMENTS:
+Use responsive utilities everywhere:
+- sm:
+- md:
+- lg:
+- xl:
+
+EXAMPLES:
+- text-3xl md:text-5xl
+- grid-cols-1 md:grid-cols-2 lg:grid-cols-4
+- px-4 md:px-8 lg:px-16
+
+PERFORMANCE:
+1. Optimize mobile rendering.
+2. Reduce animation complexity on mobile.
+3. Lazy load large sections if needed.
+
+FINAL REQUIREMENT:
+The entire FundCircle SaaS platform must feel like a modern production-grade enterprise application with perfect responsiveness across all screen sizes and devices.
