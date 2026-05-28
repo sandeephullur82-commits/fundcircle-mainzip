@@ -9,6 +9,7 @@ import { normalizeClerkRole, isAgentRole, isCustomerRole, isOwnerRole } from "@/
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { Skeleton } from "@/components/ui/skeleton";
 import { useState, useEffect } from "react";
 import { doc, setDoc, serverTimestamp } from "firebase/firestore";
 import { where } from "firebase/firestore";
@@ -81,27 +82,41 @@ export default function OrgDashboard() {
 
   useEffect(() => {
     if (user && organization) {
-      const syncRecord = async () => {
-        try {
-          await setDoc(doc(db, "organizations", organization.id), {
-            id: organization.id,
-            name: organization.name,
-            updatedAt: serverTimestamp(),
-          }, { merge: true });
-        } catch (err) {
-          console.error("Org sync error:", err);
-        }
-      };
-      syncRecord();
+      setDoc(doc(db, "organizations", organization.id), {
+        id: organization.id,
+        name: organization.name,
+        updatedAt: serverTimestamp(),
+      }, { merge: true }).catch(() => {});
     }
   }, [user?.id, organization?.id]);
 
-  if (!isUserLoaded || !isOrgLoaded || (user && membershipDocLoading)) {
+  // Show shimmer only for initial Clerk load — not for Firestore membership fetch
+  if (!isUserLoaded || !isOrgLoaded) {
     return (
-      <div className="min-h-screen bg-slate-50 flex items-center justify-center">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-sky-600 mx-auto mb-4" />
-          <p className="text-slate-500 text-sm">Loading your secure workspace...</p>
+      <div className="min-h-screen bg-slate-50 flex">
+        <div className="hidden md:flex flex-col w-64 bg-white border-r border-slate-100 h-screen">
+          <div className="p-5 border-b border-slate-100">
+            <div className="flex items-center gap-3">
+              <Skeleton className="h-10 w-10 rounded-xl" />
+              <div className="space-y-1.5 flex-1">
+                <Skeleton className="h-2.5 w-20" />
+                <Skeleton className="h-3 w-32" />
+              </div>
+            </div>
+          </div>
+          <div className="flex-1 p-3 space-y-1">
+            {[...Array(5)].map((_, i) => <Skeleton key={i} className="h-10 rounded-xl" />)}
+          </div>
+          <div className="p-3 border-t border-slate-100">
+            <Skeleton className="h-14 rounded-xl" />
+          </div>
+        </div>
+        <div className="flex-1 p-6 space-y-4">
+          <Skeleton className="h-8 w-48" />
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            {[...Array(3)].map((_, i) => <Skeleton key={i} className="h-28 rounded-2xl" />)}
+          </div>
+          <Skeleton className="h-64 rounded-2xl" />
         </div>
       </div>
     );
@@ -143,6 +158,7 @@ export default function OrgDashboard() {
                 mode={mode}
                 setMode={setMode}
                 unreadCount={unreadCount}
+                membershipLoading={membershipDocLoading}
               />
             </SheetContent>
           </Sheet>
@@ -181,12 +197,12 @@ export default function OrgDashboard() {
           mode={mode}
           setMode={setMode}
           unreadCount={unreadCount}
+          membershipLoading={membershipDocLoading}
         />
       </div>
 
       {/* Main Content */}
       <main className="flex-1 p-4 md:p-8 overflow-y-auto w-full max-w-7xl mx-auto">
-        {/* Owner upgrade request alert banners */}
         {visibleRequests.length > 0 && (
           <div className="mb-6 space-y-2">
             {visibleRequests.slice(0, 3).map((req: any) => (
@@ -250,10 +266,9 @@ export default function OrgDashboard() {
   );
 }
 
-function SidebarContent({ activeTab, setActiveTab, orgName, user, menuItems, isOwner, mode, setMode, unreadCount }: any) {
+function SidebarContent({ activeTab, setActiveTab, orgName, user, menuItems, isOwner, mode, setMode, unreadCount, membershipLoading }: any) {
   return (
     <div className="flex flex-col h-full">
-      {/* Logo */}
       <div className="p-5 border-b border-slate-100">
         <div className="flex items-center gap-3">
           <img src="/fundcircle-logo.png" alt="FC" className="h-10 w-10 rounded-xl object-cover object-top shadow-md shrink-0" />
@@ -264,16 +279,18 @@ function SidebarContent({ activeTab, setActiveTab, orgName, user, menuItems, isO
         </div>
       </div>
 
-      {/* Mode Switch (Owner only) */}
-      {isOwner && (
+      {/* Mode Switch — skeleton while role loads */}
+      {membershipLoading ? (
+        <div className="px-4 pt-4 pb-2">
+          <Skeleton className="h-9 rounded-xl w-full" />
+        </div>
+      ) : isOwner ? (
         <div className="px-4 pt-4 pb-2">
           <div className="flex rounded-xl bg-slate-100 p-1 gap-1">
             <button
               onClick={() => { setMode("admin"); setActiveTab("overview"); }}
               className={`flex-1 rounded-lg py-1.5 text-xs font-semibold transition-all ${
-                mode === "admin"
-                  ? "bg-white text-slate-900 shadow-sm"
-                  : "text-slate-500 hover:text-slate-700"
+                mode === "admin" ? "bg-white text-slate-900 shadow-sm" : "text-slate-500 hover:text-slate-700"
               }`}
             >
               Admin
@@ -281,45 +298,44 @@ function SidebarContent({ activeTab, setActiveTab, orgName, user, menuItems, isO
             <button
               onClick={() => { setMode("collector"); setActiveTab("daily"); }}
               className={`flex-1 rounded-lg py-1.5 text-xs font-semibold transition-all ${
-                mode === "collector"
-                  ? "bg-white text-slate-900 shadow-sm"
-                  : "text-slate-500 hover:text-slate-700"
+                mode === "collector" ? "bg-white text-slate-900 shadow-sm" : "text-slate-500 hover:text-slate-700"
               }`}
             >
               Collector
             </button>
           </div>
         </div>
-      )}
+      ) : null}
 
-      {/* Nav Items */}
       <div className="flex-1 py-3 px-3 space-y-0.5 overflow-y-auto">
-        {menuItems.map((item: any) => {
-          const Icon = item.icon;
-          const isActive = activeTab === item.id;
-          return (
-            <button
-              key={item.id}
-              onClick={() => setActiveTab(item.id)}
-              className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-left transition-all text-sm ${
-                isActive
-                  ? "bg-sky-50 text-sky-700 font-semibold shadow-sm"
-                  : "text-slate-600 hover:bg-slate-50 hover:text-slate-900"
-              }`}
-            >
-              <Icon className={`h-4.5 w-4.5 shrink-0 ${isActive ? "text-sky-600" : "text-slate-400"}`} />
-              <span className="flex-1">{item.label}</span>
-              {item.badge ? (
-                <span className="flex h-5 min-w-5 items-center justify-center rounded-full bg-red-500 text-white text-xs font-bold px-1">
-                  {item.badge}
-                </span>
-              ) : null}
-            </button>
-          );
-        })}
+        {membershipLoading
+          ? [...Array(5)].map((_, i) => <Skeleton key={i} className="h-10 rounded-xl" />)
+          : menuItems.map((item: any) => {
+              const Icon = item.icon;
+              const isActive = activeTab === item.id;
+              return (
+                <button
+                  key={item.id}
+                  onClick={() => setActiveTab(item.id)}
+                  className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-left transition-all text-sm ${
+                    isActive
+                      ? "bg-sky-50 text-sky-700 font-semibold shadow-sm"
+                      : "text-slate-600 hover:bg-slate-50 hover:text-slate-900"
+                  }`}
+                >
+                  <Icon className={`h-4.5 w-4.5 shrink-0 ${isActive ? "text-sky-600" : "text-slate-400"}`} />
+                  <span className="flex-1">{item.label}</span>
+                  {item.badge ? (
+                    <span className="flex h-5 min-w-5 items-center justify-center rounded-full bg-red-500 text-white text-xs font-bold px-1">
+                      {item.badge}
+                    </span>
+                  ) : null}
+                </button>
+              );
+            })
+        }
       </div>
 
-      {/* User section */}
       <div className="p-3 border-t border-slate-100">
         <div className="flex items-center gap-3 rounded-xl bg-slate-50 p-3 mb-2 border border-slate-100">
           <Avatar className="h-8 w-8">

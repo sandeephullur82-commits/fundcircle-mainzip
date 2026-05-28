@@ -7,6 +7,7 @@ import { Tabs, TabsContent } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { Skeleton } from "@/components/ui/skeleton";
 import { useState } from "react";
 import { Navigate } from "react-router-dom";
 import AgentOverview from "./AgentOverview";
@@ -26,12 +27,34 @@ export default function AgentDashboard() {
   const { isLoaded: isOrgLoaded, organization } = useOrganization();
   const [activeTab, setActiveTab] = useState("overview");
 
+  // Render shimmer only for the brief Clerk session check — not blocking on Firestore
   if (!isUserLoaded || !isOrgLoaded) {
     return (
-      <div className="min-h-screen bg-slate-50 flex items-center justify-center">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-emerald-600 mx-auto mb-4" />
-          <p className="text-slate-500 text-sm">Loading your collector console...</p>
+      <div className="min-h-screen bg-slate-50 flex">
+        <div className="hidden md:flex flex-col w-64 bg-white border-r border-slate-100 h-screen">
+          <div className="p-5 border-b border-slate-100">
+            <div className="flex items-center gap-3">
+              <Skeleton className="h-10 w-10 rounded-xl" />
+              <div className="space-y-1.5 flex-1">
+                <Skeleton className="h-2.5 w-20" />
+                <Skeleton className="h-3 w-32" />
+              </div>
+            </div>
+          </div>
+          <div className="flex-1 p-3 space-y-1">
+            {menuItems.map((_, i) => <Skeleton key={i} className="h-10 rounded-xl" />)}
+          </div>
+          <div className="p-3 border-t border-slate-100">
+            <Skeleton className="h-14 rounded-xl" />
+          </div>
+        </div>
+        <div className="flex-1 p-6 space-y-4">
+          <Skeleton className="h-8 w-48" />
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <Skeleton className="h-28 rounded-2xl" />
+            <Skeleton className="h-28 rounded-2xl" />
+          </div>
+          <Skeleton className="h-64 rounded-2xl" />
         </div>
       </div>
     );
@@ -102,7 +125,6 @@ export default function AgentDashboard() {
 function AgentSidebar({ activeTab, setActiveTab, user, organization }: any) {
   return (
     <div className="flex flex-col h-full overflow-y-auto">
-      {/* Logo */}
       <div className="p-5 border-b border-slate-100 shrink-0">
         <div className="flex items-center gap-3">
           <img src="/fundcircle-logo.png" alt="FC" className="h-10 w-10 rounded-xl object-cover object-top shadow-md shrink-0" />
@@ -113,7 +135,6 @@ function AgentSidebar({ activeTab, setActiveTab, user, organization }: any) {
         </div>
       </div>
 
-      {/* Nav */}
       <div className="flex-1 py-3 px-3 space-y-0.5">
         {menuItems.map((item) => {
           const Icon = item.icon;
@@ -135,7 +156,6 @@ function AgentSidebar({ activeTab, setActiveTab, user, organization }: any) {
         })}
       </div>
 
-      {/* User */}
       <div className="p-3 border-t border-slate-100 shrink-0">
         <div className="flex items-center gap-3 rounded-xl bg-slate-50 p-3 mb-2 border border-slate-100">
           <Avatar className="h-8 w-8">

@@ -1,0 +1,116 @@
+Optimize the entire FundCircle loading system for INSTANT dashboard navigation and remove all slow workspace loading screens.
+
+CURRENT PROBLEM:
+The app shows:
+“Loading your secure workspace...”
+for too long after login, onboarding, refresh, and dashboard navigation.
+
+The application feels slow because too many async operations block rendering.
+
+FULL PERFORMANCE OPTIMIZATION REQUIRED:
+
+1. Remove blocking full-screen loaders.
+Replace with:
+- skeleton loaders
+- progressive rendering
+- instant dashboard shell
+
+2. Dashboard must render immediately:
+- sidebar first
+- header first
+- stats load asynchronously
+- tables lazy load
+- charts lazy load
+
+3. Never wait for all Firestore queries before rendering UI.
+
+4. Optimize authentication flow:
+- cache Clerk session
+- cache organization data
+- cache user role
+- avoid repeated auth checks
+
+5. Create centralized auth state manager:
+- single session fetch
+- single org fetch
+- single role fetch
+- reuse globally
+
+6. Add aggressive caching:
+- organization
+- user profile
+- subscription
+- limits
+- collector list
+
+7. Use parallel loading:
+BAD:
+await user
+await org
+await limits
+
+GOOD:
+Promise.all([
+  user,
+  org,
+  limits
+])
+
+8. Prevent infinite loaders:
+If loading exceeds 3 seconds:
+- auto retry once
+- fallback to dashboard shell
+- show toast instead of blocking screen
+
+9. Add route preloading:
+Preload:
+- /dashboard/owner
+- /dashboard/collector
+- /customers
+- /collections
+
+10. Add optimistic rendering:
+Show UI instantly while Firestore sync happens in background.
+
+11. Add local storage caching:
+Cache:
+- orgId
+- role
+- profile
+- subscription plan
+
+12. Remove duplicate Firestore calls.
+Many components currently fetch same data repeatedly.
+
+13. Add React optimization:
+- React.memo
+- useMemo
+- useCallback
+- lazy imports
+- suspense boundaries
+
+14. Add realtime listener cleanup:
+Prevent memory leaks and multiple listeners.
+
+15. Improve dashboard startup target:
+Initial render under:
+- 1 second on desktop
+- 2 seconds on mobile
+
+16. Replace full-page spinner with:
+- lightweight shimmer UI
+- partial loaders only
+
+17. Add error recovery:
+If Firestore fails:
+- render cached data
+- retry silently
+
+18. Final result:
+Dashboard should feel instant like:
+- Notion
+- Linear
+- Slack
+- modern SaaS apps
+
+No long black loading screen should appear anymore.
