@@ -1,0 +1,179 @@
+Remove ALL custom authentication flows and configure ONLY Clerk default authentication with single OTP verification.
+
+==================================================
+CURRENT PROBLEM
+
+Users receive TWO OTP emails.
+
+This means:
+
+- custom OTP flow still exists
+  OR
+- Clerk email verification is duplicated
+  OR
+- custom auth logic is mixed with Clerk auth
+
+==================================================
+FINAL AUTH SYSTEM
+
+Use ONLY Clerk authentication.
+
+REMOVE:
+
+- custom OTP
+- Firebase auth
+- manual verification
+- duplicate verification handlers
+- custom email verification APIs
+- extra OTP screens
+
+==================================================
+DELETE ALL CUSTOM AUTH CODE
+
+Remove:
+
+- sendOTP()
+- verifyOTP()
+- resendOTP()
+- custom verification pages
+- Firebase Authentication
+- manual email verification logic
+- secondary auth providers
+
+==================================================
+REMOVE FIREBASE AUTH COMPLETELY
+
+KEEP ONLY:
+
+- Firestore
+- Firebase Storage
+
+REMOVE:
+
+- Firebase Auth SDK
+- signInWithEmailAndPassword
+- createUserWithEmailAndPassword
+- phone auth
+- Firebase OTP
+
+==================================================
+USE ONLY CLERK
+
+Authentication must use ONLY:
+
+- Clerk SignUp
+- Clerk SignIn
+- Clerk Invitation
+- Clerk Session
+- Clerk Middleware
+
+==================================================
+SIGN-UP FLOW
+
+Landing Page
+↓
+Get Started
+↓
+Clerk SignUp
+↓
+ONE OTP email ONLY
+↓
+Verify email
+↓
+Create Clerk session
+↓
+Redirect:
+→ /onboarding
+
+==================================================
+SIGN-IN FLOW
+
+Sign In
+↓
+Email + Password ONLY
+↓
+NO OTP FOR SIGN-IN
+↓
+Create session
+↓
+Role-based redirect
+
+==================================================
+IMPORTANT
+
+DO NOT use OTP during sign-in.
+
+OTP should happen ONLY during:
+
+- first registration
+- email verification
+- invitation acceptance
+- password reset
+
+==================================================
+INVITATION FLOW
+
+Owner invites Agent/Customer
+↓
+Clerk invitation email sent
+↓
+User clicks invitation
+↓
+Set password
+↓
+Email verification (single OTP)
+↓
+Session created
+↓
+Complete profile
+↓
+Role dashboard
+
+==================================================
+ROLE-BASED REDIRECT
+
+After login:
+
+OWNER
+→ /dashboard/owner
+
+AGENT
+→ /dashboard/agent
+
+CUSTOMER
+→ /dashboard/customer
+
+==================================================
+REMOVE DUPLICATE VERIFICATION
+
+Ensure:
+
+- no second OTP request
+- no manual verification trigger
+- no duplicate Clerk verification call
+- no multiple signUp.create() calls
+
+==================================================
+CHECK FOR DUPLICATE CALLS
+
+Search and remove duplicate logic:
+
+- signUp.prepareEmailAddressVerification()
+- signUp.attemptEmailAddressVerification()
+- signIn.create()
+- signUp.create()
+
+These should execute ONLY ONCE.
+
+==================================================
+FINAL REQUIREMENT
+
+The platform must:
+
+- use ONLY Clerk auth
+- send only ONE OTP email
+- use password-based sign-in
+- remove all custom auth flows
+- support role-based redirects
+- keep Firestore realtime sync working
+- maintain secure SaaS authentication architecture

@@ -39,7 +39,15 @@ export default function AuthRedirectManager() {
   useEffect(() => {
     if (!isLoaded) return;
 
-    if (isSignedIn && user && isAuthOnlyPath(pathname)) {
+    // Only redirect away from auth pages when the user is FULLY signed in with
+    // a verified email. Clerk sets isSignedIn=true mid-flow (before OTP is
+    // entered), so checking email verification status prevents navigating away
+    // from /sign-up while the OTP step is still visible — which would tear down
+    // the Clerk component and trigger a second OTP email.
+    const emailVerified =
+      user?.primaryEmailAddress?.verification?.status === "verified";
+
+    if (isSignedIn && user && emailVerified && isAuthOnlyPath(pathname)) {
       navigate("/auth/callback", { replace: true });
       return;
     }
