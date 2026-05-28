@@ -1,20 +1,17 @@
 <div align="center">
-<img width="1200" height="475" alt="GHBanner" src="https://ai.google.dev/static/site-assets/images/share-ais-513315318.png" />
+<img width="200" height="200" alt="FundCircle Logo" src="/public/fundcircle-logo.png" />
 </div>
 
-# Run and deploy your AI Studio app
+# FundCircle
 
-This contains everything you need to run your app locally.
-
-View your app in AI Studio: https://ai.studio/apps/704fb2e2-45b3-4538-b205-c543ab76c075
+Digital Pigmy Collection Management Platform for operators, agents, and customers.
 
 ## Run Locally
 
-**Prerequisites:**  Node.js
-
+**Prerequisites:** Node.js
 
 1. Install dependencies:
    `npm install`
-2. Set the `GEMINI_API_KEY` in [.env.local](.env.local) to your Gemini API key
+2. Set the required environment variables (Clerk, Firebase) in Replit Secrets
 3. Run the app:
    `npm run dev`

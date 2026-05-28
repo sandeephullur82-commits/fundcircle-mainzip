@@ -2,7 +2,5 @@
   "name": "FundCircle",
   "description": "Digital Pigmy Collection Management Platform for operators, agents, and customers.",
   "requestFramePermissions": [],
-  "majorCapabilities": [
-    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
-  ]
+  "majorCapabilities": []
 }

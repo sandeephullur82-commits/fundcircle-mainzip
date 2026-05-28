@@ -1,0 +1,345 @@
+Fix the complete FundCircle routing and authentication flow.
+
+CURRENT ISSUE:
+The landing page → authentication → onboarding → dashboard navigation flow is broken or inconsistent.
+
+REBUILD THE COMPLETE ROUTING SYSTEM.
+
+==================================================
+PUBLIC ROUTES
+==================================================
+
+/
+→ Landing Page
+
+/workspace-selection
+→ Role selection before sign in
+
+/sign-in
+→ Shared Clerk Sign In
+
+/sign-up
+→ Owner registration only
+
+/auth/callback
+→ Authentication redirect handler
+
+==================================================
+PRIVATE ROUTES
+==================================================
+
+/dashboard/owner
+/dashboard/agent
+/dashboard/customer
+
+/onboarding
+/complete-profile
+/billing
+
+==================================================
+LANDING PAGE FLOW
+==================================================
+
+Navbar:
+- Features
+- Workflow
+- Pricing
+- Contact
+- Sign In
+- Get Started
+
+==================================================
+LANDING PAGE BUTTON FLOW
+==================================================
+
+Register Organization
+→ /sign-up
+
+Get Started
+→ /sign-up
+
+Navbar Sign In
+→ /workspace-selection
+
+Owner Login Card
+→ save role = owner
+→ /sign-in
+
+Agent Login Card
+→ save role = agent
+→ /sign-in
+
+Customer Login Card
+→ save role = customer
+→ /sign-in
+
+==================================================
+WORKSPACE SELECTION FLOW
+==================================================
+
+Route:
+/workspace-selection
+
+Show:
+- Owner
+- Pigmy Collector
+- Customer
+
+When selecting role:
+save:
+preferredLoginRole
+
+Then:
+→ /sign-in
+
+==================================================
+SIGN-UP FLOW
+==================================================
+
+IMPORTANT:
+ONLY organization owners can sign up.
+
+Collectors and customers CANNOT access public signup.
+
+==================================================
+OWNER SIGNUP FLOW
+==================================================
+
+/sign-up
+↓
+Enter owner details
+↓
+Clerk OTP verification
+↓
+Create Clerk session
+↓
+Redirect:
+→ /onboarding
+
+==================================================
+ONBOARDING FLOW
+==================================================
+
+ONLY after OTP verification succeeds.
+
+==================================================
+STEP 1
+==================================================
+
+Organization details:
+- Organization Name
+- Owner Name
+- Phone Number (10 digits only)
+- Address
+- Logo Upload
+
+Currency:
+ONLY Indian Rupee (₹)
+
+==================================================
+STEP 2
+==================================================
+
+Subscription selection:
+- Free
+- Starter
+- Growth
+- Enterprise
+
+==================================================
+STEP 3
+==================================================
+
+If FREE:
+skip payment
+
+If paid plan:
+show internal payment modal
+
+==================================================
+STEP 4
+==================================================
+
+Create:
+- Clerk organization
+- Firestore organization
+- organizationMembers
+- subscription record
+- usage tracking
+
+Assign:
+role = owner
+clerkRole = org:owner
+
+==================================================
+STEP 5
+==================================================
+
+Redirect:
+→ /dashboard/owner
+
+==================================================
+SIGN-IN FLOW
+==================================================
+
+Shared login for:
+- owner
+- agent
+- customer
+
+After successful login:
+→ /auth/callback
+
+==================================================
+AUTH CALLBACK FLOW
+==================================================
+
+Responsibilities:
+1. detect Clerk session
+2. detect organization membership
+3. detect Firestore role
+4. sync Firestore user
+5. check onboarding status
+6. check profile completion
+7. redirect correct dashboard
+
+==================================================
+ROLE REDIRECTS
+==================================================
+
+OWNER
+→ /dashboard/owner
+
+AGENT
+→ /dashboard/agent
+
+CUSTOMER
+→ /dashboard/customer
+
+==================================================
+AGENT INVITATION FLOW
+==================================================
+
+Owner dashboard
+↓
+Invite Agent
+↓
+Firestore pending member created instantly
+↓
+Realtime dashboard update
+↓
+Clerk invitation email sent
+↓
+Agent accepts invitation
+↓
+Set password
+↓
+Login
+↓
+/auth/callback
+↓
+/complete-profile
+↓
+/dashboard/agent
+
+==================================================
+CUSTOMER FLOW
+==================================================
+
+Owner/Agent invites customer
+↓
+Firestore record created
+↓
+Invitation email
+↓
+Customer accepts
+↓
+Password setup
+↓
+Complete profile
+↓
+Customer dashboard
+
+==================================================
+SESSION FLOW
+==================================================
+
+If user already authenticated:
+DO NOT show:
+- landing page auth
+- sign-in
+- sign-up
+- onboarding again
+
+Automatically redirect dashboard.
+
+==================================================
+AUTO REDIRECT RULES
+==================================================
+
+Authenticated OWNER:
+→ /dashboard/owner
+
+Authenticated AGENT:
+→ /dashboard/agent
+
+Authenticated CUSTOMER:
+→ /dashboard/customer
+
+==================================================
+MIDDLEWARE PROTECTION
+==================================================
+
+Protect all private routes.
+
+Unauthenticated users:
+→ redirect "/"
+
+==================================================
+ROLE ACCESS CONTROL
+==================================================
+
+OWNER:
+- full organization access
+
+AGENT:
+- collections
+- assigned customers
+
+CUSTOMER:
+- own savings data only
+
+==================================================
+LOADING FIX
+==================================================
+
+Fix infinite:
+"Loading your workspace..."
+
+Add:
+- timeout fallback
+- error boundary
+- proper async await
+- skeleton loaders
+
+==================================================
+FINAL REQUIREMENT
+==================================================
+
+The routing system must behave like a production-grade SaaS platform:
+
+Landing Page
+↓
+Authentication
+↓
+OTP Verification
+↓
+Onboarding
+↓
+Subscription
+↓
+Dashboard
+↓
+Persistent Session
+↓
+Realtime Firestore Updates
