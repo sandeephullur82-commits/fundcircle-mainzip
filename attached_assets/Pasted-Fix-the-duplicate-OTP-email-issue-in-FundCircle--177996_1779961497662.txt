@@ -1,0 +1,159 @@
+Fix the duplicate OTP email issue in FundCircle.
+
+==================================================
+CURRENT ISSUE
+
+Clerk OTP email is being received TWO TIMES.
+
+The OTP API/function must execute ONLY ONE TIME.
+
+==================================================
+ROOT CAUSE
+
+The authentication request is being triggered multiple times due to:
+
+- duplicate submit handlers
+- React StrictMode double render
+- useEffect loops
+- button double clicks
+- multiple auth calls
+- repeated Clerk verification requests
+
+==================================================
+REQUIRED FIX
+
+OTP generation must happen ONLY ONCE per user action.
+
+==================================================
+IMPORTANT RULE
+
+NEVER call:
+
+prepareEmailAddressVerification()
+
+OR
+
+signIn.create()
+
+more than one time.
+
+==================================================
+ADD LOADING LOCK
+
+Before sending OTP:
+
+if (loading) return
+
+setLoading(true)
+
+==================================================
+EXAMPLE FIX
+
+const [loading, setLoading] = useState(false)
+
+const handleSendOTP = async () => {
+
+if (loading) return
+
+try {
+
+setLoading(true)
+
+await signUp.create({
+  emailAddress: email
+})
+
+await signUp.prepareEmailAddressVerification({
+  strategy: "email_code"
+})
+
+} catch (error) {
+console.error(error)
+} finally {
+setLoading(false)
+}
+}
+
+==================================================
+IMPORTANT UI FIX
+
+When user clicks Continue:
+
+- disable button immediately
+- show loading spinner
+- prevent double click
+- prevent Enter key spam
+
+==================================================
+BUTTON STATE
+
+<Button
+disabled={loading}
+
+«»
+
+{loading ? "Sending OTP..." : "Continue"}
+
+</Button>==================================================
+REMOVE DUPLICATE CALLS
+
+CHECK ENTIRE PROJECT.
+
+REMOVE OTP calls from:
+
+- useEffect()
+- auto redirects
+- auth listeners
+- multiple forms
+- duplicate submit handlers
+- page refresh logic
+
+==================================================
+STRICT MODE ISSUE
+
+React StrictMode may cause duplicate execution in development.
+
+Ensure OTP call is NOT inside:
+useEffect()
+
+==================================================
+WRONG PATTERN
+
+useEffect(() => {
+sendOTP()
+}, [])
+
+REMOVE THIS COMPLETELY.
+
+==================================================
+CORRECT FLOW
+
+User clicks Continue
+↓
+ONE auth request sent
+↓
+ONE Clerk OTP email received
+↓
+User enters OTP
+↓
+Session created
+↓
+Redirect to dashboard
+
+==================================================
+SIGNIN FLOW
+
+Sign-in must also use:
+ONE OTP only.
+
+==================================================
+FINAL REQUIREMENT
+
+The application must:
+
+- send ONLY one OTP email
+- execute OTP request only once
+- prevent duplicate submits
+- remove repeated Clerk calls
+- keep Clerk email OTP authentication
+- work correctly in production and development
