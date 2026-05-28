@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from "react";
-import { useSignIn } from "@clerk/clerk-react";
+import { useSignIn, useClerk } from "@clerk/clerk-react";
 import { useNavigate, Link } from "react-router-dom";
 import { toast } from "sonner";
 import { Eye, EyeOff, Loader2, ArrowLeft, RefreshCw, ShieldCheck } from "lucide-react";
@@ -7,6 +7,7 @@ import AuthLayout from "./AuthLayout";
 
 export default function ResetPasswordPage() {
   const { isLoaded, signIn, setActive } = useSignIn();
+  const clerk = useClerk();
   const navigate = useNavigate();
   const [otp, setOtp] = useState(["", "", "", "", "", ""]);
   const [newPassword, setNewPassword] = useState("");
@@ -95,11 +96,19 @@ export default function ResetPasswordPage() {
         code,
         password: newPassword,
       });
-      if (result.status === "complete") {
+      if (result.status === "complete" && result.createdSessionId) {
         await setActive({ session: result.createdSessionId });
         sessionStorage.removeItem("fc_reset_email");
         toast.success("Password updated successfully!");
         navigate("/router", { replace: true });
+      } else if (result.status === "needs_second_factor") {
+        console.warn("[FundCircle Reset] MFA detected — signing out partial session");
+        try { await clerk.signOut(); } catch { /* ignore */ }
+        setError(
+          "Your account has multi-factor authentication (MFA) enabled. " +
+          "FundCircle does not support MFA. Please ask your administrator to disable " +
+          "MFA in the Clerk dashboard under User Authentication → Multi-factor, then try again."
+        );
       } else {
         setError("Could not complete password reset. Please try again.");
       }

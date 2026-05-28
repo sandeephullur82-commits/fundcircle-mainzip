@@ -1,0 +1,169 @@
+You are a senior Clerk authentication engineer.
+
+Fix the FundCircle custom authentication system completely.
+
+CURRENT ISSUE:
+The custom login page shows:
+
+"Two-factor authentication is required but not yet supported in this interface."
+
+The app must NOT use MFA or second-factor authentication.
+
+==================================================
+REMOVE ALL MFA / 2FA LOGIC
+==================================================
+
+Remove ALL:
+- second factor flows
+- MFA verification
+- authenticator app logic
+- backup code logic
+- phone code strategy
+- reset password second-factor flows
+- prepareSecondFactor
+- attemptSecondFactor
+- factorVerification
+- multi-session verification
+
+Search entire project for:
+
+prepareSecondFactor
+attemptSecondFactor
+secondFactor
+factorVerification
+reset_password_email_code
+phone_code
+backup_code
+totp
+mfa
+multiFactor
+strategy: "phone_code"
+strategy: "reset_password_email_code"
+
+Delete all related code.
+
+==================================================
+FINAL AUTH FLOW
+==================================================
+
+The system must support ONLY:
+
+1. Email + Password Signup
+2. Email Verification OTP
+3. Email + Password Login
+4. Forgot Password via Email OTP
+5. Logout
+
+NO MFA.
+NO SECOND FACTOR.
+NO PHONE OTP.
+NO AUTHENTICATOR APP.
+
+==================================================
+SIGNUP FLOW
+==================================================
+
+Use ONLY:
+
+signUp.create({
+  emailAddress,
+  password
+})
+
+Then:
+
+signUp.prepareEmailAddressVerification({
+  strategy: "email_code"
+})
+
+Then verify with:
+
+signUp.attemptEmailAddressVerification({
+  code
+})
+
+After verification:
+- create session
+- redirect to onboarding
+
+==================================================
+SIGNIN FLOW
+==================================================
+
+Use ONLY:
+
+signIn.create({
+  identifier,
+  password
+})
+
+If complete:
+- setActive session
+- redirect dashboard
+
+DO NOT:
+- ask second factor
+- check MFA
+- continue partial session
+
+==================================================
+FORGOT PASSWORD FLOW
+==================================================
+
+Use ONLY email reset OTP.
+
+NO MFA.
+
+==================================================
+ERROR FIXING
+==================================================
+
+Fix all partial session issues.
+
+If Clerk returns:
+- needs_second_factor
+- requires_second_factor
+- missing_requirements
+
+Then:
+- sign out session
+- destroy old session
+- show:
+  "Please login again."
+
+==================================================
+SESSION CLEANUP
+==================================================
+
+On app load:
+- clear broken Clerk sessions
+- prevent stale MFA states
+- prevent partial verification loops
+
+==================================================
+CUSTOM AUTH UI
+==================================================
+
+Keep fully custom UI.
+
+DO NOT use:
+- Clerk hosted pages
+- Clerk default components
+- Clerk default modals
+
+Use only:
+- Clerk SDK backend methods
+- custom React UI
+
+==================================================
+FINAL RESULT
+==================================================
+
+After fix:
+- user logs in directly with email/password
+- only one email OTP for signup verification
+- no MFA error
+- no second-factor screen
+- no unsupported interface error
+- stable Clerk session handling
+- clean authentication experience

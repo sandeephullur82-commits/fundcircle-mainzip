@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { useSignIn, useUser } from "@clerk/clerk-react";
+import { useSignIn, useClerk, useUser } from "@clerk/clerk-react";
 import { useNavigate, Link } from "react-router-dom";
 import { Eye, EyeOff, Loader2, AlertCircle } from "lucide-react";
 import AuthLayout from "./AuthLayout";
@@ -15,28 +15,15 @@ function clerkErrorMessage(err: any): string {
   if (code === "too_many_requests") return "Too many attempts. Please wait a moment and try again.";
   if (code === "session_exists") return "You are already signed in.";
   if (code === "user_locked") return "This account has been locked. Please contact support.";
+  if (code === "form_identifier_exists") return "An account with this email already exists.";
 
   return long || short || "An unexpected error occurred. Please try again.";
-}
-
-function statusMessage(status: string): string {
-  switch (status) {
-    case "needs_first_factor":
-      return "Additional verification required. Please check your Clerk dashboard — email/password auth may not be fully enabled.";
-    case "needs_second_factor":
-      return "Two-factor authentication is required but not yet supported in this interface.";
-    case "needs_new_password":
-      return "You need to set a new password. Please use the forgot password flow.";
-    case "needs_identifier":
-      return "Please enter your email address.";
-    default:
-      return `Sign-in returned unexpected status: "${status}". Please contact support.`;
-  }
 }
 
 export default function SignInPage() {
   const { isLoaded: userLoaded, isSignedIn } = useUser();
   const { isLoaded, signIn, setActive } = useSignIn();
+  const clerk = useClerk();
   const navigate = useNavigate();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -62,24 +49,50 @@ export default function SignInPage() {
         password,
       });
 
-      console.log("[FundCircle Sign-In] result status:", result.status);
-      console.log("[FundCircle Sign-In] createdSessionId:", result.createdSessionId);
+      console.log("[FundCircle Sign-In] status:", result.status, "| sessionId:", result.createdSessionId);
 
       if (result.status === "complete" && result.createdSessionId) {
-        try {
-          await setActive({ session: result.createdSessionId });
-          navigate("/router", { replace: true });
-        } catch (activateErr: any) {
-          console.error("[FundCircle Sign-In] setActive failed:", activateErr);
-          setError(clerkErrorMessage(activateErr));
-        }
-      } else if (result.status === "complete" && !result.createdSessionId) {
-        console.error("[FundCircle Sign-In] status complete but no createdSessionId");
-        setError("Session could not be established. Please try again.");
-      } else {
-        console.warn("[FundCircle Sign-In] non-complete status:", result.status, result);
-        setError(statusMessage(result.status));
+        await setActive({ session: result.createdSessionId });
+        navigate("/router", { replace: true });
+        return;
       }
+
+      if (result.status === "complete" && !result.createdSessionId) {
+        console.error("[FundCircle Sign-In] complete but no sessionId");
+        setError("Session could not be established. Please try again.");
+        return;
+      }
+
+      if (
+        result.status === "needs_second_factor" ||
+        (result as any).status === "requires_second_factor"
+      ) {
+        console.warn("[FundCircle Sign-In] MFA detected — signing out partial session");
+        try { await clerk.signOut(); } catch { /* ignore */ }
+        setError(
+          "Your account has multi-factor authentication (MFA) enabled. " +
+          "FundCircle does not support MFA. Please ask your administrator to disable " +
+          "MFA in the Clerk dashboard under User Authentication → Multi-factor, then try again."
+        );
+        return;
+      }
+
+      if (result.status === "needs_first_factor") {
+        setError(
+          "Email/password authentication is not fully enabled. Please ask your administrator " +
+          "to enable Email + Password in the Clerk dashboard under User Authentication → Email address."
+        );
+        return;
+      }
+
+      if (result.status === "needs_new_password") {
+        setError("Your password has expired. Please use the forgot password flow to set a new one.");
+        return;
+      }
+
+      console.warn("[FundCircle Sign-In] unexpected status:", result.status);
+      setError(`Sign-in returned an unexpected state. Please try again or contact support.`);
+
     } catch (err: any) {
       console.error("[FundCircle Sign-In] error:", err);
       setError(clerkErrorMessage(err));
