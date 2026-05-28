@@ -1,4 +1,4 @@
-import { collection, addDoc, updateDoc, deleteDoc, doc, serverTimestamp, getDoc, setDoc, query, where, getDocs } from "firebase/firestore";
+import { collection, addDoc, updateDoc, deleteDoc, doc, serverTimestamp, getDoc, setDoc, query, where, getDocs, increment } from "firebase/firestore";
 import { db } from "./firebase";
 import { Collection, Loan, EMIPayment, Membership } from "../types";
 
@@ -783,10 +783,72 @@ export async function sendOrganizationInvitation(options: {
     throw new Error(errorMessage);
   }
 
+  // Increment org usage counter
+  try {
+    await setDoc(doc(db, "organizations", options.organizationId), {
+      "usage.activeCustomers": increment(1),
+      updatedAt: serverTimestamp(),
+    }, { merge: true });
+  } catch (_) {}
+
   return {
     success: true,
     message: `Invitation sent to ${emailKey}. They will receive an email to join the organization.`,
     invitationId: pendingInviteId,
   };
+}
+
+// ─────────────────────────────────────────────────────────────
+// Subscription upgrade request from agent
+// ─────────────────────────────────────────────────────────────
+
+export async function requestPlanUpgrade(options: {
+  organizationId: string;
+  agentId: string;
+  agentName: string;
+  currentPlan: string;
+}): Promise<string> {
+  // Check for existing PENDING request from this agent to avoid duplicates
+  const existingQ = query(
+    collection(db, "upgradeRequests"),
+    where("organizationId", "==", options.organizationId),
+    where("requestedBy", "==", options.agentId),
+    where("status", "==", "PENDING"),
+  );
+  const existing = await getDocs(existingQ);
+  if (!existing.empty) return existing.docs[0].id;
+
+  const reqRef = doc(collection(db, "upgradeRequests"));
+  await setDoc(reqRef, {
+    id: reqRef.id,
+    organizationId: options.organizationId,
+    requestedBy: options.agentId,
+    requestedByName: options.agentName,
+    currentPlan: options.currentPlan,
+    type: "CUSTOMER_LIMIT",
+    status: "PENDING",
+    createdAt: serverTimestamp(),
+  });
+  return reqRef.id;
+}
+
+export async function resolveUpgradeRequests(organizationId: string): Promise<void> {
+  const q = query(
+    collection(db, "upgradeRequests"),
+    where("organizationId", "==", organizationId),
+    where("status", "==", "PENDING"),
+  );
+  const snap = await getDocs(q);
+  const updates = snap.docs.map((d) =>
+    updateDoc(doc(db, "upgradeRequests", d.id), { status: "RESOLVED", resolvedAt: serverTimestamp() })
+  );
+  await Promise.all(updates);
+}
+
+export async function ignoreUpgradeRequest(requestId: string): Promise<void> {
+  await updateDoc(doc(db, "upgradeRequests", requestId), {
+    status: "IGNORED",
+    ignoredAt: serverTimestamp(),
+  });
 }
 

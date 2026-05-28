@@ -4,6 +4,7 @@ import { useDocumentRealtime, useCollectionRealtime } from "@/lib/firestore-hook
 import { doc, setDoc, collection, serverTimestamp } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import { where } from "firebase/firestore";
+import { resolveUpgradeRequests } from "@/lib/services";
 import { Membership } from "@/types";
 import { Zap, TrendingUp, Crown, Sparkles, Check, CreditCard, ArrowRight, Shield, Loader2 } from "lucide-react";
 import { toast } from "sonner";
@@ -130,6 +131,9 @@ export default function OrgBilling() {
           createdAt: serverTimestamp(),
         });
       }
+      // Resolve any pending upgrade requests now that the plan has been upgraded
+      try { await resolveUpgradeRequests(organization.id); } catch (_) {}
+
       toast.success(`Plan updated to ${upgradePlanData.name}!`);
       setShowUpgrade(false);
       setUpgradeStep("plan");

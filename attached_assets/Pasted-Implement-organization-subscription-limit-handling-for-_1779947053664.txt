@@ -1,0 +1,195 @@
+Implement organization subscription limit handling for agent-created customers.
+
+CURRENT BUSINESS RULE:
+Agents are allowed to add customers.
+
+BUT:
+Customer creation must respect the organization subscription limits.
+
+==================================================
+PLAN LIMIT FLOW
+
+Before creating a customer:
+
+Check organization usage.
+
+==================================================
+FIRESTORE STRUCTURE
+
+organizations/{orgId}
+{
+plan: "free",
+
+limits: {
+maxAgents: 1,
+maxCustomers: 25,
+maxCollectionsPerMonth: 250
+},
+
+usage: {
+activeAgents: 1,
+activeCustomers: 25,
+collectionsThisMonth: 120
+}
+}
+
+==================================================
+CUSTOMER CREATION VALIDATION
+
+Before agent creates customer:
+
+CHECK:
+
+usage.activeCustomers >= limits.maxCustomers
+
+==================================================
+IF LIMIT AVAILABLE
+
+Allow customer creation.
+
+Create:
+
+- customer document
+- customer profile
+- customer invitation
+
+Then increment:
+
+usage.activeCustomers += 1
+
+==================================================
+IF LIMIT REACHED
+
+DO NOT create customer.
+
+Show upgrade limit modal.
+
+==================================================
+LIMIT MODAL UI
+
+Title:
+Customer Limit Reached
+
+Message:
+Your organization has reached the maximum number of customers allowed in the current subscription plan.
+
+Buttons:
+
+- Request Upgrade
+- Close
+
+==================================================
+REQUEST UPGRADE FLOW
+
+If agent clicks:
+Request Upgrade
+
+Create Firestore document:
+
+upgradeRequests/{requestId}
+{
+organizationId,
+requestedBy: agentId,
+requestedByName,
+currentPlan,
+
+type: "CUSTOMER_LIMIT",
+
+status: "PENDING",
+
+createdAt
+}
+
+==================================================
+OWNER REALTIME ALERT
+
+Owner dashboard must instantly show:
+
+"Agent requested a subscription upgrade because customer limit has been reached."
+
+Buttons:
+
+- Upgrade Plan
+- Ignore
+
+==================================================
+OWNER SUBSCRIPTION CONTROL
+
+ONLY organization owners can:
+
+- upgrade plans
+- manage billing
+- access payments
+- change subscription
+
+==================================================
+AGENT RESTRICTIONS
+
+Agents:
+
+- cannot access billing
+- cannot upgrade directly
+- cannot manage subscriptions
+
+Agents can ONLY:
+
+- request upgrade
+
+==================================================
+REALTIME UPDATE FLOW
+
+When owner upgrades plan:
+
+Firestore updates:
+limits.maxCustomers
+
+Realtime listener updates:
+
+- owner dashboard
+- agent dashboard
+
+WITHOUT refresh.
+
+==================================================
+UPDATED DASHBOARD PLAN CARD
+
+Show realtime usage:
+
+Current Plan: FREE
+
+Agents:
+1 / 1
+
+Customers:
+25 / 25
+
+Collections:
+120 / 250
+
+==================================================
+UPGRADE RESULT
+
+After owner upgrades:
+
+FREE → STARTER
+
+Limits become:
+
+Customers:
+25 → 100
+
+Agent dashboard instantly updates.
+
+Agent can now create customers successfully.
+
+==================================================
+FINAL REQUIREMENT
+
+The subscription system must behave like a production SaaS platform with:
+
+- realtime usage tracking
+- role-based subscription permissions
+- agent upgrade requests
+- owner-controlled billing
+- Firestore realtime synchronization
+- smooth responsive UI

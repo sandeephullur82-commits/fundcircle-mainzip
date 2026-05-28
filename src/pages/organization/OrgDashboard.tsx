@@ -2,6 +2,7 @@ import { useOrganization, useUser, SignOutButton } from "@clerk/clerk-react";
 import {
   LogOut, Users, Wallet, CreditCard, FileText, Settings,
   Bell, Menu, CalendarDays, ClipboardList, LayoutDashboard,
+  ArrowUpCircle, X,
 } from "lucide-react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { normalizeClerkRole, isAgentRole, isCustomerRole, isOwnerRole } from "@/lib/auth/get-user-role";
@@ -10,8 +11,9 @@ import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { useState, useEffect } from "react";
 import { doc, setDoc, serverTimestamp } from "firebase/firestore";
+import { where } from "firebase/firestore";
 import { db } from "@/lib/firebase";
-import { membershipIdFor } from "@/lib/services";
+import { membershipIdFor, ignoreUpgradeRequest } from "@/lib/services";
 import { useDocumentRealtime, useCollectionRealtime } from "@/lib/firestore-hooks";
 import { Navigate } from "react-router-dom";
 import OrgOverview from "./OrgOverview";
@@ -40,10 +42,22 @@ export default function OrgDashboard() {
   const { data: notifications } = useCollectionRealtime<any>("notifications");
   const unreadCount = notifications.filter((n: any) => !n.read).length;
 
+  const { data: upgradeRequests } = useCollectionRealtime<any>("upgradeRequests", [where("status", "==", "PENDING")]);
+  const [dismissedRequestIds, setDismissedRequestIds] = useState<Set<string>>(new Set());
+
   const clerkRole = normalizeClerkRole((user?.publicMetadata as any)?.role as string | undefined);
   const membershipRoleNormalized = normalizeClerkRole(membershipDoc?.role?.toString() || null);
   const effectiveRole = membershipRoleNormalized || clerkRole || null;
   const isOwner = isOwnerRole(effectiveRole);
+
+  const visibleRequests = isOwner
+    ? upgradeRequests.filter((r: any) => !dismissedRequestIds.has(r.id))
+    : [];
+
+  const handleIgnoreRequest = async (requestId: string) => {
+    setDismissedRequestIds(prev => new Set([...prev, requestId]));
+    try { await ignoreUpgradeRequest(requestId); } catch (_) {}
+  };
 
   const adminMenuItems = [
     { id: "overview", label: "Dashboard", icon: LayoutDashboard },
@@ -172,6 +186,48 @@ export default function OrgDashboard() {
 
       {/* Main Content */}
       <main className="flex-1 p-4 md:p-8 overflow-y-auto w-full max-w-7xl mx-auto">
+        {/* Owner upgrade request alert banners */}
+        {visibleRequests.length > 0 && (
+          <div className="mb-6 space-y-2">
+            {visibleRequests.slice(0, 3).map((req: any) => (
+              <div
+                key={req.id}
+                className="flex items-center gap-4 rounded-2xl bg-amber-50 border border-amber-200 px-5 py-3.5 shadow-sm"
+              >
+                <ArrowUpCircle className="w-5 h-5 text-amber-600 shrink-0" />
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-semibold text-amber-900">
+                    {req.requestedByName || "An agent"} requested a subscription upgrade
+                  </p>
+                  <p className="text-xs text-amber-700 mt-0.5">
+                    Customer limit reached on the <span className="capitalize font-medium">{req.currentPlan || "Free"}</span> plan.
+                  </p>
+                </div>
+                <div className="flex items-center gap-2 shrink-0">
+                  <button
+                    onClick={() => { setActiveTab("billing"); setDismissedRequestIds(prev => new Set([...prev, req.id])); }}
+                    className="rounded-xl bg-amber-600 hover:bg-amber-700 text-white px-4 py-2 text-xs font-bold transition-all"
+                  >
+                    Upgrade Plan
+                  </button>
+                  <button
+                    onClick={() => handleIgnoreRequest(req.id)}
+                    className="rounded-xl border border-amber-200 hover:border-amber-300 bg-white text-amber-700 hover:bg-amber-50 px-3 py-2 text-xs font-semibold transition-all"
+                  >
+                    Ignore
+                  </button>
+                  <button
+                    onClick={() => handleIgnoreRequest(req.id)}
+                    className="text-amber-400 hover:text-amber-600 w-6 h-6 flex items-center justify-center rounded-lg hover:bg-amber-100 transition-all"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+
         <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
           <div className="hidden"><TabsList><TabsTrigger value="overview">Overview</TabsTrigger></TabsList></div>
           <TabsContent value="overview" className="mt-0"><OrgOverview /></TabsContent>
