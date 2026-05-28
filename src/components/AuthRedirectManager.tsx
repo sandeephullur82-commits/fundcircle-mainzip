@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import { useUser } from "@clerk/clerk-react";
 import { useLocation, useNavigate } from "react-router-dom";
 
@@ -36,6 +36,10 @@ export default function AuthRedirectManager() {
   const navigate = useNavigate();
   const { pathname } = useLocation();
 
+  // Guard: only allow one redirect per unique pathname to prevent any
+  // double-navigation from Clerk or React Router internal re-renders.
+  const lastRedirectedPath = useRef<string | null>(null);
+
   useEffect(() => {
     if (!isLoaded) return;
 
@@ -48,14 +52,24 @@ export default function AuthRedirectManager() {
       user?.primaryEmailAddress?.verification?.status === "verified";
 
     if (isSignedIn && user && emailVerified && isAuthOnlyPath(pathname)) {
+      if (lastRedirectedPath.current === pathname) return;
+      lastRedirectedPath.current = pathname;
       navigate("/auth/callback", { replace: true });
       return;
     }
 
     if (!isSignedIn && isProtectedPath(pathname)) {
+      if (lastRedirectedPath.current === pathname) return;
+      lastRedirectedPath.current = pathname;
       navigate("/sign-in", { replace: true });
     }
   }, [isLoaded, isSignedIn, user, navigate, pathname]);
+
+  // Reset the guard whenever the pathname changes so a genuine navigation
+  // to the same protected path later (e.g. back-button) still triggers.
+  useEffect(() => {
+    lastRedirectedPath.current = null;
+  }, [pathname]);
 
   if (!isLoaded && isProtectedPath(pathname)) {
     return (
