@@ -1,0 +1,152 @@
+Implement FULL Clerk MFA (Multi-Factor Authentication) support in FundCircle authentication system.
+
+==================================================
+CURRENT ISSUE
+==================================================
+
+Users with MFA enabled cannot log in.
+
+Current login page only supports:
+- email
+- password
+
+But Clerk requires:
+- second factor verification
+- OTP flow
+- authenticator app verification
+
+==================================================
+GOAL
+==================================================
+
+Build complete MFA authentication flow using Clerk.
+
+Support:
+- email/password login
+- OTP verification
+- authenticator apps
+- backup codes
+- secure session handling
+
+==================================================
+LOGIN FLOW
+==================================================
+
+STEP 1
+User enters:
+- email
+- password
+
+STEP 2
+If Clerk requires MFA:
+- redirect to MFA verification screen
+- show OTP input
+- allow authenticator app code
+- verify second factor
+
+STEP 3
+After successful verification:
+- create session
+- redirect to dashboard
+
+==================================================
+SUPPORTED MFA METHODS
+==================================================
+
+Support:
+- authenticator apps
+- TOTP codes
+- backup recovery codes
+
+==================================================
+UI REQUIREMENTS
+==================================================
+
+Create modern MFA screen:
+- dark theme
+- responsive
+- mobile friendly
+- centered card
+- OTP input boxes
+- loading states
+- retry option
+
+==================================================
+OTP SCREEN
+==================================================
+
+Show:
+Title:
+"Two-Factor Verification"
+
+Description:
+"Enter the verification code from your authenticator app."
+
+Input:
+- 6 digit OTP
+
+Buttons:
+- Verify
+- Back to Login
+
+==================================================
+CLERK IMPLEMENTATION
+==================================================
+
+Use:
+signIn.attemptSecondFactor()
+
+Handle:
+- needs_second_factor
+- complete
+- failed verification
+- expired code
+
+==================================================
+ERROR HANDLING
+==================================================
+
+Show proper errors:
+- invalid code
+- expired code
+- too many attempts
+- network issues
+
+==================================================
+SESSION MANAGEMENT
+==================================================
+
+After MFA success:
+- create secure session
+- redirect correctly
+- persist login state
+
+==================================================
+MOBILE RESPONSIVE
+==================================================
+
+Ensure:
+- Android friendly
+- OTP keyboard optimized
+- touch friendly UI
+
+==================================================
+SECURITY
+==================================================
+
+Maintain:
+- Clerk security standards
+- secure token handling
+- protected routes
+- session validation
+
+==================================================
+FINAL RESULT
+==================================================
+
+FundCircle must fully support:
+- Clerk MFA
+- authenticator app login
+- secure enterprise authentication
+- seamless OTP verification
+- production-grade login flow
