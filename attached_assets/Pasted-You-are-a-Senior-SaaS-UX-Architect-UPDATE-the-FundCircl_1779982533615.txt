@@ -1,0 +1,104 @@
+You are a Senior SaaS UX Architect.
+
+UPDATE the FundCircle dashboard UI.
+
+==================================================
+REMOVE PLAN VISIBILITY FROM AGENT DASHBOARD
+==================================================
+
+The organization subscription plan must NEVER be visible to agents.
+
+REMOVE COMPLETELY:
+- Plan name card
+- Enterprise label
+- Starter/Growth/Enterprise text
+- Customer limits
+- Collector limits
+- Collection limits
+- Pending activation count
+- Upgrade buttons
+- Plan usage counters
+
+REMOVE this entire sidebar section:
+PLAN
+Collectors
+Customers
+Collections
+
+==================================================
+AGENT SHOULD ONLY SEE
+==================================================
+
+Agents must ONLY see:
+- Today's Summary
+- Pending Visits
+- My Customers
+- Collection History
+- Assigned Area
+- Customer list
+- Collection tasks
+- Their own profile
+
+==================================================
+OWNER ONLY
+==================================================
+
+ONLY organization owners/admins can see:
+- Subscription plan
+- Usage limits
+- Upgrade actions
+- Billing
+- Plan analytics
+
+==================================================
+NEW AGENT SIDEBAR
+==================================================
+
+Agent sidebar should contain ONLY:
+
+- Dashboard
+- Pending Visits
+- My Customers
+- Collection History
+- Logout
+
+Bottom section:
+- Agent profile
+- Assigned area
+
+==================================================
+SECURITY RULE
+==================================================
+
+Agents must NEVER:
+- Know organization limits
+- Know subscription tier
+- Access billing
+- Access upgrades
+- Access plan configuration
+
+==================================================
+IMPLEMENTATION
+==================================================
+
+Use role-based rendering:
+
+IF role === "agent"
+→ Hide all plan components
+
+IF role === "owner"
+→ Show subscription information
+
+==================================================
+FINAL RESULT
+==================================================
+
+The agent dashboard must look clean, simple, and task-focused.
+
+Agents should only focus on:
+- Customers
+- Collections
+- Visits
+- Daily work
+
+No business/admin information should be visible.

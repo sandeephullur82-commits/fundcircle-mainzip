@@ -1,17 +1,14 @@
 import { useUser, useOrganization, SignOutButton } from "@clerk/clerk-react";
 import {
   LogOut, Users, History,
-  AlertCircle, Menu, LayoutDashboard, TrendingUp,
+  AlertCircle, Menu, LayoutDashboard,
 } from "lucide-react";
 import { Tabs, TabsContent } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { Navigate } from "react-router-dom";
-import { where, doc, updateDoc } from "firebase/firestore";
-import { db } from "@/lib/firebase";
-import { useDocumentRealtime, useCollectionRealtime } from "@/lib/firestore-hooks";
 import AgentOverview from "./AgentOverview";
 import AgentCustomers from "./AgentCustomers";
 import AgentPending from "./AgentPending";
@@ -24,73 +21,10 @@ const menuItems = [
   { id: "history", label: "Collection History", icon: History },
 ];
 
-const PLAN_NAMES: Record<string, string> = {
-  free: "Free",
-  starter: "Starter",
-  growth: "Growth",
-  enterprise: "Enterprise",
-};
-
-function formatLimit(val: number) {
-  return val.toLocaleString();
-}
-
 export default function AgentDashboard() {
   const { isLoaded: isUserLoaded, isSignedIn, user } = useUser();
   const { isLoaded: isOrgLoaded, organization } = useOrganization();
   const [activeTab, setActiveTab] = useState("overview");
-
-  const { data: orgDoc } = useDocumentRealtime<any>("organizations", organization?.id ?? null);
-  const { data: agents } = useCollectionRealtime<any>("organizationMembers", [where("role", "==", "AGENT")]);
-  const { data: customers } = useCollectionRealtime<any>("organizationMembers", [where("role", "==", "CUSTOMER")]);
-  const { data: collections } = useCollectionRealtime<any>("collections");
-
-  const now = new Date();
-  const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
-  const collectionsThisMonth = collections.filter((c: any) => {
-    const d = (c.timestamp as any)?.toDate?.() || new Date(c.timestamp);
-    return d >= monthStart;
-  }).length;
-
-  const currentPlan = orgDoc?.plan ?? "free";
-
-  // Unified plan limits — all plans use finite positive numbers, no -1/∞
-  const PLAN_DEFAULTS: Record<string, { maxAgents: number; maxCustomers: number; maxCollectionsPerMonth: number }> = {
-    free:       { maxAgents: 1,  maxCustomers: 10,   maxCollectionsPerMonth: 250   },
-    starter:    { maxAgents: 5,  maxCustomers: 100,  maxCollectionsPerMonth: 1000  },
-    growth:     { maxAgents: 25, maxCustomers: 500,  maxCollectionsPerMonth: 10000 },
-    enterprise: { maxAgents: 50, maxCustomers: 5000, maxCollectionsPerMonth: 50000 },
-  };
-  const planDefaults = PLAN_DEFAULTS[currentPlan] ?? PLAN_DEFAULTS.free;
-  const rawLimits = orgDoc?.limits;
-  const limits = {
-    maxAgents:             Math.max(rawLimits?.maxAgents             || planDefaults.maxAgents,             1),
-    maxCustomers:          Math.max(rawLimits?.maxCustomers          || planDefaults.maxCustomers,          1),
-    maxCollectionsPerMonth:Math.max(rawLimits?.maxCollectionsPerMonth|| planDefaults.maxCollectionsPerMonth, 1),
-  };
-
-  // Auto-patch org docs that are missing or have broken limits
-  useEffect(() => {
-    if (!orgDoc || !organization?.id) return;
-    const l = orgDoc.limits;
-    const broken = !l || (l.maxAgents ?? 0) < 1 || (l.maxCustomers ?? 0) < 1;
-    if (broken) {
-      updateDoc(doc(db, "organizations", organization.id), { limits: planDefaults })
-        .catch(() => undefined);
-    }
-  }, [orgDoc, organization?.id]);
-
-  // Count only ACTIVE customers toward limits; INVITED = pending activation
-  const activeAgentsCount     = Math.max(agents.filter((a: any) => a.status === "ACTIVE").length, 0);
-  const activeCustomersCount  = Math.max(customers.filter((c: any) => c.status === "ACTIVE").length, 0);
-  const invitedCustomersCount = Math.max(customers.filter((c: any) => c.status === "INVITED").length, 0);
-
-  const usageData = {
-    plan: PLAN_NAMES[currentPlan] ?? currentPlan,
-    agents:      { used: activeAgentsCount,    max: limits.maxAgents             },
-    customers:   { used: activeCustomersCount, max: limits.maxCustomers, invited: invitedCustomersCount },
-    collections: { used: collectionsThisMonth, max: limits.maxCollectionsPerMonth },
-  };
 
   if (!isUserLoaded || !isOrgLoaded) {
     return (
@@ -128,7 +62,6 @@ export default function AgentDashboard() {
               setActiveTab={setActiveTab}
               user={user}
               organization={organization}
-              usageData={usageData}
             />
           </SheetContent>
         </Sheet>
@@ -141,7 +74,6 @@ export default function AgentDashboard() {
           setActiveTab={setActiveTab}
           user={user}
           organization={organization}
-          usageData={usageData}
         />
       </div>
 
@@ -167,23 +99,7 @@ export default function AgentDashboard() {
   );
 }
 
-function MiniUsageBar({ used, max }: { used: number; max: number }) {
-  const pct = Math.min((used / Math.max(max, 1)) * 100, 100);
-  const color = pct >= 90 ? "bg-red-400" : pct >= 70 ? "bg-amber-400" : "bg-emerald-400";
-  return (
-    <div className="h-1.5 w-full rounded-full bg-slate-100 overflow-hidden">
-      <div
-        className={`h-full rounded-full transition-all duration-500 ${color}`}
-        style={{ width: `${pct}%` }}
-      />
-    </div>
-  );
-}
-
-function AgentSidebar({ activeTab, setActiveTab, user, organization, usageData }: any) {
-  const { customers, agents, collections, plan } = usageData;
-  const customerPct = (customers.used / Math.max(customers.max, 1)) * 100;
-
+function AgentSidebar({ activeTab, setActiveTab, user, organization }: any) {
   return (
     <div className="flex flex-col h-full overflow-y-auto">
       {/* Logo */}
@@ -217,59 +133,6 @@ function AgentSidebar({ activeTab, setActiveTab, user, organization, usageData }
             </button>
           );
         })}
-      </div>
-
-      {/* Plan Usage Card */}
-      <div className="mx-3 mb-3 rounded-2xl border border-slate-100 bg-slate-50 p-4 space-y-3 shrink-0">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-1.5">
-            <TrendingUp className="w-3.5 h-3.5 text-slate-400" />
-            <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">Plan</span>
-          </div>
-          <span className={`text-xs font-bold px-2 py-0.5 rounded-full ${
-            plan === "Free" ? "bg-slate-200 text-slate-600"
-            : plan === "Starter" ? "bg-sky-100 text-sky-700"
-            : plan === "Growth" ? "bg-violet-100 text-violet-700"
-            : "bg-amber-100 text-amber-700"
-          }`}>
-            {plan}
-          </span>
-        </div>
-
-        <div className="space-y-2.5">
-          <div className="space-y-1">
-            <div className="flex justify-between text-xs">
-              <span className="text-slate-500">Collectors</span>
-              <span className={`font-semibold ${agents.used >= agents.max ? "text-red-600" : "text-slate-700"}`}>
-                {agents.used} / {formatLimit(agents.max)}
-              </span>
-            </div>
-            <MiniUsageBar used={agents.used} max={agents.max} />
-          </div>
-
-          <div className="space-y-1">
-            <div className="flex justify-between text-xs">
-              <span className="text-slate-500">Customers</span>
-              <span className={`font-semibold ${customerPct >= 100 ? "text-red-600" : customerPct >= 80 ? "text-amber-600" : "text-slate-700"}`}>
-                {customers.used} / {formatLimit(customers.max)}
-              </span>
-            </div>
-            <MiniUsageBar used={customers.used} max={customers.max} />
-            {customers.invited > 0 && (
-              <p className="text-[10px] text-amber-600 font-medium">{customers.invited} pending activation</p>
-            )}
-          </div>
-
-          <div className="space-y-1">
-            <div className="flex justify-between text-xs">
-              <span className="text-slate-500">Collections</span>
-              <span className="font-semibold text-slate-700">
-                {collections.used} / {formatLimit(collections.max)}
-              </span>
-            </div>
-            <MiniUsageBar used={collections.used} max={collections.max} />
-          </div>
-        </div>
       </div>
 
       {/* User */}
