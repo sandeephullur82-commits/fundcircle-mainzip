@@ -11,7 +11,7 @@ export default defineConfig(() => {
       tailwindcss(),
       VitePWA({
         registerType: 'autoUpdate',
-        includeAssets: ['favicon.ico', 'favicon.png', 'apple-touch-icon.png', 'pwa-192x192.png', 'pwa-512x512.png', 'fundcircle-logo.png', 'fundcircle-logo-full.png', 'icons/*.png'],
+        includeAssets: ['fundcircle-favicon-v2.png', 'fundcircle-192.png', 'fundcircle-512.png', 'apple-touch-icon.png', 'fundcircle-logo.png', 'fundcircle-logo-full.png', 'icons/*.png'],
         manifest: {
           name: 'FundCircle',
           short_name: 'FundCircle',
