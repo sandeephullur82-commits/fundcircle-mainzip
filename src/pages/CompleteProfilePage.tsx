@@ -71,6 +71,19 @@ export default function CompleteProfilePage() {
     try {
       await setDoc(doc(db, "organizationMembers", membershipId), profileValues, { merge: true });
       await setDoc(doc(db, "memberships", membershipId), profileValues, { merge: true });
+
+      // Sync customers collection on profile completion
+      if (isCustomerRole(role)) {
+        await setDoc(doc(db, "customers", membershipId), {
+          fullName: fullName.trim(),
+          phone: phone.trim(),
+          address: assignedArea.trim(),
+          profileCompleted: true,
+          status: "ACTIVE",
+          updatedAt: serverTimestamp(),
+        }, { merge: true });
+      }
+
       await setDoc(doc(db, "users", user.id), {
         clerkUserId: user.id,
         id: user.id,

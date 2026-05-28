@@ -11,8 +11,22 @@ export default function ClerkDefaultAuth({ initialMode }: ClerkDefaultAuthProps)
   const path = location.pathname || (initialMode === "signin" ? "/sign-in" : "/sign-up");
 
   if (initialMode === "signin") {
-    return <SignIn routing="path" path={path} signUpUrl="/sign-up" />;
+    return (
+      <SignIn
+        routing="path"
+        path={path}
+        signUpUrl="/sign-up"
+        forceRedirectUrl="/auth/callback"
+      />
+    );
   }
 
-  return <SignUp routing="path" path={path} signInUrl="/sign-in" />;
+  return (
+    <SignUp
+      routing="path"
+      path={path}
+      signInUrl="/sign-in"
+      forceRedirectUrl="/auth/callback"
+    />
+  );
 }

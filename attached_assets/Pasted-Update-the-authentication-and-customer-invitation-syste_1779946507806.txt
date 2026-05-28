@@ -1,0 +1,184 @@
+Update the authentication and customer invitation system.
+
+==================================================
+REMOVE CUSTOM OTP SYSTEM
+
+Remove all custom OTP logic completely.
+
+DELETE:
+
+- custom OTP components
+- manual OTP APIs
+- Firebase OTP logic
+- custom verification screens
+- resend OTP handlers
+- manual email verification flows
+
+REMOVE FUNCTIONS:
+
+- sendOTP()
+- verifyOTP()
+- resendOTP()
+- prepareEmailAddressVerification()
+- attemptEmailAddressVerification()
+
+==================================================
+USE ONLY CLERK DEFAULT AUTHENTICATION
+
+Use ONLY:
+
+- Clerk SignUp
+- Clerk SignIn
+- Clerk Invitation System
+- Clerk Password Setup
+- Clerk Email Verification
+
+Clerk should handle:
+
+- OTP email
+- verification email
+- invitation mail
+- password reset
+
+==================================================
+OWNER SIGNUP FLOW
+
+Landing Page
+↓
+Register Organization
+↓
+Clerk SignUp
+↓
+Clerk OTP Verification
+↓
+Create Clerk Session
+↓
+Redirect:
+→ /onboarding
+
+==================================================
+AGENT FLOW
+
+Owner Dashboard
+↓
+Invite Agent
+↓
+Firestore pending agent created
+↓
+Clerk invitation mail sent
+↓
+Agent accepts invitation
+↓
+Set password using Clerk default page
+↓
+Login
+↓
+/auth/callback
+↓
+/complete-profile
+↓
+/dashboard/agent
+
+==================================================
+CUSTOMER INVITE RESTRICTION
+
+IMPORTANT BUSINESS RULE:
+
+Customers can ONLY be invited if:
+there is at least ONE active agent in the organization.
+
+==================================================
+VALIDATION LOGIC
+
+Before opening:
+Invite Customer Modal
+
+CHECK:
+
+activeAgents >= 1
+
+==================================================
+IF NO ACTIVE AGENT
+
+BLOCK customer invitation.
+
+Show error message:
+
+"Please add at least one active Pigmy Collector before inviting customers."
+
+Disable:
+
+- Invite Customer button
+- Customer onboarding access
+
+==================================================
+IF ACTIVE AGENT EXISTS
+
+Allow:
+
+- customer invitation
+- customer assignment
+
+==================================================
+CUSTOMER INVITATION FLOW
+
+Owner/Agent
+↓
+Invite Customer
+↓
+Select assigned agent
+↓
+Create Firestore customer record
+↓
+Send Clerk invitation
+↓
+Customer accepts invite
+↓
+Set password
+↓
+Complete profile
+↓
+/dashboard/customer
+
+==================================================
+FIRESTORE CUSTOMER STRUCTURE
+
+customers/{customerId}
+{
+organizationId,
+assignedAgentId,
+assignedAgentName,
+
+fullName: "",
+phone: "",
+address: "",
+
+status: "INVITED",
+
+profileCompleted: false
+}
+
+==================================================
+REALTIME VALIDATION
+
+Use Firestore realtime listeners.
+
+If:
+activeAgents becomes 0
+
+THEN:
+
+- disable customer invites instantly
+- update dashboard UI realtime
+
+==================================================
+FINAL REQUIREMENT
+
+The platform must:
+
+- use ONLY Clerk authentication
+- remove all custom OTP logic
+- prevent customer invites without agents
+- maintain realtime Firestore sync
+- preserve role-based dashboard routing
+- work as a production-grade SaaS workflow

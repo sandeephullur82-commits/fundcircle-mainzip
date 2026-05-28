@@ -10,17 +10,18 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from 
 import { sendOrganizationInvitation } from "@/lib/services";
 import { useOrganization, useUser } from "@clerk/clerk-react";
 import { where } from "firebase/firestore";
-import { Search, Plus, AlertTriangle, ArrowRight } from "lucide-react";
+import { Search, Plus, AlertTriangle, ArrowRight, UserX } from "lucide-react";
 import { toast } from "sonner";
 import { format } from "date-fns";
 
 export default function OrgCustomers() {
   const { user } = useUser();
   const { organization } = useOrganization();
+
   const { data: customers, loading } = useCollectionRealtime<Membership>("organizationMembers", [
     where("role", "==", "CUSTOMER")
   ]);
-  const { data: agents } = useCollectionRealtime<Membership>("organizationMembers", [
+  const { data: agents, loading: agentsLoading } = useCollectionRealtime<Membership>("organizationMembers", [
     where("role", "==", "AGENT")
   ]);
   const { data: orgDoc } = useDocumentRealtime<any>("organizations", organization?.id);
@@ -28,7 +29,12 @@ export default function OrgCustomers() {
   const [searchTerm, setSearchTerm] = useState("");
   const [isInviteOpen, setIsInviteOpen] = useState(false);
   const [email, setEmail] = useState("");
+  const [selectedAgentId, setSelectedAgentId] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  // Realtime active agent gate
+  const activeAgents = agents.filter((a) => a.status === "ACTIVE");
+  const noActiveAgent = !agentsLoading && activeAgents.length === 0;
 
   const filteredCustomers = customers.filter((u) =>
     (((u?.fullName || u?.name || "").toLowerCase().includes((searchTerm || "").toLowerCase())) ||
@@ -50,7 +56,10 @@ export default function OrgCustomers() {
     e.preventDefault();
     if (!organization?.id) { toast.error("No active organization selected. Refresh and try again."); return; }
     if (!email.trim()) { toast.error("Email address is required."); return; }
+    if (!selectedAgentId) { toast.error("Please select an assigned Pigmy Collector."); return; }
     if (atLimit) { toast.error(`You've reached the limit of ${maxCustomers} customers for your plan. Please upgrade.`); return; }
+
+    const selectedAgent = activeAgents.find((a) => a.id === selectedAgentId);
 
     setIsSubmitting(true);
     try {
@@ -64,10 +73,13 @@ export default function OrgCustomers() {
         clerkRole: "org:customer",
         invitedBy: user.id,
         invitedByEmail,
+        assignedAgentId: selectedAgent?.id || selectedAgentId,
+        assignedAgentName: selectedAgent?.fullName || selectedAgent?.name || "",
       });
       toast.success(result.message);
       setIsInviteOpen(false);
       setEmail("");
+      setSelectedAgentId("");
     } catch (error) {
       const msg = error instanceof Error ? error.message : "Failed to send customer invitation";
       toast.error(msg);
@@ -75,6 +87,8 @@ export default function OrgCustomers() {
       setIsSubmitting(false);
     }
   };
+
+  const canInvite = !atLimit && !noActiveAgent;
 
   return (
     <div className="space-y-6">
@@ -96,6 +110,11 @@ export default function OrgCustomers() {
             <AlertTriangle className="w-4 h-4 shrink-0" />
             <span>Customer limit reached</span>
           </div>
+        ) : noActiveAgent ? (
+          <div className="flex items-center gap-2 rounded-xl border border-red-200 bg-red-50 px-4 py-2.5 text-sm text-red-700 font-medium shrink-0 cursor-not-allowed" title="Please add at least one active Pigmy Collector before inviting customers.">
+            <UserX className="w-4 h-4 shrink-0" />
+            <span>No active collector</span>
+          </div>
         ) : (
           <Dialog open={isInviteOpen} onOpenChange={setIsInviteOpen}>
             <DialogTrigger render={
@@ -108,8 +127,25 @@ export default function OrgCustomers() {
               </DialogHeader>
               <form onSubmit={handleInviteCustomer} className="space-y-4">
                 <div className="space-y-2">
-                  <Label htmlFor="email">Email Address</Label>
-                  <Input id="email" type="email" placeholder="customer@example.com" value={email} onChange={e => setEmail(e.target.value)} required />
+                  <Label htmlFor="cust-email">Email Address</Label>
+                  <Input id="cust-email" type="email" placeholder="customer@example.com" value={email} onChange={e => setEmail(e.target.value)} required />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="cust-agent">Assigned Pigmy Collector <span className="text-red-500">*</span></Label>
+                  <select
+                    id="cust-agent"
+                    value={selectedAgentId}
+                    onChange={e => setSelectedAgentId(e.target.value)}
+                    required
+                    className="w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 focus:border-slate-500 focus:outline-none"
+                  >
+                    <option value="">Select a collector...</option>
+                    {activeAgents.map((agent) => (
+                      <option key={agent.id} value={agent.id}>
+                        {agent.fullName || agent.name || agent.email || agent.id}
+                      </option>
+                    ))}
+                  </select>
                 </div>
                 <Button type="submit" className="w-full" disabled={isSubmitting}>
                   {isSubmitting ? "Sending…" : "Send Invitation"}
@@ -119,6 +155,23 @@ export default function OrgCustomers() {
           </Dialog>
         )}
       </div>
+
+      {/* No active agent warning banner */}
+      {noActiveAgent && (
+        <div className="rounded-2xl border border-red-200 bg-red-50 p-4 flex items-center gap-3">
+          <UserX className="w-5 h-5 text-red-600 shrink-0" />
+          <div className="flex-1 min-w-0">
+            <p className="text-sm font-semibold text-red-800">No active Pigmy Collector in this organization</p>
+            <p className="text-xs text-red-600 mt-0.5">Please add at least one active Pigmy Collector before inviting customers.</p>
+          </div>
+          <button
+            onClick={() => window.location.href = window.location.href.replace("customers", "agents")}
+            className="flex items-center gap-1.5 rounded-xl bg-red-600 hover:bg-red-700 text-white px-4 py-2 text-xs font-bold shrink-0 transition-all"
+          >
+            Add Collector <ArrowRight className="w-3.5 h-3.5" />
+          </button>
+        </div>
+      )}
 
       {atLimit && (
         <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4 flex items-center gap-3">
@@ -159,7 +212,7 @@ export default function OrgCustomers() {
                   <TableRow><TableCell colSpan={5} className="text-center py-8 text-slate-500">No customers found.</TableCell></TableRow>
                 ) : (
                   filteredCustomers.map(customer => {
-                    const agent = agents.find(a => a.id === customer.agentId);
+                    const agent = agents.find(a => a.id === (customer.assignedAgentId || customer.agentId));
                     return (
                       <TableRow key={customer.id}>
                         <TableCell className="font-medium">{customer.fullName || customer.name || "Unnamed Customer"}</TableCell>
@@ -167,7 +220,7 @@ export default function OrgCustomers() {
                         <TableCell>{customer.phone || "N/A"}</TableCell>
                         <TableCell>
                           <span className="inline-flex items-center px-2 py-1 rounded-md text-xs font-medium bg-slate-100 text-slate-700">
-                            {agent?.fullName || agent?.name || "Unassigned"}
+                            {(customer as any).assignedAgentName || agent?.fullName || agent?.name || "Unassigned"}
                           </span>
                         </TableCell>
                         <TableCell>

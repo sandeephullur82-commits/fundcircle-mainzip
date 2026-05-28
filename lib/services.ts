@@ -570,6 +570,8 @@ export async function sendOrganizationInvitation(options: {
   invitedByEmail: string;
   assignedArea?: string;
   agentId?: string;
+  assignedAgentId?: string;
+  assignedAgentName?: string;
 }): Promise<{ success: boolean; message: string; invitationId?: string }> {
   const {
     organization,
@@ -581,6 +583,8 @@ export async function sendOrganizationInvitation(options: {
     invitedByEmail,
     assignedArea,
     agentId,
+    assignedAgentId,
+    assignedAgentName,
   } = options;
 
   const emailKey = email.trim().toLowerCase();
@@ -637,7 +641,9 @@ export async function sendOrganizationInvitation(options: {
       clerkOrganizationId: organization.id,
       organizationName: organization.name || "",
       assignedArea: assignedArea || "",
-      agentId: agentId || "",
+      agentId: agentId || assignedAgentId || "",
+      assignedAgentId: assignedAgentId || "",
+      assignedAgentName: assignedAgentName || "",
       invitedBy,
       invitedByEmail,
       profileCompleted: false,
@@ -659,7 +665,10 @@ export async function sendOrganizationInvitation(options: {
       clerkUserId: "",
       fullName: "",
       phone: "",
+      address: "",
       assignedArea: assignedArea || "",
+      assignedAgentId: assignedAgentId || "",
+      assignedAgentName: assignedAgentName || "",
       profileCompleted: false,
       status: "INVITED",
       invitedAt: serverTimestamp(),
@@ -673,6 +682,26 @@ export async function sendOrganizationInvitation(options: {
     organizationMemberId = orgMemberRef.id;
     await setDoc(orgMemberRef, { id: orgMemberRef.id }, { merge: true });
     console.log("sendOrganizationInvitation: organization member invite created", organizationMemberId);
+
+    // For customer invitations, also write to the dedicated customers collection
+    if (role === "customer") {
+      await setDoc(doc(db, "customers", organizationMemberId), {
+        id: organizationMemberId,
+        organizationId,
+        assignedAgentId: assignedAgentId || "",
+        assignedAgentName: assignedAgentName || "",
+        fullName: "",
+        phone: "",
+        address: "",
+        email: emailKey,
+        status: "INVITED",
+        profileCompleted: false,
+        invitedBy,
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+      });
+      console.log("sendOrganizationInvitation: customer doc created", organizationMemberId);
+    }
 
     await updateDoc(doc(db, "pendingInvites", pendingInviteId), {
       organizationMemberId,
