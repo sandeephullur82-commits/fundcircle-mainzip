@@ -86,7 +86,7 @@ export default function AgentDashboard() {
       </div>
 
       {/* Desktop Sidebar */}
-      <div className="hidden md:flex flex-col w-64 bg-white border-r border-slate-100 h-screen sticky top-0 shadow-sm">
+      <div className="hidden md:flex flex-col w-64 bg-white border-r border-slate-100 h-screen sticky top-0 shadow-sm shrink-0">
         <AgentSidebar
           activeTab={activeTab}
           setActiveTab={setActiveTab}
@@ -96,7 +96,7 @@ export default function AgentDashboard() {
       </div>
 
       {/* Main Content */}
-      <main className="flex-1 p-3 md:p-8 overflow-y-auto w-full max-w-5xl mx-auto pb-20 md:pb-8">
+      <main className="flex-1 min-h-screen p-3 md:p-8 w-full max-w-5xl mx-auto pb-24 md:pb-10">
         <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
           <div className="hidden" />
           <TabsContent value="overview" className="mt-0">
@@ -139,7 +139,7 @@ export default function AgentDashboard() {
 
 function AgentSidebar({ activeTab, setActiveTab, user, organization }: any) {
   return (
-    <div className="flex flex-col h-full overflow-y-auto">
+    <div className="flex flex-col h-full overflow-y-auto scrollbar-hide">
       <div className="px-5 py-4 border-b border-slate-100 shrink-0">
         <BrandMark />
         <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400 mt-0.5">Collector Portal</p>

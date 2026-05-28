@@ -206,7 +206,7 @@ export default function OrgDashboard() {
       </div>
 
       {/* Desktop Sidebar */}
-      <div className="hidden md:flex flex-col w-64 bg-white border-r border-slate-100 h-screen sticky top-0 shadow-sm">
+      <div className="hidden md:flex flex-col w-64 bg-white border-r border-slate-100 h-screen sticky top-0 shadow-sm shrink-0">
         <SidebarContent
           activeTab={activeTab}
           setActiveTab={setActiveTab}
@@ -222,7 +222,7 @@ export default function OrgDashboard() {
       </div>
 
       {/* Main Content */}
-      <main className="flex-1 p-3 md:p-8 overflow-y-auto w-full max-w-7xl mx-auto pb-20 md:pb-8">
+      <main className="flex-1 min-h-screen p-3 md:p-8 w-full max-w-7xl mx-auto pb-24 md:pb-10">
         {visibleRequests.length > 0 && (
           <div className="mb-4 space-y-2">
             {visibleRequests.slice(0, 3).map((req: any) => (
@@ -310,7 +310,7 @@ export default function OrgDashboard() {
 
 function SidebarContent({ activeTab, setActiveTab, orgName, user, menuItems, isOwner, mode, setMode, unreadCount, membershipLoading }: any) {
   return (
-    <div className="flex flex-col h-full">
+    <div className="flex flex-col h-full overflow-hidden">
       <div className="px-5 py-4 border-b border-slate-100">
         <BrandMark />
         <p className="text-sm font-bold text-slate-900 truncate mt-0.5">{orgName}</p>
@@ -344,7 +344,7 @@ function SidebarContent({ activeTab, setActiveTab, orgName, user, menuItems, isO
         </div>
       ) : null}
 
-      <div className="flex-1 py-3 px-3 space-y-0.5 overflow-y-auto">
+      <div className="flex-1 py-3 px-3 space-y-0.5 overflow-y-auto scrollbar-hide">
         {membershipLoading
           ? [...Array(5)].map((_, i) => <Skeleton key={i} className="h-10 rounded-xl" />)
           : menuItems.map((item: any) => {

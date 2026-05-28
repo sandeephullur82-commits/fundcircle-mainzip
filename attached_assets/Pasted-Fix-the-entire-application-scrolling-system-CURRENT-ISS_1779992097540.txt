@@ -1,0 +1,144 @@
+Fix the entire application scrolling system.
+
+CURRENT ISSUE:
+- Main page scroll is broken
+- Only side scrollbar works
+- Vertical scrolling is inconsistent
+- Horizontal scrollbar is visible
+- Layout height is locked incorrectly
+- Mobile scrolling is poor
+
+==================================================
+SCROLL FIX REQUIREMENTS
+==================================================
+
+1. REMOVE SIDE SCROLLBAR
+- Hide custom sidebar scrollbar
+- Use clean invisible scrollbar
+- Keep scrolling functionality working
+
+2. ENABLE FULL PAGE SCROLL
+- Entire page must scroll smoothly
+- Main content should scroll naturally
+- Prevent nested scroll containers
+- Remove overflow conflicts
+
+3. FIX ROOT LAYOUT
+Update:
+html,
+body,
+#root
+
+Use:
+height: auto;
+min-height: 100%;
+overflow-x: hidden;
+overflow-y: auto;
+
+==================================================
+REMOVE THESE PROBLEMS
+==================================================
+
+Find and remove:
+- overflow-hidden
+- h-screen abuse
+- fixed height containers
+- nested overflow-auto
+- locked viewport layouts
+
+Replace with:
+- min-h-screen
+- overflow-y-auto only where needed
+- flexible layouts
+
+==================================================
+SIDEBAR FIX
+==================================================
+
+Sidebar should:
+- stay fixed on desktop
+- become drawer on mobile
+- hide scrollbar visually
+- still allow internal scroll
+
+Use:
+
+scrollbar-width: none;
+
+::-webkit-scrollbar {
+  display: none;
+}
+
+==================================================
+MAIN CONTENT FIX
+==================================================
+
+Main dashboard content:
+- should scroll independently if needed
+- should never cut content
+- should support long tables
+- should work on small laptops
+- should work on Android
+
+==================================================
+MOBILE RESPONSIVE SCROLL
+==================================================
+
+Fix:
+- touch scrolling
+- momentum scrolling
+- viewport height issue
+- keyboard resize issue
+
+Use:
+-webkit-overflow-scrolling: touch;
+
+==================================================
+GLOBAL CSS FIX
+==================================================
+
+Add global scrollbar styling:
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  overflow-x: hidden;
+  overflow-y: auto;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+==================================================
+LAYOUT REFACTOR
+==================================================
+
+Refactor all pages:
+- landing page
+- dashboard
+- customer page
+- agent page
+- reports
+- collections
+
+Ensure:
+- no horizontal scroll
+- no clipped cards
+- no double scrollbars
+- smooth vertical scrolling
+
+==================================================
+FINAL RESULT
+==================================================
+
+FundCircle should:
+- scroll smoothly everywhere
+- hide ugly side scrollbar
+- support mouse + touch scrolling
+- work on laptop and Android
+- have professional SaaS scrolling behavior
+- no overflow bugs
+- no layout clipping
