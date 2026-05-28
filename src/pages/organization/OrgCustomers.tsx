@@ -126,6 +126,37 @@ export default function OrgCustomers() {
     }
   };
 
+  if (!agentsLoading && noActiveAgent) {
+    return (
+      <div className="flex flex-col items-center justify-center min-h-[40vh] py-16 px-4">
+        <div className="w-full max-w-sm">
+          <div className="rounded-2xl border border-orange-200 bg-orange-50/70 p-7 flex flex-col items-center text-center gap-5 shadow-sm">
+            <div className="w-11 h-11 rounded-2xl bg-orange-100 border border-orange-200 flex items-center justify-center">
+              <UserX className="w-5 h-5 text-orange-600" />
+            </div>
+            <div className="space-y-1.5">
+              <h3 className="text-sm font-bold text-slate-900">No Active Pigmy Collector</h3>
+              <p className="text-sm text-slate-500 leading-relaxed">
+                Please add at least one active Pigmy Collector before inviting customers.
+              </p>
+            </div>
+            <button
+              onClick={() =>
+                window.dispatchEvent(
+                  new CustomEvent("fundcircle:switchTab", { detail: "agents" })
+                )
+              }
+              className="w-full inline-flex items-center justify-center gap-2 rounded-xl bg-orange-600 hover:bg-orange-700 active:bg-orange-800 text-white px-5 py-2.5 text-sm font-semibold transition-colors shadow-sm"
+            >
+              <Plus className="w-4 h-4" />
+              Add Collector
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-6">
       <div className="flex flex-col sm:flex-row justify-between gap-4">

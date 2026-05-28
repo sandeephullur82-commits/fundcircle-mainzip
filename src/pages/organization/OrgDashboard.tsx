@@ -50,6 +50,12 @@ export default function OrgDashboard() {
   const [activeTab, setActiveTab] = useState("overview");
   const [mode, setMode] = useState<"admin" | "collector">("admin");
 
+  useEffect(() => {
+    const handler = (e: Event) => setActiveTab((e as CustomEvent).detail);
+    window.addEventListener("fundcircle:switchTab", handler);
+    return () => window.removeEventListener("fundcircle:switchTab", handler);
+  }, []);
+
   const { data: membershipDoc, loading: membershipDocLoading } = useDocumentRealtime<any>(
     "organizationMembers",
     user && organization ? membershipIdFor(organization.id, user.id) : null
