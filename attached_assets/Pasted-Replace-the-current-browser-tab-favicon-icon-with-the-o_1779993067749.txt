@@ -1,0 +1,110 @@
+Replace the current browser tab favicon/icon with the official FundCircle logo across the ENTIRE project.
+
+==================================================
+GOAL
+==================================================
+
+Current issue:
+- Browser tab still shows default icon
+- Old favicon appears
+- Wrong app icon in browser tab
+- Replit/default icon visible
+
+Replace ALL icons with:
+FundCircle official logo
+
+==================================================
+FAVICON FIX
+==================================================
+
+Remove:
+- default Vite favicon
+- Replit icon
+- old logo references
+- unused favicon files
+
+==================================================
+ADD NEW LOGO
+==================================================
+
+Use the official FundCircle logo as:
+
+- favicon
+- browser tab icon
+- PWA icon
+- mobile install icon
+- splash icon
+
+==================================================
+REQUIRED FILES
+==================================================
+
+Generate and configure:
+
+/public/favicon.ico
+/public/favicon.png
+/public/apple-touch-icon.png
+/public/pwa-192x192.png
+/public/pwa-512x512.png
+
+==================================================
+UPDATE INDEX.HTML
+==================================================
+
+Inside index.html add:
+
+<link rel="icon" type="image/png" href="/favicon.png" />
+<link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+
+<meta name="theme-color" content="#0b1020" />
+
+==================================================
+PWA MANIFEST UPDATE
+==================================================
+
+Update manifest.json:
+
+icons: [
+  {
+    src: "/pwa-192x192.png",
+    sizes: "192x192",
+    type: "image/png"
+  },
+  {
+    src: "/pwa-512x512.png",
+    sizes: "512x512",
+    type: "image/png"
+  }
+]
+
+==================================================
+VITE CACHE FIX
+==================================================
+
+Force favicon refresh:
+- clear old cache
+- update service worker cache
+- invalidate old icon references
+
+==================================================
+BROWSER TAB TITLE
+==================================================
+
+Set browser tab title globally:
+
+FundCircle — Enterprise Collection Platform
+
+==================================================
+FINAL RESULT
+==================================================
+
+The browser tab must:
+- show FundCircle logo
+- show clean professional branding
+- work on Chrome
+- work on Android
+- work in PWA installed mode
+- work after refresh
+- remove all default Replit/Vite icons
+
+Apply the branding globally across the ENTIRE project.
