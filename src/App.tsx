@@ -1,4 +1,4 @@
-import React, { useEffect, useState, Suspense } from "react";
+import React, { useEffect, useState, useRef, Suspense } from "react";
 import { ClerkProvider, SignedIn, useUser, useOrganization, useOrganizationList } from "@clerk/clerk-react";
 import AuthSyncService from "./components/FirestoreUserSync";
 import AuthRedirectManager from "./components/AuthRedirectManager";
@@ -240,9 +240,11 @@ function RoleProtectedRoute({ allowedRoles, children }: { allowedRoles: string[]
 function RoleRouter() {
   const { user } = useUser();
   const { organization } = useOrganization();
-  const { isLoaded: isOrgListLoaded, userMemberships, userInvitations, setActive } = useOrganizationList({ userMemberships: true, userInvitations: true });
+  const { isLoaded: isOrgListLoaded, userMemberships, userInvitations, setActive } =
+    useOrganizationList({ userMemberships: true, userInvitations: true });
   const location = useLocation();
   const [timedOut, setTimedOut] = useState(false);
+  const loggedRef = useRef(false);
 
   const navOrgId: string | null =
     (location.state as any)?.orgId ||
@@ -256,49 +258,79 @@ function RoleRouter() {
     null;
 
   const membershipDocId = user && activeOrgId ? membershipIdFor(activeOrgId, user.id) : null;
-  const { data: membershipDoc, loading: membershipDocLoading } = useDocumentRealtime<any>("organizationMembers", membershipDocId);
+  const { data: membershipDoc, loading: membershipDocLoading } =
+    useDocumentRealtime<any>("organizationMembers", membershipDocId);
 
+  // Activate the first available org if none is active yet
   useEffect(() => {
     if (!user || !isOrgListLoaded || organization?.id || !userMemberships?.data?.length || !setActive) return;
-    setActive({ organization: userMemberships.data[0].organization.id }).catch(() => {});
+    const firstOrgId = userMemberships.data[0].organization.id;
+    console.log("[FC RoleRouter] Auto-activating first Clerk org:", firstOrgId);
+    setActive({ organization: firstOrgId }).catch(err =>
+      console.warn("[FC RoleRouter] setActive() failed:", err)
+    );
   }, [user, isOrgListLoaded, organization?.id, userMemberships?.data, setActive]);
 
+  // Firestore hard timeout
   useEffect(() => {
     const timer = setTimeout(() => {
-      console.log("[FC RoleRouter] Firestore timeout — using Clerk role fallback");
+      console.warn("[FC RoleRouter] Firestore timeout (5s) — falling back to Clerk role");
       setTimedOut(true);
     }, ROLE_TIMEOUT_MS);
     return () => clearTimeout(timer);
   }, []);
 
-  // Cache role when resolved
+  // Cache resolved Firestore role
   useEffect(() => {
     if (membershipDoc && user?.id) {
       const role = membershipDoc.clerkRole || membershipDoc.role || null;
       if (role) {
-        console.log("[FC RoleRouter] Role detected from Firestore:", role);
+        console.log("[FC RoleRouter] Caching Firestore role:", role, "for user:", user.id);
         setCached(`role_${user.id}`, role);
       }
     }
   }, [membershipDoc, user?.id]);
 
-  if (!user) return <Navigate to="/auth/sign-in" replace />;
+  // Log the full state once per render cycle (after data loads)
+  useEffect(() => {
+    if (!user || !isOrgListLoaded) return;
+    if (loggedRef.current) return;
+    loggedRef.current = true;
 
-  // Instant redirect using cached role — only when Firestore gave a real server
-  // response (not a cache miss). A cache miss sets loading=false with data=null
-  // before the network response arrives, so only use cache if timedOut or confirmed.
-  if (user && !membershipDoc && !membershipDocLoading && timedOut) {
+    console.log("────────────────────────────────────────────");
+    console.log("[FC RoleRouter] ▶ State snapshot");
+    console.log("[FC RoleRouter]   userId          :", user.id);
+    console.log("[FC RoleRouter]   activeOrgId     :", activeOrgId ?? "null");
+    console.log("[FC RoleRouter]   membershipDocId :", membershipDocId ?? "null (no org)");
+    console.log("[FC RoleRouter]   membershipDoc   :", membershipDoc
+      ? `found — role: ${membershipDoc.clerkRole ?? membershipDoc.role ?? "MISSING"}, profileCompleted: ${membershipDoc.profileCompleted ?? "absent"}`
+      : "null"
+    );
+    console.log("[FC RoleRouter]   Clerk memberships:", userMemberships?.data?.map(m => `${m.organization?.id}:${m.role}`) ?? []);
+    console.log("[FC RoleRouter]   Clerk invitations:", userInvitations?.data?.map(i => `${i.publicOrganizationData?.id}:${i.role}`) ?? []);
+    console.log("[FC RoleRouter]   timedOut        :", timedOut);
+  });
+
+  // ── No user → sign-in ────────────────────────────────────────────────────
+  if (!user) {
+    console.log("[FC RoleRouter] No user → /auth/sign-in");
+    return <Navigate to="/auth/sign-in" replace />;
+  }
+
+  // ── Cached role fast-path (only after Firestore timeout with no doc) ──────
+  if (!membershipDoc && !membershipDocLoading && timedOut) {
     const cachedRole = getCached<string>(`role_${user.id}`);
     if (cachedRole) {
       const normalizedRole = normalizeClerkRole(cachedRole);
       const dashPath = getDashboardPath(normalizedRole);
-      console.log("[FC RoleRouter] Cached role redirect (after timeout):", cachedRole, "→", dashPath);
+      console.log("[FC RoleRouter] Cached role fast-path:", cachedRole, "→", dashPath);
       return <Navigate to={dashPath} replace />;
     }
   }
 
-  // KEY FIX: treat "null doc but not timed out" as still loading — prevents
-  // premature /onboarding redirect on Firestore cache miss for new orgs.
+  // ── Still loading Firestore ───────────────────────────────────────────────
+  // Treat "null doc but not timed out" as loading to prevent premature /onboarding
+  // redirect on Firestore cache miss (new device / new org / first login).
   const isLoading =
     (!isOrgListLoaded ||
       (membershipDocId !== null && membershipDocLoading) ||
@@ -307,46 +339,70 @@ function RoleRouter() {
 
   if (isLoading) return <DashboardShimmer />;
 
+  // ── Firestore membership found ────────────────────────────────────────────
   if (membershipDoc) {
-    const normalizedRole = normalizeClerkRole(membershipDoc.clerkRole || membershipDoc.role || null);
-    const dashPath = getDashboardPath(normalizedRole);
+    const rawRole      = membershipDoc.clerkRole || membershipDoc.role || null;
+    const normalizedRole = normalizeClerkRole(rawRole);
     const profileCompleted = membershipDoc.profileCompleted !== false;
-    console.log("[FC RoleRouter] Role detected:", normalizedRole, "→", dashPath);
+    const dashPath     = getDashboardPath(normalizedRole);
+
+    console.log("[FC RoleRouter] Firestore membership resolved:");
+    console.log("[FC RoleRouter]   rawRole        :", rawRole ?? "MISSING — check Firestore doc");
+    console.log("[FC RoleRouter]   normalizedRole :", normalizedRole ?? "null (unrecognized role!)");
+    console.log("[FC RoleRouter]   profileCompleted:", profileCompleted);
+    console.log("[FC RoleRouter]   dashPath       :", dashPath);
+
+    if (!normalizedRole) {
+      // Role stored in Firestore doesn't match any known value — safe fallback
+      console.error("[FC RoleRouter] ✗ Role '", rawRole, "' is not recognized by normalizeClerkRole()");
+      console.error("[FC RoleRouter]   Expected: OWNER|AGENT|CUSTOMER (Firestore) or org:owner|org:pigmy_collector|org:customer (Clerk)");
+    }
+
     if (!profileCompleted && (normalizedRole === "pigmy_collector" || normalizedRole === "customer")) {
+      console.log("[FC RoleRouter]   Profile incomplete → /complete-profile");
       return <Navigate to="/complete-profile" replace />;
     }
+
     sessionStorage.removeItem("fc_onboarding_org_id");
+    console.log("[FC RoleRouter]   → Redirecting to:", dashPath);
     return <Navigate to={dashPath} replace />;
   }
 
-  // Clerk-level membership fallback (Firestore timed out or slow)
+  // ── Clerk membership fallback (Firestore slow or missing) ────────────────
   if (isOrgListLoaded && userMemberships?.data?.length) {
     const firstMembership = userMemberships.data[0];
-    const clerkRole = firstMembership.role;
-    const orgId = firstMembership.organization?.id || navOrgId;
+    const clerkRole       = firstMembership.role;
+    const orgId           = firstMembership.organization?.id || navOrgId;
     const normalizedClerkRole = normalizeClerkRole(clerkRole);
-    console.log("[FC RoleRouter] Clerk role fallback:", clerkRole, "→", normalizedClerkRole, "orgId:", orgId);
+
+    console.log("[FC RoleRouter] Clerk membership fallback:");
+    console.log("[FC RoleRouter]   clerkRole          :", clerkRole);
+    console.log("[FC RoleRouter]   normalizedClerkRole:", normalizedClerkRole ?? "UNRECOGNIZED");
+    console.log("[FC RoleRouter]   orgId              :", orgId ?? "null");
+    console.log("[FC RoleRouter]   Note: Firestore doc missing — owner may not have pre-created the collector record OR Firestore is slow");
 
     if (normalizedClerkRole === "organization_owner" && orgId) {
-      console.log("[FC RoleRouter] Redirecting to /dashboard/owner");
+      console.log("[FC RoleRouter]   → /dashboard/owner");
       return <Navigate to="/dashboard/owner" replace state={{ orgId }} />;
     }
-
     if (normalizedClerkRole === "pigmy_collector" && orgId) {
-      console.log("[FC RoleRouter] Redirecting to /dashboard/agent");
+      console.log("[FC RoleRouter]   → /dashboard/agent");
       return <Navigate to="/dashboard/agent" replace state={{ orgId }} />;
     }
-
     if (normalizedClerkRole === "customer" && orgId) {
-      console.log("[FC RoleRouter] Redirecting to /dashboard/customer");
+      console.log("[FC RoleRouter]   → /dashboard/customer");
       return <Navigate to="/dashboard/customer" replace state={{ orgId }} />;
     }
 
-    if (!timedOut) return <DashboardShimmer />;
+    // Clerk role not recognized — wait if Firestore hasn't timed out yet
+    if (!timedOut) {
+      console.log("[FC RoleRouter]   Role unrecognized + Firestore still loading — showing shimmer");
+      return <DashboardShimmer />;
+    }
 
-    // Final fallback — authenticated but role unclear, send to owner dashboard if they have an org
+    // Hard fallback: has org, role unclear → owner dashboard
     if (orgId) {
-      console.log("[FC RoleRouter] Role unclear but has org — defaulting to owner dashboard");
+      console.warn("[FC RoleRouter]   Role unclear after timeout — defaulting to /dashboard/owner for orgId:", orgId);
       return <Navigate to="/dashboard/owner" replace state={{ orgId }} />;
     }
 
@@ -358,12 +414,29 @@ function RoleRouter() {
     );
   }
 
-  if (userInvitations?.data?.length) {
-    console.log("[FC RoleRouter] Pending invitations found — redirecting");
+  // ── No Clerk membership — check for pending invitations ──────────────────
+  if (isOrgListLoaded && userInvitations?.data?.length) {
+    console.log("[FC RoleRouter] No membership but has pending Clerk invitation(s) →  /organization/invitation");
     return <Navigate to="/organization/invitation" replace />;
   }
 
-  console.log("[FC RoleRouter] No org/invitations — redirecting to /onboarding");
+  // ── No membership, no invitations — new owner who hasn't created an org ──
+  // LOOP GUARD: if we've been here before (check sessionStorage counter), show
+  // a hard-stop rather than looping /router → /onboarding → /router infinitely.
+  const routerVisits = parseInt(sessionStorage.getItem("fc_router_visits") ?? "0", 10) + 1;
+  sessionStorage.setItem("fc_router_visits", String(routerVisits));
+  if (routerVisits > 3) {
+    sessionStorage.removeItem("fc_router_visits");
+    console.error("[FC RoleRouter] ✗ Redirect loop detected (visited /router", routerVisits, "times) — showing recovery UI");
+    return (
+      <LoadingWorkspace
+        message="Unable to determine your workspace. Please sign out and try again."
+        onRetry={() => { sessionStorage.clear(); window.location.href = "/auth/sign-in"; }}
+      />
+    );
+  }
+
+  console.log("[FC RoleRouter] No org + no invitations → /onboarding (visit #", routerVisits, ")");
   return <Navigate to="/onboarding" replace />;
 }
 
