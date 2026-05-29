@@ -25,6 +25,10 @@ export default function OrgCustomers() {
   const { data: agents, loading: agentsLoading } = useCollectionRealtime<Membership>("organizationMembers", [
     where("role", "==", "AGENT"),
   ]);
+  // Owner members — owner can also collect payments directly
+  const { data: owners, loading: ownersLoading } = useCollectionRealtime<Membership>("organizationMembers", [
+    where("role", "==", "OWNER"),
+  ]);
   const { data: orgDoc } = useDocumentRealtime<any>("organizations", organization?.id);
 
   const [searchTerm, setSearchTerm] = useState("");
@@ -34,15 +38,20 @@ export default function OrgCustomers() {
 
   // Invite form
   const [email, setEmail] = useState("");
-  const [selectedAgentId, setSelectedAgentId] = useState("");
+  const [selectedCollectorId, setSelectedCollectorId] = useState("");
 
   // Reassign modal
   const [reassigningCustomer, setReassigningCustomer] = useState<any>(null);
   const [newCollectorId, setNewCollectorId] = useState("");
   const [isReassigning, setIsReassigning] = useState(false);
 
-  const activeAgents = agents.filter((a: any) => a.status === "ACTIVE");
-  const isOwnerCollector = (a: any) => a?.collector_type === "OWNER" || a?.is_default === true;
+  // Unified collector list: owner first, then active agents
+  const activeOwners = owners.filter((o: any) => o.status === "ACTIVE" || o.status === "active");
+  const activeAgents = agents.filter((a: any) => a.status === "ACTIVE" || a.status === "active");
+  const collectorsForAssignment = [...activeOwners, ...activeAgents];
+  const collectorsLoading = ownersLoading || agentsLoading;
+
+  const isOwnerMember = (m: any) => (m?.role || "").toUpperCase() === "OWNER";
 
   // Customer count per collector
   const customerCountByCollector: Record<string, number> = {};
@@ -51,19 +60,22 @@ export default function OrgCustomers() {
     if (aid) customerCountByCollector[aid] = (customerCountByCollector[aid] || 0) + 1;
   });
 
-  const collectorLabel = (agent: any) => {
-    const name = agent.fullName || (agent as any).name || agent.email || agent.id;
-    const count = customerCountByCollector[agent.id] || 0;
-    const ownerTag = isOwnerCollector(agent) ? " · Owner" : "";
+  // All members for display lookups (owner + agent)
+  const allCollectors = [...owners, ...agents];
+
+  const collectorLabel = (c: any) => {
+    const name = c.fullName || (c as any).name || c.email || c.id;
+    const count = customerCountByCollector[c.id] || 0;
+    const ownerTag = isOwnerMember(c) ? " · Owner" : "";
     return `${name} (${count})${ownerTag}`;
   };
 
   // Auto-select if only one active collector
   useEffect(() => {
-    if (isInviteOpen && activeAgents.length === 1) {
-      setSelectedAgentId(activeAgents[0].id);
+    if (isInviteOpen && collectorsForAssignment.length === 1) {
+      setSelectedCollectorId(collectorsForAssignment[0].id);
     }
-  }, [isInviteOpen, activeAgents.length]);
+  }, [isInviteOpen, collectorsForAssignment.length]);
 
   const maxCustomers = orgDoc?.limits?.maxCustomers || 10;
   const activeCustomers = customers.filter((c: any) => c.status === "ACTIVE").length;
@@ -83,7 +95,7 @@ export default function OrgCustomers() {
 
   const resetInviteForm = () => {
     setEmail("");
-    setSelectedAgentId("");
+    setSelectedCollectorId("");
   };
 
   const handleInviteCustomer = async (e: React.FormEvent) => {
@@ -94,9 +106,9 @@ export default function OrgCustomers() {
     if (atLimit) { toast.error(`Customer limit of ${maxCustomers} reached. Please upgrade your plan.`); return; }
 
     const collectorToAssign =
-      activeAgents.length === 1
-        ? activeAgents[0]
-        : activeAgents.find((a) => a.id === selectedAgentId);
+      collectorsForAssignment.length === 1
+        ? collectorsForAssignment[0]
+        : collectorsForAssignment.find((c) => c.id === selectedCollectorId);
 
     if (!collectorToAssign) {
       toast.error("Please select an assigned collector.");
@@ -147,7 +159,7 @@ export default function OrgCustomers() {
 
   const handleReassign = async () => {
     if (!reassigningCustomer || !newCollectorId || !organization?.id || !user?.id) return;
-    const newCollector = activeAgents.find((a) => a.id === newCollectorId);
+    const newCollector = collectorsForAssignment.find((c) => c.id === newCollectorId);
     if (!newCollector) return;
     setIsReassigning(true);
     try {
@@ -230,34 +242,37 @@ export default function OrgCustomers() {
                   <Label className="text-sm font-semibold text-slate-700">
                     Assigned Collector <span className="text-red-500">*</span>
                   </Label>
-                  {agentsLoading ? (
+                  {collectorsLoading ? (
                     <div className="h-11 rounded-md bg-slate-100 animate-pulse" />
-                  ) : activeAgents.length === 0 ? (
+                  ) : collectorsForAssignment.length === 0 ? (
                     <div className="h-11 rounded-md border border-slate-200 bg-slate-50 px-3 flex items-center text-sm text-slate-400">
-                      No active collectors
+                      No active collectors available
                     </div>
-                  ) : activeAgents.length === 1 ? (
+                  ) : collectorsForAssignment.length === 1 ? (
                     <div className="h-11 rounded-md border border-emerald-200 bg-emerald-50 px-3 flex items-center gap-2 text-sm text-emerald-800 font-medium">
-                      {isOwnerCollector(activeAgents[0]) && (
+                      {isOwnerMember(collectorsForAssignment[0]) && (
                         <Crown className="w-3.5 h-3.5 text-amber-500 shrink-0" />
                       )}
-                      <span className="flex-1">{activeAgents[0].fullName || (activeAgents[0] as any).name || "Owner"}</span>
+                      <span className="flex-1">
+                        {collectorsForAssignment[0].fullName || (collectorsForAssignment[0] as any).name || "Owner"}
+                        {isOwnerMember(collectorsForAssignment[0]) && " (Owner)"}
+                      </span>
                       <span className="text-xs text-emerald-600 font-normal shrink-0">
-                        {customerCountByCollector[activeAgents[0].id] || 0} customers · Auto-assigned
+                        {customerCountByCollector[collectorsForAssignment[0].id] || 0} customers · Auto-assigned
                       </span>
                     </div>
                   ) : (
                     <div className="relative">
                       <select
-                        value={selectedAgentId}
-                        onChange={(e) => setSelectedAgentId(e.target.value)}
+                        value={selectedCollectorId}
+                        onChange={(e) => setSelectedCollectorId(e.target.value)}
                         className="w-full appearance-none rounded-md border border-slate-200 bg-white px-3 py-2 pr-8 text-sm text-slate-900 h-11 focus:border-slate-400 focus:outline-none focus:ring-1 focus:ring-slate-300"
                         required
                       >
                         <option value="">Select a collector…</option>
-                        {activeAgents.map((agent) => (
-                          <option key={agent.id} value={agent.id}>
-                            {collectorLabel(agent)}
+                        {collectorsForAssignment.map((c) => (
+                          <option key={c.id} value={c.id}>
+                            {collectorLabel(c)}
                           </option>
                         ))}
                       </select>
@@ -269,7 +284,7 @@ export default function OrgCustomers() {
                 <Button
                   type="submit"
                   className="w-full h-11 font-semibold"
-                  disabled={isValidating || isSubmitting || agentsLoading}
+                  disabled={isValidating || isSubmitting || collectorsLoading || collectorsForAssignment.length === 0}
                 >
                   {isValidating ? (
                     <><Loader2 className="w-4 h-4 mr-2 animate-spin" />Validating…</>
@@ -352,8 +367,8 @@ export default function OrgCustomers() {
                   </TableRow>
                 ) : (
                   filteredCustomers.map((customer) => {
-                    const agent = agents.find(
-                      (a) => a.id === ((customer as any).assignedAgentId || customer.agentId)
+                    const assignedCollector = allCollectors.find(
+                      (c) => c.id === ((customer as any).assignedAgentId || customer.agentId)
                     );
                     return (
                       <TableRow key={customer.id}>
@@ -368,12 +383,12 @@ export default function OrgCustomers() {
                         </TableCell>
                         <TableCell>
                           <span className="inline-flex items-center gap-1.5 px-2 py-1 rounded-md text-xs font-medium bg-slate-100 text-slate-700">
-                            {isOwnerCollector(agent || {}) && (
+                            {assignedCollector && isOwnerMember(assignedCollector) && (
                               <Crown className="w-3 h-3 text-amber-500" />
                             )}
                             {(customer as any).assignedAgentName ||
-                              agent?.fullName ||
-                              (agent as any)?.name || (
+                              assignedCollector?.fullName ||
+                              (assignedCollector as any)?.name || (
                                 <span className="text-slate-400">Unassigned</span>
                               )}
                           </span>
@@ -386,7 +401,7 @@ export default function OrgCustomers() {
                           </span>
                         </TableCell>
                         <TableCell>
-                          {activeAgents.length > 1 && (
+                          {collectorsForAssignment.length > 1 && (
                             <button
                               onClick={() => {
                                 setReassigningCustomer(customer);
@@ -426,8 +441,8 @@ export default function OrgCustomers() {
             ) : (
               <div className="divide-y divide-slate-100">
                 {filteredCustomers.map((customer) => {
-                  const agent = agents.find(
-                    (a) => a.id === ((customer as any).assignedAgentId || customer.agentId)
+                  const assignedCollector = allCollectors.find(
+                    (c) => c.id === ((customer as any).assignedAgentId || customer.agentId)
                   );
                   return (
                     <div key={customer.id} className="px-4 py-3">
@@ -443,12 +458,12 @@ export default function OrgCustomers() {
                           </p>
                           <div className="flex items-center gap-2 mt-1">
                             <span className="inline-flex items-center gap-1 text-xs text-slate-400">
-                              {isOwnerCollector(agent || {}) && (
+                              {assignedCollector && isOwnerMember(assignedCollector) && (
                                 <Crown className="w-2.5 h-2.5 text-amber-500" />
                               )}
-                              {(customer as any).assignedAgentName || agent?.fullName || "Unassigned"}
+                              {(customer as any).assignedAgentName || assignedCollector?.fullName || "Unassigned"}
                             </span>
-                            {activeAgents.length > 1 && (
+                            {collectorsForAssignment.length > 1 && (
                               <button
                                 onClick={() => {
                                   setReassigningCustomer(customer);
@@ -502,9 +517,9 @@ export default function OrgCustomers() {
                   className="w-full appearance-none rounded-md border border-slate-200 bg-white px-3 py-2 pr-8 text-sm text-slate-900 h-11 focus:border-slate-400 focus:outline-none focus:ring-1 focus:ring-slate-300"
                 >
                   <option value="">Select a collector…</option>
-                  {activeAgents.map((agent) => (
-                    <option key={agent.id} value={agent.id}>
-                      {collectorLabel(agent)}
+                  {collectorsForAssignment.map((c) => (
+                    <option key={c.id} value={c.id}>
+                      {collectorLabel(c)}
                     </option>
                   ))}
                 </select>

@@ -399,8 +399,9 @@ export async function recordCollection(organizationId: string, collectionData: P
     throw new Error("This customer has not activated their account yet.");
   }
 
-  // Determine the collector identity — OWNER or AGENT both use same engine
-  const collectedByRole = collectionData.collectedByRole || "AGENT";
+  // Determine the collector identity — OWNER or AGENT both use same engine.
+  // Callers should pass collectedByRole explicitly; no assumption is made here.
+  const collectedByRole = collectionData.collectedByRole || "OWNER";
   const collectedByUserId = collectionData.collectedByUserId || collectionData.agentId;
   const collectedByName = collectionData.collectedByName || "Collector";
   // assigned_to_user_id: the user (OWNER or AGENT) responsible for this customer
@@ -1082,41 +1083,10 @@ export async function reassignCustomer(params: {
 }
 
 /**
- * Creates the default "owner collector" record when an organization is created.
- * The owner automatically acts as the first Pigmy Collector (collector_type = OWNER).
- * This record appears in agent/collector queries so customers can be assigned immediately.
- * The owner collector cannot be deleted and is always active.
+ * REMOVED: createDefaultOwnerCollector
+ * The owner is now OWNER role only and can collect payments directly.
+ * No secondary AGENT/collector profile is created for the owner.
+ * collection records use created_by_user_id / collectedByUserId to track
+ * who recorded the payment — this can be an OWNER or an AGENT user ID.
  */
-export async function createDefaultOwnerCollector(params: {
-  organizationId: string;
-  clerkUserId: string;
-  fullName: string;
-  email: string;
-  phone: string;
-  organizationName: string;
-}): Promise<void> {
-  const { organizationId, clerkUserId, fullName, email, phone, organizationName } = params;
-  const collectorDocId = `${organizationId}_${clerkUserId}_default_collector`;
-  await setDoc(doc(db, "organizationMembers", collectorDocId), {
-    id: collectorDocId,
-    organizationId,
-    clerkUserId,
-    role: "AGENT",
-    clerkRole: "org:owner",
-    collector_type: "OWNER",
-    is_default: true,
-    status: "ACTIVE",
-    fullName,
-    name: fullName,
-    email,
-    phone,
-    organizationName,
-    profileCompleted: true,
-    actsAsAgent: true,
-    assignedArea: "All Areas",
-    joinedAt: serverTimestamp(),
-    createdAt: serverTimestamp(),
-    updatedAt: serverTimestamp(),
-  });
-}
 

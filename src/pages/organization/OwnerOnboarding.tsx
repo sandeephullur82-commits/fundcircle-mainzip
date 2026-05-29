@@ -4,7 +4,7 @@ import { useNavigate } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import { doc, setDoc, collection, serverTimestamp } from "firebase/firestore";
 import { db } from "@/lib/firebase";
-import { membershipIdFor, createDefaultOwnerCollector } from "@/lib/services";
+import { membershipIdFor } from "@/lib/services";
 import { setCached } from "@/lib/authCache";
 import { toast } from "sonner";
 import {
@@ -274,17 +274,6 @@ export default function OwnerOnboarding() {
       setCached(`role_${user.id}`, "org:owner");
       console.log("[FC Onboarding] Role cached for instant fallback");
 
-      console.log("[FC Onboarding] Step 3.5: Creating default owner collector…");
-      await createDefaultOwnerCollector({
-        organizationId: org.id,
-        clerkUserId: user.id,
-        fullName: getEffectiveName(),
-        email: user.primaryEmailAddress?.emailAddress || "",
-        phone: phone.trim(),
-        organizationName: orgName.trim(),
-      });
-      console.log("[FC Onboarding] Step 3.5 ✓ Default owner collector created");
-
       console.log("[FC Onboarding] Step 4: Writing subscription doc…");
       const subRef = doc(collection(db, "subscriptions"));
       await setDoc(subRef, {
@@ -348,17 +337,6 @@ export default function OwnerOnboarding() {
 
       setCached(`role_${user.id}`, "org:owner");
       console.log("[FC Onboarding] Role cached for instant fallback");
-
-      console.log("[FC Onboarding] Step 3.5: Creating default owner collector…");
-      await createDefaultOwnerCollector({
-        organizationId: org.id,
-        clerkUserId: user.id,
-        fullName: getEffectiveName(),
-        email: user.primaryEmailAddress?.emailAddress || "",
-        phone: phone.trim(),
-        organizationName: orgName.trim(),
-      });
-      console.log("[FC Onboarding] Step 3.5 ✓ Default owner collector created");
 
       console.log("[FC Onboarding] Step 4: Writing subscription + payment docs…");
       const invoiceNumber = generateInvoiceNumber();
