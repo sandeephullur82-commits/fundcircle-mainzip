@@ -346,25 +346,28 @@ function RoleRouter() {
     const profileCompleted = membershipDoc.profileCompleted !== false;
     const dashPath     = getDashboardPath(normalizedRole);
 
-    console.log("[FC RoleRouter] Firestore membership resolved:");
-    console.log("[FC RoleRouter]   rawRole        :", rawRole ?? "MISSING — check Firestore doc");
-    console.log("[FC RoleRouter]   normalizedRole :", normalizedRole ?? "null (unrecognized role!)");
+    console.log("[FC RoleRouter] ────────────────────────────────────────────");
+    console.log("[FC RoleRouter] Auth redirect decision (Firestore):");
+    console.log("[FC RoleRouter]   userId          :", user.id);
+    console.log("[FC RoleRouter]   orgId           :", activeOrgId ?? "null");
+    console.log("[FC RoleRouter]   membershipDocId :", membershipDocId);
+    console.log("[FC RoleRouter]   rawRole         :", rawRole ?? "MISSING — check Firestore doc");
+    console.log("[FC RoleRouter]   normalizedRole  :", normalizedRole ?? "null (UNRECOGNIZED — check normalizeClerkRole())");
     console.log("[FC RoleRouter]   profileCompleted:", profileCompleted);
-    console.log("[FC RoleRouter]   dashPath       :", dashPath);
+    console.log("[FC RoleRouter]   → destination   :", !profileCompleted && (normalizedRole === "pigmy_collector" || normalizedRole === "customer") ? "/complete-profile" : dashPath);
+    console.log("[FC RoleRouter] ────────────────────────────────────────────");
 
     if (!normalizedRole) {
-      // Role stored in Firestore doesn't match any known value — safe fallback
-      console.error("[FC RoleRouter] ✗ Role '", rawRole, "' is not recognized by normalizeClerkRole()");
-      console.error("[FC RoleRouter]   Expected: OWNER|AGENT|CUSTOMER (Firestore) or org:owner|org:pigmy_collector|org:customer (Clerk)");
+      console.error("[FC RoleRouter] ✗ Role '", rawRole, "' not recognized.");
+      console.error("[FC RoleRouter]   Valid Firestore values: OWNER, AGENT, CUSTOMER");
+      console.error("[FC RoleRouter]   Valid Clerk values: org:admin, org:pigmy_collector, org:customer");
     }
 
     if (!profileCompleted && (normalizedRole === "pigmy_collector" || normalizedRole === "customer")) {
-      console.log("[FC RoleRouter]   Profile incomplete → /complete-profile");
       return <Navigate to="/complete-profile" replace />;
     }
 
     sessionStorage.removeItem("fc_onboarding_org_id");
-    console.log("[FC RoleRouter]   → Redirecting to:", dashPath);
     return <Navigate to={dashPath} replace />;
   }
 
@@ -381,17 +384,20 @@ function RoleRouter() {
     console.log("[FC RoleRouter]   orgId              :", orgId ?? "null");
     console.log("[FC RoleRouter]   Note: Firestore doc missing — owner may not have pre-created the collector record OR Firestore is slow");
 
-    if (normalizedClerkRole === "organization_owner" && orgId) {
-      console.log("[FC RoleRouter]   → /dashboard/owner");
-      return <Navigate to="/dashboard/owner" replace state={{ orgId }} />;
-    }
-    if (normalizedClerkRole === "pigmy_collector" && orgId) {
-      console.log("[FC RoleRouter]   → /dashboard/agent");
-      return <Navigate to="/dashboard/agent" replace state={{ orgId }} />;
-    }
-    if (normalizedClerkRole === "customer" && orgId) {
-      console.log("[FC RoleRouter]   → /dashboard/customer");
-      return <Navigate to="/dashboard/customer" replace state={{ orgId }} />;
+    // Use getDashboardPath as single source of truth for all role→path mapping
+    if (normalizedClerkRole && orgId) {
+      const dashPath = getDashboardPath(normalizedClerkRole);
+      if (dashPath !== "/onboarding") {
+        console.log("[FC RoleRouter] ────────────────────────────────────────────");
+        console.log("[FC RoleRouter] Auth redirect decision (Clerk fallback):");
+        console.log("[FC RoleRouter]   userId    :", user.id);
+        console.log("[FC RoleRouter]   orgId     :", orgId);
+        console.log("[FC RoleRouter]   clerkRole :", clerkRole, "(raw)");
+        console.log("[FC RoleRouter]   normalized:", normalizedClerkRole);
+        console.log("[FC RoleRouter]   → destination:", dashPath);
+        console.log("[FC RoleRouter] ────────────────────────────────────────────");
+        return <Navigate to={dashPath} replace state={{ orgId }} />;
+      }
     }
 
     // Clerk role not recognized — wait if Firestore hasn't timed out yet
@@ -505,14 +511,15 @@ export default function App() {
               {/* Role router — ProtectedRoute prevents blank-page flash during session propagation */}
               <Route path="/router" element={<ProtectedRoute><RoleRouter /></ProtectedRoute>} />
 
-              {/* Dashboards */}
-              <Route path="/dashboard/owner/*" element={<ProtectedRoute><RoleProtectedRoute allowedRoles={["organization_owner"]}><OrgDashboard /></RoleProtectedRoute></ProtectedRoute>} />
-              <Route path="/dashboard/agent/*" element={<ProtectedRoute><RoleProtectedRoute allowedRoles={["pigmy_collector"]}><AgentDashboard /></RoleProtectedRoute></ProtectedRoute>} />
-              <Route path="/dashboard/customer/*" element={<ProtectedRoute><RoleProtectedRoute allowedRoles={["customer"]}><CustomerDashboard /></RoleProtectedRoute></ProtectedRoute>} />
-              <Route path="/dashboard/operator/*" element={<Navigate to="/dashboard/owner" replace />} />
-              <Route path="/dashboard/collector/*" element={<Navigate to="/dashboard/agent" replace />} />
+              {/* Dashboards — canonical paths */}
+              <Route path="/dashboard/owner/*"     element={<ProtectedRoute><RoleProtectedRoute allowedRoles={["organization_owner"]}><OrgDashboard /></RoleProtectedRoute></ProtectedRoute>} />
+              <Route path="/dashboard/collector/*" element={<ProtectedRoute><RoleProtectedRoute allowedRoles={["pigmy_collector"]}><AgentDashboard /></RoleProtectedRoute></ProtectedRoute>} />
+              <Route path="/dashboard/customer/*"  element={<ProtectedRoute><RoleProtectedRoute allowedRoles={["customer"]}><CustomerDashboard /></RoleProtectedRoute></ProtectedRoute>} />
+              {/* Legacy aliases → canonical paths */}
+              <Route path="/dashboard/agent/*"     element={<Navigate to="/dashboard/collector" replace />} />
+              <Route path="/dashboard/operator/*"  element={<Navigate to="/dashboard/owner"     replace />} />
               {/* Fallback: unknown /dashboard/* → router to re-detect role */}
-              <Route path="/dashboard/*" element={<Navigate to="/router" replace />} />
+              <Route path="/dashboard/*"           element={<Navigate to="/router"              replace />} />
 
               <Route path="/debug-user" element={<ProtectedRoute><DebugUserDoc /></ProtectedRoute>} />
 
