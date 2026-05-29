@@ -977,6 +977,91 @@ export async function validateCustomerInvite(
   }
 }
 
+// ─────────────────────────────────────────────────────────────
+// Invitation lifecycle — resend / revoke
+// ─────────────────────────────────────────────────────────────
+
+export async function resendInvitation(params: {
+  pendingInviteId: string;
+  organization: any;
+  email: string;
+  clerkRole: string;
+}): Promise<void> {
+  const { pendingInviteId, organization, email, clerkRole } = params;
+  if (!organization?.inviteMember) {
+    throw new Error("Organization invitation not supported.");
+  }
+  await organization.inviteMember({ emailAddress: email.trim().toLowerCase(), role: clerkRole });
+  await updateDoc(doc(db, "pendingInvites", pendingInviteId), {
+    status: "PENDING",
+    resentAt: serverTimestamp(),
+    updatedAt: serverTimestamp(),
+  });
+}
+
+export async function revokeInvitation(params: {
+  pendingInviteId: string;
+  organizationMemberId?: string;
+}): Promise<void> {
+  const { pendingInviteId, organizationMemberId } = params;
+  await updateDoc(doc(db, "pendingInvites", pendingInviteId), {
+    status: "REVOKED",
+    revokedAt: serverTimestamp(),
+    updatedAt: serverTimestamp(),
+  });
+  if (organizationMemberId) {
+    try {
+      await updateDoc(doc(db, "organizationMembers", organizationMemberId), {
+        status: "REVOKED",
+        updatedAt: serverTimestamp(),
+      });
+    } catch (_) {}
+  }
+}
+
+// ─────────────────────────────────────────────────────────────
+// Customer reassignment
+// ─────────────────────────────────────────────────────────────
+
+export async function reassignCustomer(params: {
+  customerId: string;
+  newCollectorId: string;
+  newCollectorName: string;
+  oldCollectorId: string;
+  oldCollectorName: string;
+  changedBy: string;
+  organizationId: string;
+}): Promise<void> {
+  const { customerId, newCollectorId, newCollectorName, oldCollectorId, oldCollectorName, changedBy, organizationId } = params;
+
+  await updateDoc(doc(db, "organizationMembers", customerId), {
+    assignedAgentId: newCollectorId,
+    assignedAgentName: newCollectorName,
+    updatedAt: serverTimestamp(),
+  });
+
+  try {
+    await updateDoc(doc(db, "customers", customerId), {
+      assignedAgentId: newCollectorId,
+      assignedAgentName: newCollectorName,
+      updatedAt: serverTimestamp(),
+    });
+  } catch (_) {}
+
+  const histRef = doc(collection(db, "assignmentHistory"));
+  await setDoc(histRef, {
+    id: histRef.id,
+    organizationId,
+    customerId,
+    oldCollectorId,
+    oldCollectorName,
+    newCollectorId,
+    newCollectorName,
+    changedBy,
+    changedAt: serverTimestamp(),
+  });
+}
+
 /**
  * Creates the default "owner collector" record when an organization is created.
  * The owner automatically acts as the first Pigmy Collector (collector_type = OWNER).
