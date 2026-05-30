@@ -114,16 +114,13 @@ export default function OwnerOnboarding() {
   const [createdOrgId, setCreatedOrgId] = useState<string | null>(null);
   const successTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // If user already has an org membership (and we're not mid-creation), send to dashboard
-  React.useEffect(() => {
-    if (!isLoaded) return;
-    if (success) return; // Don't redirect mid-creation flow — org was just created
-    if (userMemberships?.data?.length) {
-      const orgId = userMemberships.data[0].organization?.id;
-      console.log("[FC Onboarding] User already has org — redirecting to dashboard, org:", orgId);
-      navigate("/dashboard/owner", { replace: true, state: { orgId } });
-    }
-  }, [isLoaded, success, userMemberships?.data, navigate]);
+  // If user already owns an org (and we're not mid-creation), block further creation
+  const alreadyOwnsOrg = isLoaded && !success && (userMemberships?.data || []).some(
+    (m: any) => m.role === "org:admin" || m.role === "org:owner"
+  );
+  const existingOwnerOrgName = alreadyOwnsOrg
+    ? (userMemberships?.data?.find((m: any) => m.role === "org:admin" || m.role === "org:owner") as any)?.organization?.name || "your organization"
+    : null;
 
   // Cleanup timer on unmount
   React.useEffect(() => {
@@ -404,6 +401,42 @@ export default function OwnerOnboarding() {
         <div className="flex flex-col items-center gap-3">
           <Loader2 className="w-8 h-8 text-sky-500 animate-spin" />
           <p className="text-sm text-slate-500">Loading your account…</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (alreadyOwnsOrg) {
+    const existingOrgId = (userMemberships?.data?.find((m: any) => m.role === "org:admin" || m.role === "org:owner") as any)?.organization?.id;
+    return (
+      <div className="min-h-screen bg-slate-50 flex items-center justify-center p-4">
+        <div className="w-full max-w-md bg-white border border-slate-200/80 rounded-3xl p-8 shadow-xl space-y-6 text-center">
+          <div className="w-14 h-14 rounded-2xl bg-amber-100 flex items-center justify-center mx-auto">
+            <Building2 className="w-7 h-7 text-amber-600" />
+          </div>
+          <div className="space-y-2">
+            <h1 className="text-xl font-bold text-slate-900">You already own an organization</h1>
+            <p className="text-sm text-slate-500 leading-relaxed">
+              Each owner account can only manage one organization.
+            </p>
+          </div>
+          {existingOwnerOrgName && (
+            <div className="flex items-center gap-3 p-4 bg-amber-50 border border-amber-200/70 rounded-2xl text-left">
+              <div className="w-9 h-9 rounded-xl bg-amber-200/60 flex items-center justify-center shrink-0">
+                <Building2 className="w-4.5 h-4.5 text-amber-700" />
+              </div>
+              <div>
+                <p className="text-sm font-bold text-slate-800">{existingOwnerOrgName}</p>
+                <p className="text-xs text-slate-500 mt-0.5">Your active organization</p>
+              </div>
+            </div>
+          )}
+          <button
+            onClick={() => navigate("/dashboard/owner", { replace: true, state: { orgId: existingOrgId } })}
+            className="w-full h-12 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-bold text-sm shadow-sm transition-all flex items-center justify-center gap-2 cursor-pointer active:scale-[0.98]"
+          >
+            Go to Dashboard
+          </button>
         </div>
       </div>
     );

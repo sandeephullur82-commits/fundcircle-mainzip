@@ -28,6 +28,7 @@ import AgentDashboard from "./pages/agent/AgentDashboard";
 import CustomerDashboard from "./pages/customer/CustomerDashboard";
 import OrgCreate from "./pages/organization/OrgCreate";
 import OrgInvitation from "./pages/organization/OrgInvitation";
+import OrgSelectorPage from "./pages/OrgSelectorPage";
 import UserProfilePage from "./pages/UserProfilePage";
 import WorkspaceSelectionPage from "./pages/WorkspaceSelectionPage";
 import DebugUserDoc from "./components/DebugUserDoc";
@@ -251,25 +252,37 @@ function RoleRouter() {
     sessionStorage.getItem("fc_onboarding_org_id") ||
     null;
 
-  const activeOrgId =
-    organization?.id ||
-    userMemberships?.data?.[0]?.organization?.id ||
-    navOrgId ||
-    null;
+  const memberships = userMemberships?.data || [];
+
+  // Agents/customers with multiple orgs must pick via OrgSelectorPage — don't auto-select
+  const isMultiOrgNonOwner =
+    isOrgListLoaded &&
+    !organization?.id &&
+    memberships.length > 1 &&
+    memberships[0]?.role !== "org:admin";
+
+  const activeOrgId = isMultiOrgNonOwner
+    ? null
+    : (organization?.id ||
+       memberships[0]?.organization?.id ||
+       navOrgId ||
+       null);
 
   const membershipDocId = user && activeOrgId ? membershipIdFor(activeOrgId, user.id) : null;
   const { data: membershipDoc, loading: membershipDocLoading } =
     useDocumentRealtime<any>("organizationMembers", membershipDocId);
 
-  // Activate the first available org if none is active yet
+  // Activate the first available org if none is active yet (skip for multi-org non-owners)
   useEffect(() => {
-    if (!user || !isOrgListLoaded || organization?.id || !userMemberships?.data?.length || !setActive) return;
-    const firstOrgId = userMemberships.data[0].organization.id;
+    if (!user || !isOrgListLoaded || organization?.id || !memberships.length || !setActive) return;
+    // Multi-org agents/customers go to OrgSelectorPage — don't auto-activate
+    if (memberships.length > 1 && memberships[0]?.role !== "org:admin") return;
+    const firstOrgId = memberships[0].organization.id;
     console.log("[FC RoleRouter] Auto-activating first Clerk org:", firstOrgId);
     setActive({ organization: firstOrgId }).catch(err =>
       console.warn("[FC RoleRouter] setActive() failed:", err)
     );
-  }, [user, isOrgListLoaded, organization?.id, userMemberships?.data, setActive]);
+  }, [user, isOrgListLoaded, organization?.id, memberships, setActive]);
 
   // Firestore hard timeout
   useEffect(() => {
@@ -315,6 +328,12 @@ function RoleRouter() {
   if (!user) {
     console.log("[FC RoleRouter] No user → /auth/sign-in");
     return <Navigate to="/auth/sign-in" replace />;
+  }
+
+  // ── Multiple orgs for agent/customer → org selector ──────────────────────
+  if (isMultiOrgNonOwner) {
+    console.log("[FC RoleRouter] Multi-org non-owner → /org-select");
+    return <Navigate to="/org-select" replace />;
   }
 
   // ── Cached role fast-path (only after Firestore timeout with no doc) ──────
@@ -506,6 +525,7 @@ export default function App() {
 
               <Route path="/organization/create" element={<ProtectedRoute><RoleProtectedRoute allowedRoles={["organization_owner"]}><OrgCreate /></RoleProtectedRoute></ProtectedRoute>} />
               <Route path="/organization/invitation" element={<ProtectedRoute><OrgInvitation /></ProtectedRoute>} />
+              <Route path="/org-select" element={<ProtectedRoute><OrgSelectorPage /></ProtectedRoute>} />
               <Route path="/profile" element={<ProtectedRoute><UserProfilePage /></ProtectedRoute>} />
 
               {/* Role router — ProtectedRoute prevents blank-page flash during session propagation */}

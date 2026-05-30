@@ -1,5 +1,5 @@
-import { useUser, SignOutButton } from "@clerk/clerk-react";
-import { LogOut, Wallet, CreditCard, History } from "lucide-react";
+import { useUser, useOrganization, useOrganizationList, SignOutButton } from "@clerk/clerk-react";
+import { LogOut, Wallet, CreditCard, History, ChevronDown, Check, Building2 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -9,16 +9,19 @@ import { Label } from "@/components/ui/label";
 import { useCollectionRealtimeRaw } from "@/lib/firestore-hooks";
 import { Collection, Loan, User } from "@/types";
 import { format } from "date-fns";
-import React, { useState } from "react";
+import React, { useState, useRef, useEffect } from "react";
 import { applyForLoan } from "@/lib/services";
 import { toast } from "sonner";
 import { BrandMark } from "@/components/BrandLogo";
 import { where } from "firebase/firestore";
 import { useLanguage } from "@/lib/languageContext";
-import { Navigate } from "react-router-dom";
+import { Navigate, useNavigate } from "react-router-dom";
 
 export default function CustomerDashboard() {
   const { isLoaded, isSignedIn, user } = useUser();
+  const { organization } = useOrganization();
+  const { userMemberships, setActive } = useOrganizationList({ userMemberships: true });
+  const navigate = useNavigate();
   const { language, setLanguage, t } = useLanguage();
   const customerEmail = user?.primaryEmailAddress?.emailAddress || "";
 
@@ -33,6 +36,37 @@ export default function CustomerDashboard() {
   const [loanPrincipal, setLoanPrincipal] = useState("");
   const [loanDuration, setLoanDuration] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  const [orgDropdownOpen, setOrgDropdownOpen] = useState(false);
+  const [switching, setSwitching] = useState(false);
+  const dropdownRef = useRef<HTMLDivElement>(null);
+
+  const memberships = userMemberships?.data || [];
+  const hasMultipleOrgs = memberships.length > 1;
+
+  useEffect(() => {
+    if (!orgDropdownOpen) return;
+    const handleClick = (e: MouseEvent) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
+        setOrgDropdownOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handleClick);
+    return () => document.removeEventListener("mousedown", handleClick);
+  }, [orgDropdownOpen]);
+
+  const handleSwitchOrg = async (orgId: string) => {
+    if (orgId === organization?.id || !setActive || switching) return;
+    setSwitching(true);
+    setOrgDropdownOpen(false);
+    try {
+      await setActive({ organization: orgId });
+      navigate("/router", { replace: true });
+    } catch (err) {
+      console.error("[FC CustomerDashboard] Failed to switch org:", err);
+      setSwitching(false);
+    }
+  };
 
   const activeLoan = loans.find(l => l.status === "active");
   const pendingLoan = loans.find(l => l.status === "pending");
@@ -56,7 +90,6 @@ export default function CustomerDashboard() {
     }
   };
 
-  // Minimal inline check — don't block the whole page for Clerk session
   if (!isLoaded) {
     return (
       <div className="min-h-screen bg-slate-50 flex flex-col pb-16">
@@ -101,7 +134,6 @@ export default function CustomerDashboard() {
     );
   }
 
-  // While profile is loading from Firestore, show skeleton inline (not full-page)
   if (usersLoading) {
     return (
       <div className="min-h-screen bg-slate-50 flex flex-col pb-16">
@@ -131,8 +163,52 @@ export default function CustomerDashboard() {
     <div className="min-h-screen bg-slate-50 flex flex-col pb-4">
       <header className="bg-white border-b border-slate-200 sticky top-0 z-10 shadow-sm">
         <div className="max-w-5xl mx-auto px-4 h-14 flex items-center justify-between gap-2">
-          <BrandMark className="text-lg font-extrabold" fundClassName="text-slate-900" />
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 min-w-0">
+            <BrandMark className="text-lg font-extrabold" />
+            {hasMultipleOrgs && (
+              <div className="relative" ref={dropdownRef}>
+                <button
+                  onClick={() => setOrgDropdownOpen(!orgDropdownOpen)}
+                  disabled={switching}
+                  className="flex items-center gap-1 text-xs font-semibold text-slate-600 hover:text-slate-900 bg-slate-100 hover:bg-slate-200 px-2.5 py-1.5 rounded-lg transition-colors"
+                >
+                  <Building2 className="w-3 h-3 shrink-0" />
+                  <span className="max-w-[100px] truncate">{organization?.name || "Organization"}</span>
+                  <ChevronDown className={`w-3 h-3 shrink-0 transition-transform ${orgDropdownOpen ? "rotate-180" : ""}`} />
+                </button>
+
+                {orgDropdownOpen && (
+                  <div className="absolute left-0 top-full mt-1.5 bg-white border border-slate-200 rounded-xl shadow-lg z-50 min-w-[200px] overflow-hidden">
+                    <p className="px-3 py-2 text-[10px] font-bold text-slate-400 uppercase tracking-wider border-b border-slate-100">
+                      Switch Organization
+                    </p>
+                    {memberships.map((m: any) => {
+                      const id = m.organization?.id;
+                      const name = m.organization?.name || id;
+                      const isActive = id === organization?.id;
+                      return (
+                        <button
+                          key={id}
+                          onClick={() => handleSwitchOrg(id)}
+                          className={`w-full text-left px-3 py-2.5 text-xs font-medium transition-colors flex items-center gap-2.5 ${
+                            isActive
+                              ? "bg-purple-50 text-purple-700"
+                              : "text-slate-700 hover:bg-slate-50"
+                          }`}
+                        >
+                          <div className={`w-1.5 h-1.5 rounded-full shrink-0 ${isActive ? "bg-purple-500" : "bg-slate-300"}`} />
+                          <span className="truncate flex-1">{name}</span>
+                          {isActive && <Check className="w-3 h-3 shrink-0 text-purple-600" />}
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+
+          <div className="flex items-center gap-2 shrink-0">
             <div className="flex gap-0.5 bg-slate-100 p-0.5 rounded-full text-xs">
               <button className={`px-2 py-1 rounded-full font-medium transition-colors ${language === 'en' ? 'bg-white text-slate-800 shadow-sm' : 'text-slate-500 hover:text-slate-800'}`} onClick={() => setLanguage('en')}>EN</button>
               <button className={`px-2 py-1 rounded-full font-medium transition-colors ${language === 'kn' ? 'bg-white text-slate-800 shadow-sm' : 'text-slate-500 hover:text-slate-800'}`} onClick={() => setLanguage('kn')}>ಕನ್ನಡ</button>
