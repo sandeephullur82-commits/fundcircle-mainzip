@@ -236,8 +236,6 @@ export default function OwnerOnboarding() {
       id: user!.id,
       name,
       email: user!.primaryEmailAddress?.emailAddress || "",
-      role: "organization_owner",
-      organizationId: orgId,
       updatedAt: serverTimestamp(),
     }, { merge: true });
   };
@@ -270,9 +268,9 @@ export default function OwnerOnboarding() {
       await createMembershipInFirestore(org.id);
       console.log("[FC Onboarding] Step 3 ✓ organizationMembers + users written");
 
-      // Pre-cache the owner role so the timeout fallback in RoleProtectedRoute
-      // resolves instantly instead of waiting the full 5 s.
-      setCached(`role_${user.id}`, "org:owner");
+      // Pre-cache the owner role (keyed per-org) so the timeout fallback in
+      // RoleProtectedRoute resolves instantly instead of waiting the full 5 s.
+      setCached(`role_${user.id}_${org.id}`, "org:owner");
       console.log("[FC Onboarding] Role cached for instant fallback");
 
       console.log("[FC Onboarding] Step 4: Writing subscription doc…");
@@ -336,7 +334,7 @@ export default function OwnerOnboarding() {
       await createMembershipInFirestore(org.id);
       console.log("[FC Onboarding] Step 3 ✓ organizationMembers + users written");
 
-      setCached(`role_${user.id}`, "org:owner");
+      setCached(`role_${user.id}_${org.id}`, "org:owner");
       console.log("[FC Onboarding] Role cached for instant fallback");
 
       console.log("[FC Onboarding] Step 4: Writing subscription + payment docs…");

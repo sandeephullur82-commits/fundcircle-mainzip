@@ -365,12 +365,12 @@ export async function activatePendingInvite(email: string, organizationId: strin
   const emailKey = email.trim().toLowerCase();
   const activeMembership = memberships[0];
   const userRef = doc(db, "users", clerkUserId);
+  // Store only identity/profile data — roles are stored per-organization in organizationMembers
   await setDoc(userRef, {
     clerkUserId,
     id: clerkUserId,
     email: emailKey,
     name: fullName || activeMembership.fullName || "",
-    role: activeMembership.role?.toString().toLowerCase() || "",    clerkRole: activeMembership.clerkRole || "org:customer",    organizationId: activeMembership.organizationId,
     status: "active",
     updatedAt: serverTimestamp(),
     createdAt: serverTimestamp(),

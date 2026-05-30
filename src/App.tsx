@@ -169,7 +169,10 @@ function RoleProtectedRoute({ allowedRoles, children }: { allowedRoles: string[]
 
   useEffect(() => {
     if (!isOrgListLoaded || organization?.id || !userMemberships?.data?.length || !setActive) return;
-    setActive({ organization: userMemberships.data[0].organization.id }).catch(() => undefined);
+    // Multi-org non-owners must choose via OrgSelectorPage — never auto-activate for them
+    const members = userMemberships.data;
+    if (members.length > 1 && members[0]?.role !== "org:admin" && members[0]?.role !== "org:owner") return;
+    setActive({ organization: members[0].organization.id }).catch(() => undefined);
   }, [isOrgListLoaded, organization?.id, userMemberships?.data, setActive]);
 
   const membershipId = user && activeOrgId ? membershipIdFor(activeOrgId, user.id) : null;
@@ -183,16 +186,16 @@ function RoleProtectedRoute({ allowedRoles, children }: { allowedRoles: string[]
     return () => clearTimeout(timer);
   }, []);
 
-  // Cache the role when we get it from Firestore
+  // Cache the role when we get it from Firestore — keyed by userId+orgId
   useEffect(() => {
-    if (membershipDoc && user?.id) {
+    if (membershipDoc && user?.id && activeOrgId) {
       const role = membershipDoc.clerkRole || membershipDoc.role || null;
       if (role) {
         console.log("[FC RoleProtectedRoute] Role detected from Firestore:", role);
-        setCached(`role_${user.id}`, role);
+        setCached(`role_${user.id}_${activeOrgId}`, role);
       }
     }
-  }, [membershipDoc, user?.id]);
+  }, [membershipDoc, user?.id, activeOrgId]);
 
   // KEY FIX: also wait when doc is null but we haven't timed out — Firestore with
   // persistentLocalCache fires onSnapshot immediately with null on a cache miss
@@ -208,7 +211,7 @@ function RoleProtectedRoute({ allowedRoles, children }: { allowedRoles: string[]
   if (!isSignedIn || !user) return <Navigate to="/auth/sign-in" replace />;
 
   if (!membershipDoc && timedOut && membershipId) {
-    const cachedRole = getCached<string>(`role_${user.id}`);
+    const cachedRole = getCached<string>(`role_${user.id}_${activeOrgId}`);
     if (cachedRole) {
       const normalizedCached = normalizeClerkRole(cachedRole);
       console.log("[FC RoleProtectedRoute] Using cached role:", cachedRole);
@@ -293,16 +296,16 @@ function RoleRouter() {
     return () => clearTimeout(timer);
   }, []);
 
-  // Cache resolved Firestore role
+  // Cache resolved Firestore role — keyed by userId+orgId for org-scoped roles
   useEffect(() => {
-    if (membershipDoc && user?.id) {
+    if (membershipDoc && user?.id && activeOrgId) {
       const role = membershipDoc.clerkRole || membershipDoc.role || null;
       if (role) {
-        console.log("[FC RoleRouter] Caching Firestore role:", role, "for user:", user.id);
-        setCached(`role_${user.id}`, role);
+        console.log("[FC RoleRouter] Caching Firestore role:", role, "for user:", user.id, "org:", activeOrgId);
+        setCached(`role_${user.id}_${activeOrgId}`, role);
       }
     }
-  }, [membershipDoc, user?.id]);
+  }, [membershipDoc, user?.id, activeOrgId]);
 
   // Log the full state once per render cycle (after data loads)
   useEffect(() => {
@@ -337,8 +340,8 @@ function RoleRouter() {
   }
 
   // ── Cached role fast-path (only after Firestore timeout with no doc) ──────
-  if (!membershipDoc && !membershipDocLoading && timedOut) {
-    const cachedRole = getCached<string>(`role_${user.id}`);
+  if (!membershipDoc && !membershipDocLoading && timedOut && activeOrgId) {
+    const cachedRole = getCached<string>(`role_${user.id}_${activeOrgId}`);
     if (cachedRole) {
       const normalizedRole = normalizeClerkRole(cachedRole);
       const dashPath = getDashboardPath(normalizedRole);

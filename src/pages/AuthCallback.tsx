@@ -196,9 +196,24 @@ export default function AuthCallbackPage() {
       console.log("[FC AuthCallback]   pending invitations   :", userInvitations?.data?.length ?? 0);
 
       try {
+        // ── Multi-org non-owner → let them choose via OrgSelectorPage ──────
+        const memberships = userMemberships?.data ?? [];
+        const isMultiOrgNonOwner =
+          !organization?.id &&
+          memberships.length > 1 &&
+          memberships[0]?.role !== "org:admin" &&
+          memberships[0]?.role !== "org:owner";
+
+        if (isMultiOrgNonOwner) {
+          console.log("[FC AuthCallback]   Multi-org non-owner — routing to /org-select");
+          redirectedRef.current = true;
+          navigate("/org-select", { replace: true });
+          return;
+        }
+
         // ── Activate first org if none active ────────────────────────────
-        if (!organization?.id && userMemberships?.data?.length && setActive) {
-          const firstOrgId = userMemberships.data[0].organization.id;
+        if (!organization?.id && memberships.length && setActive) {
+          const firstOrgId = memberships[0].organization.id;
           console.log("[FC AuthCallback]   Activating first Clerk org:", firstOrgId);
           setStatus("Activating your organisation…");
           await setActive({ organization: firstOrgId });

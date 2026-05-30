@@ -89,7 +89,6 @@ export default function OrgCreate() {
         await setDoc(doc(db, "users", user.id), {
           name: user.fullName || "Owner",
           email: user.primaryEmailAddress?.emailAddress || "",
-          role: "organization_owner",
           updatedAt: serverTimestamp(),
         }, { merge: true });
 
@@ -114,7 +113,7 @@ export default function OrgCreate() {
         await setDoc(doc(db, "memberships", ownerDocId), ownerMembership, { merge: true });
         await setDoc(doc(db, "organizationMembers", ownerDocId), ownerMembership, { merge: true });
 
-        setCached(`role_${user.id}`, "org:owner");
+        setCached(`role_${user.id}_${org.id}`, "org:owner");
       }
 
       if (setActive) {

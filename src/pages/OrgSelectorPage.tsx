@@ -7,6 +7,10 @@ import { BrandMark } from "@/components/BrandLogo";
 import { normalizeClerkRole, getDashboardPath } from "@/lib/auth/get-user-role";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
+import { doc, getDoc } from "firebase/firestore";
+import { db } from "@/lib/firebase";
+import { membershipIdFor } from "@/lib/services";
+import { setCached } from "@/lib/authCache";
 
 export default function OrgSelectorPage() {
   const { user } = useUser();
@@ -14,17 +18,31 @@ export default function OrgSelectorPage() {
   const navigate = useNavigate();
   const [selecting, setSelecting] = useState<string | null>(null);
 
-  const handleSelect = async (orgId: string, clerkRole: string) => {
-    if (!setActive || selecting) return;
+  const handleSelect = async (orgId: string) => {
+    if (!setActive || selecting || !user) return;
     setSelecting(orgId);
     try {
       await setActive({ organization: orgId });
       sessionStorage.setItem("fc_onboarding_org_id", orgId);
-      const normalizedRole = normalizeClerkRole(clerkRole);
-      const dashPath = getDashboardPath(normalizedRole);
+
+      // Load the per-org role from Firestore — this is the authoritative source
+      const membershipDocId = membershipIdFor(orgId, user.id);
+      const snap = await getDoc(doc(db, "organizationMembers", membershipDocId));
+      let dashPath = "/router";
+      if (snap.exists()) {
+        const data = snap.data();
+        const rawRole = data.clerkRole || data.role;
+        const normalizedRole = normalizeClerkRole(rawRole);
+        dashPath = getDashboardPath(normalizedRole);
+        // Cache the per-org role so the timeout fallback in RoleProtectedRoute resolves instantly
+        if (rawRole) setCached(`role_${user.id}_${orgId}`, rawRole);
+        console.log("[FC OrgSelector] Firestore role for org", orgId, ":", rawRole, "→", dashPath);
+      } else {
+        console.warn("[FC OrgSelector] No Firestore membership doc found for org:", orgId, "— falling back to /router");
+      }
       navigate(dashPath, { replace: true, state: { orgId } });
     } catch (err) {
-      console.error("[FC OrgSelector] Failed to set active org:", err);
+      console.error("[FC OrgSelector] Failed to select org:", err);
       setSelecting(null);
     }
   };
@@ -82,7 +100,7 @@ export default function OrgSelectorPage() {
                 return (
                   <button
                     key={orgId}
-                    onClick={() => handleSelect(orgId, m.role)}
+                    onClick={() => handleSelect(orgId)}
                     disabled={!!selecting}
                     className="w-full flex items-center gap-4 p-4 rounded-2xl border border-slate-200 bg-slate-50/50 hover:bg-white hover:border-slate-300 hover:shadow-sm transition-all text-left group disabled:opacity-60"
                   >
