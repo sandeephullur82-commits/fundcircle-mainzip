@@ -7,30 +7,38 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
-import { provisionUser, validateAgentEmail } from "@/lib/services";
+import { addMember, validateAgentEmail } from "@/lib/services";
 import { useOrganization, useUser } from "@clerk/clerk-react";
 import { where } from "firebase/firestore";
-import { Search, Plus, AlertTriangle, UserCheck, Copy, CheckCheck, Info, ExternalLink } from "lucide-react";
+import {
+  Search, Plus, AlertTriangle, UserCheck, Info, Loader2,
+  MailCheck, UserPlus,
+} from "lucide-react";
 import { toast } from "sonner";
+
+type AddResult = {
+  isExistingUser: boolean;
+  name: string;
+  email: string;
+};
 
 export default function OrgAgents() {
   const { user } = useUser();
   const { organization } = useOrganization();
 
   const { data: members, loading } = useCollectionRealtime<Membership>("organizationMembers", [
-    where("role", "==", "AGENT")
+    where("role", "==", "AGENT"),
   ]);
   const { data: orgDoc } = useDocumentRealtime<any>("organizations", organization?.id);
 
   const [searchTerm, setSearchTerm] = useState("");
   const [isOpen, setIsOpen] = useState(false);
-  const [firstName, setFirstName] = useState("");
-  const [lastName, setLastName] = useState("");
+  const [fullName, setFullName] = useState("");
   const [email, setEmail] = useState("");
+  const [phone, setPhone] = useState("");
   const [isValidating, setIsValidating] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [setupLink, setSetupLink] = useState<string | null>(null);
-  const [copied, setCopied] = useState(false);
+  const [result, setResult] = useState<AddResult | null>(null);
 
   const filteredCollectors = members.filter((u) =>
     ((u?.fullName || (u as any)?.name || "").toLowerCase().includes(searchTerm.toLowerCase())) ||
@@ -40,13 +48,16 @@ export default function OrgAgents() {
 
   const maxCollectors = orgDoc?.limits?.maxAgents || 1;
   const activeCollectors = members.filter((a: any) => a.status === "ACTIVE").length;
-  const pendingCollectors = members.filter((a: any) => a.status === "PENDING_SETUP").length;
+  const pendingCollectors = members.filter(
+    (a: any) => a.status === "PENDING_SETUP" || a.status === "PENDING_INVITED"
+  ).length;
   const atLimit = activeCollectors >= maxCollectors;
 
   const statusConfig: Record<string, { label: string; className: string }> = {
-    ACTIVE:        { label: "Active",       className: "bg-emerald-50 text-emerald-700 border-emerald-100" },
-    PENDING_SETUP: { label: "Setup Pending", className: "bg-amber-50 text-amber-700 border-amber-100" },
-    SUSPENDED:     { label: "Suspended",    className: "bg-red-50 text-red-700 border-red-100" },
+    ACTIVE:          { label: "Active",        className: "bg-emerald-50 text-emerald-700 border-emerald-100" },
+    PENDING_SETUP:   { label: "Setup Pending", className: "bg-amber-50 text-amber-700 border-amber-100" },
+    PENDING_INVITED: { label: "Invited",       className: "bg-violet-50 text-violet-700 border-violet-100" },
+    SUSPENDED:       { label: "Suspended",     className: "bg-red-50 text-red-700 border-red-100" },
   };
 
   const getStatus = (m: any) => {
@@ -55,26 +66,17 @@ export default function OrgAgents() {
   };
 
   const resetForm = () => {
-    setFirstName("");
-    setLastName("");
+    setFullName("");
     setEmail("");
-    setSetupLink(null);
-    setCopied(false);
-  };
-
-  const handleCopy = () => {
-    if (!setupLink) return;
-    navigator.clipboard.writeText(setupLink).then(() => {
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2500);
-    });
+    setPhone("");
+    setResult(null);
   };
 
   const handleAddAgent = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!organization?.id) { toast.error("No active organization selected."); return; }
     if (!user?.id) { toast.error("No authenticated owner."); return; }
-    if (!firstName.trim()) { toast.error("First name is required."); return; }
+    if (!fullName.trim()) { toast.error("Full name is required."); return; }
     if (!email.trim()) { toast.error("Email address is required."); return; }
     if (atLimit) { toast.error(`Collector limit of ${maxCollectors} reached.`); return; }
 
@@ -93,19 +95,24 @@ export default function OrgAgents() {
 
     setIsSubmitting(true);
     try {
-      const { setupUrl } = await provisionUser({
-        firstName: firstName.trim(),
-        lastName: lastName.trim(),
+      const { isExistingUser } = await addMember({
+        fullName: fullName.trim(),
         email: emailKey,
+        phone: phone.trim(),
         role: "AGENT",
         organizationId: organization.id,
         organizationName: organization.name || "",
+        inviterUserId: user.id,
         createdBy: user.id,
       });
-      setSetupLink(setupUrl);
-      toast.success("Agent account created. Share the setup link.");
+      setResult({ isExistingUser, name: fullName.trim(), email: emailKey });
+      if (isExistingUser) {
+        toast.success("Agent added to your organization.");
+      } else {
+        toast.success("Invitation sent! They'll receive an email to set up their account.");
+      }
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Failed to create agent account");
+      toast.error(error instanceof Error ? error.message : "Failed to add agent");
     } finally {
       setIsSubmitting(false);
     }
@@ -124,7 +131,7 @@ export default function OrgAgents() {
             </span>
             {pendingCollectors > 0 && (
               <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-amber-700 bg-amber-50 border border-amber-100 rounded-full px-2.5 py-1">
-                Pending setup: {pendingCollectors}
+                Pending: {pendingCollectors}
               </span>
             )}
           </div>
@@ -143,77 +150,55 @@ export default function OrgAgents() {
             <DialogContent className="max-w-sm">
               <DialogHeader>
                 <DialogTitle className="text-lg font-bold">
-                  {setupLink ? "Share Setup Link" : "Add Pigmy Collector"}
+                  {result ? (result.isExistingUser ? "Agent Added" : "Invitation Sent") : "Add Agent"}
                 </DialogTitle>
-                {!setupLink && (
-                  <p className="text-sm text-slate-500 mt-1">
-                    Create the agent's account. They'll receive a link to set their password.
-                  </p>
-                )}
               </DialogHeader>
 
-              {setupLink ? (
+              {result ? (
                 <div className="space-y-4 mt-2">
-                  <div className="rounded-xl bg-emerald-50 border border-emerald-200 p-4 text-center space-y-1">
-                    <UserCheck className="w-6 h-6 text-emerald-600 mx-auto" />
-                    <p className="text-sm font-semibold text-emerald-800">Agent account created!</p>
-                    <p className="text-xs text-emerald-600">Share this link so they can set their password and sign in.</p>
-                  </div>
-                  <div className="space-y-1.5">
-                    <Label className="text-xs font-semibold text-slate-600 uppercase tracking-wide">Setup Link</Label>
-                    <div className="flex gap-2">
-                      <input
-                        readOnly
-                        value={setupLink}
-                        className="flex-1 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-700 font-mono overflow-hidden text-ellipsis"
-                      />
-                      <button
-                        onClick={handleCopy}
-                        className="shrink-0 inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 px-3 py-2 text-xs font-semibold text-slate-700 transition-colors"
-                      >
-                        {copied ? <CheckCheck className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5" />}
-                        {copied ? "Copied!" : "Copy"}
-                      </button>
+                  {result.isExistingUser ? (
+                    <div className="rounded-xl bg-emerald-50 border border-emerald-200 p-4 text-center space-y-1.5">
+                      <UserPlus className="w-6 h-6 text-emerald-600 mx-auto" />
+                      <p className="text-sm font-semibold text-emerald-800">{result.name} has been added!</p>
+                      <p className="text-xs text-emerald-600">
+                        They already have a FundCircle account and can sign in now to access this organization.
+                      </p>
                     </div>
-                    <p className="text-xs text-slate-400">This link expires in 7 days.</p>
-                  </div>
+                  ) : (
+                    <div className="rounded-xl bg-violet-50 border border-violet-200 p-4 text-center space-y-1.5">
+                      <MailCheck className="w-6 h-6 text-violet-600 mx-auto" />
+                      <p className="text-sm font-semibold text-violet-800">Invitation sent to {result.name}!</p>
+                      <p className="text-xs text-violet-600">
+                        They'll receive an email at <span className="font-semibold">{result.email}</span> with a link to set up their account.
+                      </p>
+                    </div>
+                  )}
                   <Button className="w-full" onClick={() => { setIsOpen(false); resetForm(); }}>
                     Done
                   </Button>
                 </div>
               ) : (
                 <form onSubmit={handleAddAgent} className="space-y-4 mt-2">
-                  <div className="grid grid-cols-2 gap-3">
-                    <div className="space-y-1.5">
-                      <Label htmlFor="agent-fname" className="text-sm font-semibold text-slate-700">
-                        First Name <span className="text-red-500">*</span>
-                      </Label>
-                      <Input
-                        id="agent-fname"
-                        type="text"
-                        placeholder="John"
-                        value={firstName}
-                        onChange={e => setFirstName(e.target.value)}
-                        className="h-11"
-                        required
-                        autoComplete="off"
-                      />
-                    </div>
-                    <div className="space-y-1.5">
-                      <Label htmlFor="agent-lname" className="text-sm font-semibold text-slate-700">
-                        Last Name
-                      </Label>
-                      <Input
-                        id="agent-lname"
-                        type="text"
-                        placeholder="Doe"
-                        value={lastName}
-                        onChange={e => setLastName(e.target.value)}
-                        className="h-11"
-                        autoComplete="off"
-                      />
-                    </div>
+                  <p className="text-sm text-slate-500 -mt-2">
+                    If the email already has a FundCircle account, they'll be added instantly. Otherwise, they'll receive an invitation email.
+                  </p>
+
+                  <div className="space-y-1.5">
+                    <Label htmlFor="agent-name" className="text-sm font-semibold text-slate-700">
+                      Full Name <span className="text-red-500">*</span>
+                    </Label>
+                    <Input
+                      id="agent-name"
+                      type="text"
+                      placeholder="John Doe"
+                      value={fullName}
+                      onChange={(e) => setFullName(e.target.value)}
+                      className="h-11"
+                      required
+                      autoComplete="off"
+                    />
                   </div>
+
                   <div className="space-y-1.5">
                     <Label htmlFor="agent-email" className="text-sm font-semibold text-slate-700">
                       Email Address <span className="text-red-500">*</span>
@@ -223,19 +208,40 @@ export default function OrgAgents() {
                       type="email"
                       placeholder="agent@example.com"
                       value={email}
-                      onChange={e => setEmail(e.target.value)}
+                      onChange={(e) => setEmail(e.target.value)}
                       className="h-11"
                       required
                       autoComplete="off"
                     />
-                    <p className="text-xs text-slate-400">Role assigned automatically as Pigmy Collector.</p>
                   </div>
+
+                  <div className="space-y-1.5">
+                    <Label htmlFor="agent-phone" className="text-sm font-semibold text-slate-700">
+                      Phone Number
+                    </Label>
+                    <Input
+                      id="agent-phone"
+                      type="tel"
+                      placeholder="+91 98765 43210"
+                      value={phone}
+                      onChange={(e) => setPhone(e.target.value)}
+                      className="h-11"
+                      autoComplete="off"
+                    />
+                  </div>
+
                   <Button
                     type="submit"
                     className="w-full h-11 font-semibold"
-                    disabled={isValidating || isSubmitting || !firstName.trim() || !email.trim()}
+                    disabled={isValidating || isSubmitting || !fullName.trim() || !email.trim()}
                   >
-                    {isValidating ? "Validating…" : isSubmitting ? "Creating account…" : "Create Agent Account"}
+                    {isValidating ? (
+                      <><Loader2 className="w-4 h-4 mr-2 animate-spin" />Validating…</>
+                    ) : isSubmitting ? (
+                      <><Loader2 className="w-4 h-4 mr-2 animate-spin" />Adding agent…</>
+                    ) : (
+                      "Create Agent"
+                    )}
                   </Button>
                 </form>
               )}
@@ -276,7 +282,7 @@ export default function OrgAgents() {
               placeholder="Search agents…"
               className="pl-10 h-11"
               value={searchTerm}
-              onChange={e => setSearchTerm(e.target.value)}
+              onChange={(e) => setSearchTerm(e.target.value)}
             />
           </div>
         </CardHeader>
@@ -314,14 +320,14 @@ export default function OrgAgents() {
                     </TableCell>
                   </TableRow>
                 ) : (
-                  filteredCollectors.map(collector => {
+                  filteredCollectors.map((collector) => {
                     const s = getStatus(collector);
                     return (
                       <TableRow key={collector.id}>
                         <TableCell>
                           <span className="font-medium">
                             {collector.fullName || (collector as any).name || (
-                              <span className="text-slate-400 italic text-xs">Pending setup</span>
+                              <span className="text-slate-400 italic text-xs">Pending</span>
                             )}
                           </span>
                         </TableCell>
@@ -356,13 +362,13 @@ export default function OrgAgents() {
               </div>
             ) : (
               <div className="divide-y divide-slate-100">
-                {filteredCollectors.map(collector => {
+                {filteredCollectors.map((collector) => {
                   const s = getStatus(collector);
                   return (
                     <div key={collector.id} className="px-4 py-3 flex items-center justify-between gap-3">
                       <div className="min-w-0 flex-1">
                         <p className="font-semibold text-slate-900 text-sm truncate">
-                          {collector.fullName || (collector as any).name || <span className="text-slate-400 italic">Pending setup</span>}
+                          {collector.fullName || (collector as any).name || <span className="text-slate-400 italic">Pending</span>}
                         </p>
                         <p className="text-xs text-slate-500 truncate">{collector.email || "—"}</p>
                         <p className="text-xs text-slate-400 mt-0.5">

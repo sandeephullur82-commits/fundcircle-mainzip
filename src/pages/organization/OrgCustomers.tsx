@@ -7,13 +7,20 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
-import { provisionUser, validateCustomerEmail, reassignCustomer } from "@/lib/services";
+import { addMember, validateCustomerEmail, reassignCustomer } from "@/lib/services";
 import { useOrganization, useUser } from "@clerk/clerk-react";
 import { where } from "firebase/firestore";
 import {
-  Search, Plus, AlertTriangle, Crown, Users, ChevronDown, RefreshCw, Loader2, Copy, CheckCheck,
+  Search, Plus, AlertTriangle, Crown, Users, ChevronDown, RefreshCw,
+  Loader2, MailCheck, UserPlus,
 } from "lucide-react";
 import { toast } from "sonner";
+
+type AddResult = {
+  isExistingUser: boolean;
+  name: string;
+  email: string;
+};
 
 export default function OrgCustomers() {
   const { user } = useUser();
@@ -35,12 +42,11 @@ export default function OrgCustomers() {
   const [isValidating, setIsValidating] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  const [firstName, setFirstName] = useState("");
-  const [lastName, setLastName] = useState("");
+  const [fullName, setFullName] = useState("");
   const [email, setEmail] = useState("");
+  const [phone, setPhone] = useState("");
   const [selectedCollectorId, setSelectedCollectorId] = useState("");
-  const [setupLink, setSetupLink] = useState<string | null>(null);
-  const [copied, setCopied] = useState(false);
+  const [result, setResult] = useState<AddResult | null>(null);
 
   const [reassigningCustomer, setReassigningCustomer] = useState<any>(null);
   const [newCollectorId, setNewCollectorId] = useState("");
@@ -85,39 +91,32 @@ export default function OrgCustomers() {
   );
 
   const statusClass = (status?: string) => {
-    if (status === "ACTIVE") return "bg-emerald-50 text-emerald-700 border-emerald-100";
-    if (status === "PENDING_SETUP") return "bg-amber-50 text-amber-700 border-amber-100";
+    if (status === "ACTIVE")          return "bg-emerald-50 text-emerald-700 border-emerald-100";
+    if (status === "PENDING_SETUP")   return "bg-amber-50 text-amber-700 border-amber-100";
+    if (status === "PENDING_INVITED") return "bg-violet-50 text-violet-700 border-violet-100";
     return "bg-slate-50 text-slate-600 border-slate-100";
   };
 
   const statusLabel = (status?: string) => {
-    if (status === "ACTIVE") return "Active";
-    if (status === "PENDING_SETUP") return "Setup Pending";
+    if (status === "ACTIVE")          return "Active";
+    if (status === "PENDING_SETUP")   return "Setup Pending";
+    if (status === "PENDING_INVITED") return "Invited";
     return status || "Pending";
   };
 
   const resetForm = () => {
-    setFirstName("");
-    setLastName("");
+    setFullName("");
     setEmail("");
+    setPhone("");
     setSelectedCollectorId("");
-    setSetupLink(null);
-    setCopied(false);
-  };
-
-  const handleCopy = () => {
-    if (!setupLink) return;
-    navigator.clipboard.writeText(setupLink).then(() => {
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2500);
-    });
+    setResult(null);
   };
 
   const handleAddCustomer = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!organization?.id) { toast.error("No active organization selected."); return; }
     if (!user?.id) { toast.error("Missing authenticated owner identity."); return; }
-    if (!firstName.trim()) { toast.error("First name is required."); return; }
+    if (!fullName.trim()) { toast.error("Full name is required."); return; }
     if (!email.trim()) { toast.error("Email address is required."); return; }
     if (atLimit) { toast.error(`Customer limit of ${maxCustomers} reached.`); return; }
 
@@ -135,7 +134,7 @@ export default function OrgCustomers() {
 
     setIsValidating(true);
     try {
-      await validateCustomerEmail(organization.id, emailKey, "");
+      await validateCustomerEmail(organization.id, emailKey, phone.trim());
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Validation failed");
       setIsValidating(false);
@@ -146,21 +145,26 @@ export default function OrgCustomers() {
 
     setIsSubmitting(true);
     try {
-      const { setupUrl } = await provisionUser({
-        firstName: firstName.trim(),
-        lastName: lastName.trim(),
+      const { isExistingUser } = await addMember({
+        fullName: fullName.trim(),
         email: emailKey,
+        phone: phone.trim(),
         role: "CUSTOMER",
         organizationId: organization.id,
         organizationName: organization.name || "",
         assignedAgentId: collectorToAssign.id,
         assignedAgentName: collectorToAssign.fullName || (collectorToAssign as any).name || "",
+        inviterUserId: user.id,
         createdBy: user.id,
       });
-      setSetupLink(setupUrl);
-      toast.success("Customer account created. Share the setup link.");
+      setResult({ isExistingUser, name: fullName.trim(), email: emailKey });
+      if (isExistingUser) {
+        toast.success("Customer added to your organization.");
+      } else {
+        toast.success("Invitation sent! They'll receive an email to set up their account.");
+      }
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Failed to create customer account");
+      toast.error(error instanceof Error ? error.message : "Failed to add customer");
     } finally {
       setIsSubmitting(false);
     }
@@ -222,76 +226,55 @@ export default function OrgCustomers() {
             <DialogContent className="max-w-md">
               <DialogHeader>
                 <DialogTitle className="text-lg font-bold">
-                  {setupLink ? "Share Setup Link" : "Add Customer"}
+                  {result
+                    ? (result.isExistingUser ? "Customer Added" : "Invitation Sent")
+                    : "Add Customer"}
                 </DialogTitle>
-                {!setupLink && (
-                  <p className="text-sm text-slate-500 mt-1">
-                    Create the customer's account directly. They'll use a link to set their password.
-                  </p>
-                )}
               </DialogHeader>
 
-              {setupLink ? (
+              {result ? (
                 <div className="space-y-4 mt-2">
-                  <div className="rounded-xl bg-emerald-50 border border-emerald-200 p-4 text-center space-y-1">
-                    <Users className="w-6 h-6 text-emerald-600 mx-auto" />
-                    <p className="text-sm font-semibold text-emerald-800">Customer account created!</p>
-                    <p className="text-xs text-emerald-600">Share this link so they can set their password and sign in.</p>
-                  </div>
-                  <div className="space-y-1.5">
-                    <Label className="text-xs font-semibold text-slate-600 uppercase tracking-wide">Setup Link</Label>
-                    <div className="flex gap-2">
-                      <input
-                        readOnly
-                        value={setupLink}
-                        className="flex-1 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-700 font-mono overflow-hidden text-ellipsis"
-                      />
-                      <button
-                        onClick={handleCopy}
-                        className="shrink-0 inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 px-3 py-2 text-xs font-semibold text-slate-700 transition-colors"
-                      >
-                        {copied ? <CheckCheck className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5" />}
-                        {copied ? "Copied!" : "Copy"}
-                      </button>
+                  {result.isExistingUser ? (
+                    <div className="rounded-xl bg-emerald-50 border border-emerald-200 p-4 text-center space-y-1.5">
+                      <UserPlus className="w-6 h-6 text-emerald-600 mx-auto" />
+                      <p className="text-sm font-semibold text-emerald-800">{result.name} has been added!</p>
+                      <p className="text-xs text-emerald-600">
+                        They already have a FundCircle account and can sign in now to access this organization.
+                      </p>
                     </div>
-                    <p className="text-xs text-slate-400">This link expires in 7 days.</p>
-                  </div>
+                  ) : (
+                    <div className="rounded-xl bg-violet-50 border border-violet-200 p-4 text-center space-y-1.5">
+                      <MailCheck className="w-6 h-6 text-violet-600 mx-auto" />
+                      <p className="text-sm font-semibold text-violet-800">Invitation sent to {result.name}!</p>
+                      <p className="text-xs text-violet-600">
+                        They'll receive an email at <span className="font-semibold">{result.email}</span> with a link to set up their account.
+                      </p>
+                    </div>
+                  )}
                   <Button className="w-full" onClick={() => { setIsInviteOpen(false); resetForm(); }}>
                     Done
                   </Button>
                 </div>
               ) : (
                 <form onSubmit={handleAddCustomer} className="space-y-4 mt-2">
-                  <div className="grid grid-cols-2 gap-3">
-                    <div className="space-y-1.5">
-                      <Label htmlFor="cust-fname" className="text-sm font-semibold text-slate-700">
-                        First Name <span className="text-red-500">*</span>
-                      </Label>
-                      <Input
-                        id="cust-fname"
-                        type="text"
-                        placeholder="Jane"
-                        value={firstName}
-                        onChange={(e) => setFirstName(e.target.value)}
-                        required
-                        autoComplete="off"
-                        className="h-11"
-                      />
-                    </div>
-                    <div className="space-y-1.5">
-                      <Label htmlFor="cust-lname" className="text-sm font-semibold text-slate-700">
-                        Last Name
-                      </Label>
-                      <Input
-                        id="cust-lname"
-                        type="text"
-                        placeholder="Doe"
-                        value={lastName}
-                        onChange={(e) => setLastName(e.target.value)}
-                        autoComplete="off"
-                        className="h-11"
-                      />
-                    </div>
+                  <p className="text-sm text-slate-500 -mt-2">
+                    If the email already has a FundCircle account, they'll be added instantly. Otherwise, they'll receive an invitation email.
+                  </p>
+
+                  <div className="space-y-1.5">
+                    <Label htmlFor="cust-name" className="text-sm font-semibold text-slate-700">
+                      Full Name <span className="text-red-500">*</span>
+                    </Label>
+                    <Input
+                      id="cust-name"
+                      type="text"
+                      placeholder="Jane Doe"
+                      value={fullName}
+                      onChange={(e) => setFullName(e.target.value)}
+                      required
+                      autoComplete="off"
+                      className="h-11"
+                    />
                   </div>
 
                   <div className="space-y-1.5">
@@ -305,6 +288,21 @@ export default function OrgCustomers() {
                       value={email}
                       onChange={(e) => setEmail(e.target.value)}
                       required
+                      autoComplete="off"
+                      className="h-11"
+                    />
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <Label htmlFor="cust-phone" className="text-sm font-semibold text-slate-700">
+                      Phone Number
+                    </Label>
+                    <Input
+                      id="cust-phone"
+                      type="tel"
+                      placeholder="+91 98765 43210"
+                      value={phone}
+                      onChange={(e) => setPhone(e.target.value)}
                       autoComplete="off"
                       className="h-11"
                     />
@@ -354,14 +352,14 @@ export default function OrgCustomers() {
                   <Button
                     type="submit"
                     className="w-full h-11 font-semibold"
-                    disabled={isValidating || isSubmitting || collectorsLoading || collectorsForAssignment.length === 0 || !firstName.trim()}
+                    disabled={isValidating || isSubmitting || collectorsLoading || collectorsForAssignment.length === 0 || !fullName.trim() || !email.trim()}
                   >
                     {isValidating ? (
                       <><Loader2 className="w-4 h-4 mr-2 animate-spin" />Validating…</>
                     ) : isSubmitting ? (
-                      <><Loader2 className="w-4 h-4 mr-2 animate-spin" />Creating account…</>
+                      <><Loader2 className="w-4 h-4 mr-2 animate-spin" />Adding customer…</>
                     ) : (
-                      "Create Customer Account"
+                      "Create Customer"
                     )}
                   </Button>
                 </form>
@@ -441,7 +439,7 @@ export default function OrgCustomers() {
                       <TableRow key={customer.id}>
                         <TableCell className="font-medium">
                           {customer.fullName || (customer as any).name || (
-                            <span className="text-slate-400 italic text-xs">Pending setup</span>
+                            <span className="text-slate-400 italic text-xs">Pending</span>
                           )}
                         </TableCell>
                         <TableCell className="text-slate-600">{customer.email || "—"}</TableCell>
@@ -508,39 +506,43 @@ export default function OrgCustomers() {
                   );
                   return (
                     <div key={customer.id} className="px-4 py-3">
-                      <div className="flex items-center justify-between gap-3">
+                      <div className="flex items-start justify-between gap-3">
                         <div className="min-w-0 flex-1">
                           <p className="font-semibold text-slate-900 text-sm truncate">
                             {customer.fullName || (customer as any).name || (
-                              <span className="text-slate-400 italic">Pending setup</span>
+                              <span className="text-slate-400 italic">Pending</span>
                             )}
                           </p>
-                          <p className="text-xs text-slate-500 truncate mt-0.5">
-                            {customer.email || "—"} · {customer.phone || "—"}
-                          </p>
-                          <div className="flex items-center gap-2 mt-1">
-                            <span className="inline-flex items-center gap-1 text-xs text-slate-400">
+                          <p className="text-xs text-slate-500 truncate mt-0.5">{customer.email || "—"}</p>
+                          <p className="text-xs text-slate-400 mt-0.5">{customer.phone || "—"}</p>
+                          <div className="flex items-center gap-2 mt-1.5">
+                            <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-xs bg-slate-100 text-slate-600">
                               {assignedCollector && isOwnerMember(assignedCollector) && (
                                 <Crown className="w-2.5 h-2.5 text-amber-500" />
                               )}
-                              {(customer as any).assignedAgentName || assignedCollector?.fullName || "Unassigned"}
+                              {(customer as any).assignedAgentName ||
+                                assignedCollector?.fullName ||
+                                (assignedCollector as any)?.name || "Unassigned"}
                             </span>
-                            {collectorsForAssignment.length > 1 && (
-                              <button
-                                onClick={() => {
-                                  setReassigningCustomer(customer);
-                                  setNewCollectorId((customer as any).assignedAgentId || "");
-                                }}
-                                className="text-xs text-sky-600 underline"
-                              >
-                                Reassign
-                              </button>
-                            )}
                           </div>
                         </div>
-                        <span className={`inline-flex items-center px-2 py-1 rounded-md text-xs font-medium border shrink-0 ${statusClass(customer.status as string)}`}>
-                          {statusLabel(customer.status as string)}
-                        </span>
+                        <div className="flex flex-col items-end gap-2 shrink-0">
+                          <span className={`inline-flex items-center px-2 py-1 rounded-md text-xs font-medium border ${statusClass(customer.status as string)}`}>
+                            {statusLabel(customer.status as string)}
+                          </span>
+                          {collectorsForAssignment.length > 1 && (
+                            <button
+                              onClick={() => {
+                                setReassigningCustomer(customer);
+                                setNewCollectorId((customer as any).assignedAgentId || "");
+                              }}
+                              className="inline-flex items-center gap-1 text-xs text-slate-500 hover:text-sky-600 transition-colors"
+                            >
+                              <RefreshCw className="w-3 h-3" />
+                              Reassign
+                            </button>
+                          )}
+                        </div>
                       </div>
                     </div>
                   );
@@ -551,52 +553,50 @@ export default function OrgCustomers() {
         </CardContent>
       </Card>
 
-      <Dialog
-        open={!!reassigningCustomer}
-        onOpenChange={(open) => { if (!open) { setReassigningCustomer(null); setNewCollectorId(""); } }}
-      >
-        <DialogContent className="max-w-sm">
-          <DialogHeader>
-            <DialogTitle className="text-lg font-bold">Reassign Customer</DialogTitle>
-            <p className="text-sm text-slate-500 mt-1">
-              Change the assigned collector for{" "}
-              <span className="font-semibold text-slate-700">
-                {reassigningCustomer?.fullName || reassigningCustomer?.name || reassigningCustomer?.email}
-              </span>
-            </p>
-          </DialogHeader>
-          <div className="space-y-4 mt-2">
-            <div className="space-y-1.5">
-              <Label className="text-sm font-semibold text-slate-700">Select New Collector</Label>
-              <div className="relative">
-                <select
-                  value={newCollectorId}
-                  onChange={(e) => setNewCollectorId(e.target.value)}
-                  className="w-full appearance-none rounded-md border border-slate-200 bg-white px-3 py-2 pr-8 text-sm text-slate-900 h-11 focus:border-slate-400 focus:outline-none focus:ring-1 focus:ring-slate-300"
-                >
-                  <option value="">Select a collector…</option>
-                  {collectorsForAssignment.map((c) => (
-                    <option key={c.id} value={c.id}>{collectorLabel(c)}</option>
-                  ))}
-                </select>
-                <ChevronDown className="absolute right-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" />
-              </div>
+      {reassigningCustomer && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+          <div className="w-full max-w-sm rounded-3xl bg-white p-6 shadow-2xl space-y-4">
+            <div>
+              <h3 className="text-base font-bold text-slate-900">Reassign Customer</h3>
+              <p className="text-xs text-slate-500 mt-0.5">
+                Move <span className="font-semibold">
+                  {reassigningCustomer.fullName || (reassigningCustomer as any).name || "this customer"}
+                </span> to a different collector.
+              </p>
             </div>
-            <div className="flex gap-2">
-              <Button variant="outline" className="flex-1" onClick={() => { setReassigningCustomer(null); setNewCollectorId(""); }} disabled={isReassigning}>
+            <div className="relative">
+              <select
+                value={newCollectorId}
+                onChange={(e) => setNewCollectorId(e.target.value)}
+                className="w-full appearance-none rounded-md border border-slate-200 bg-white px-3 py-2 pr-8 text-sm text-slate-900 h-11 focus:border-slate-400 focus:outline-none"
+              >
+                <option value="">Select collector…</option>
+                {collectorsForAssignment.map((c) => (
+                  <option key={c.id} value={c.id}>{collectorLabel(c)}</option>
+                ))}
+              </select>
+              <ChevronDown className="absolute right-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" />
+            </div>
+            <div className="flex gap-2 pt-1">
+              <Button
+                variant="outline"
+                className="flex-1 h-10"
+                onClick={() => { setReassigningCustomer(null); setNewCollectorId(""); }}
+                disabled={isReassigning}
+              >
                 Cancel
               </Button>
               <Button
-                className="flex-1"
+                className="flex-1 h-10"
                 onClick={handleReassign}
-                disabled={isReassigning || !newCollectorId || newCollectorId === (reassigningCustomer as any)?.assignedAgentId}
+                disabled={!newCollectorId || isReassigning}
               >
-                {isReassigning ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" />Saving…</> : "Save"}
+                {isReassigning ? <><Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" />Reassigning…</> : "Confirm"}
               </Button>
             </div>
           </div>
-        </DialogContent>
-      </Dialog>
+        </div>
+      )}
     </div>
   );
 }

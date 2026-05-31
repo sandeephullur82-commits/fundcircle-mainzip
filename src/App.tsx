@@ -13,6 +13,7 @@ import { PWAInstallPrompt, OfflineToast } from "@/src/components/pwa";
 
 import LandingPage from "./pages/LandingPage";
 import AuthCallbackPage from "./pages/AuthCallback";
+import AcceptInvitationPage from "./pages/AcceptInvitationPage";
 import CompleteProfilePage from "./pages/CompleteProfilePage";
 import NotFoundPage from "./pages/NotFoundPage";
 
@@ -428,6 +429,9 @@ export default function App() {
               <Route path="/auth/reset-password" element={<ResetPasswordPage />} />
               <Route path="/auth/setup-password" element={<SetupPasswordPage />} />
               <Route path="/auth/callback" element={<AuthCallbackPage />} />
+
+              {/* Invitation acceptance — must be public (no auth required) */}
+              <Route path="/accept-invitation" element={<AcceptInvitationPage />} />
 
               {/* Legacy sign-in redirects */}
               <Route path="/sign-in/*" element={<Navigate to="/auth/sign-in" replace />} />

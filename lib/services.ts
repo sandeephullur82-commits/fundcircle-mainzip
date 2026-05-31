@@ -101,6 +101,139 @@ export async function provisionUser(params: {
 }
 
 // ─────────────────────────────────────────────────────────────
+// Add member: existing Clerk user → direct org membership,
+// new user → Clerk organisation invitation email.
+// ─────────────────────────────────────────────────────────────
+
+export async function addMember(params: {
+  fullName: string;
+  email: string;
+  phone: string;
+  role: "AGENT" | "CUSTOMER";
+  organizationId: string;
+  organizationName: string;
+  assignedAgentId?: string;
+  assignedAgentName?: string;
+  inviterUserId?: string;
+  createdBy: string;
+}): Promise<{ isExistingUser: boolean; userId?: string }> {
+  const emailKey = params.email.trim().toLowerCase();
+  const fullName = params.fullName.trim();
+
+  const res = await fetch("/api/add-member", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      email: emailKey,
+      organizationId: params.organizationId,
+      role: params.role,
+      inviterUserId: params.inviterUserId,
+    }),
+  });
+
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw new Error(body.error || `Failed to add member (HTTP ${res.status})`);
+  }
+
+  const { userId, isExistingUser } = await res.json();
+
+  if (isExistingUser && userId) {
+    const membershipDocId = membershipIdFor(params.organizationId, userId);
+    const membershipData: any = {
+      id: membershipDocId,
+      clerkUserId: userId,
+      email: emailKey,
+      fullName,
+      name: fullName,
+      phone: params.phone?.trim() || "",
+      role: params.role,
+      clerkRole: params.role === "AGENT" ? "org:pigmy_collector" : "org:customer",
+      organizationId: params.organizationId,
+      organizationName: params.organizationName,
+      address: "",
+      assignedArea: "",
+      assignedAgentId: params.assignedAgentId || "",
+      assignedAgentName: params.assignedAgentName || "",
+      profileCompleted: false,
+      status: "ACTIVE",
+      createdBy: params.createdBy,
+      createdAt: serverTimestamp(),
+      updatedAt: serverTimestamp(),
+    };
+
+    await setDoc(doc(db, "organizationMembers", membershipDocId), membershipData, { merge: true });
+    await setDoc(doc(db, "memberships", membershipDocId), membershipData, { merge: true });
+
+    if (params.role === "CUSTOMER") {
+      await setDoc(doc(db, "customers", membershipDocId), {
+        ...membershipData,
+        assigned_to_user_id: params.assignedAgentId || params.createdBy || "",
+      }, { merge: true });
+      try {
+        await setDoc(doc(db, "organizations", params.organizationId), {
+          "usage.activeCustomers": increment(1),
+          updatedAt: serverTimestamp(),
+        }, { merge: true });
+      } catch (_) {}
+    }
+
+    await setDoc(doc(db, "users", userId), {
+      clerkUserId: userId,
+      id: userId,
+      email: emailKey,
+      name: fullName,
+      status: "ACTIVE",
+      createdAt: serverTimestamp(),
+      updatedAt: serverTimestamp(),
+    }, { merge: true });
+
+    console.log("[FC addMember] ✓ Existing user added:", { userId, membershipDocId, role: params.role });
+  } else {
+    // New user (invited) — pending doc; clerkUserId is not yet known.
+    // Use a deterministic email-based doc ID so re-inviting the same email is idempotent.
+    const safeEmail = emailKey.replace(/[^a-z0-9]/g, "_");
+    const membershipDocId = `${params.organizationId}_pending_${safeEmail}`;
+
+    const membershipData: any = {
+      id: membershipDocId,
+      clerkUserId: null,
+      email: emailKey,
+      fullName,
+      name: fullName,
+      phone: params.phone?.trim() || "",
+      role: params.role,
+      clerkRole: params.role === "AGENT" ? "org:pigmy_collector" : "org:customer",
+      organizationId: params.organizationId,
+      organizationName: params.organizationName,
+      address: "",
+      assignedArea: "",
+      assignedAgentId: params.assignedAgentId || "",
+      assignedAgentName: params.assignedAgentName || "",
+      profileCompleted: false,
+      status: "PENDING_INVITED",
+      createdBy: params.createdBy,
+      createdAt: serverTimestamp(),
+      updatedAt: serverTimestamp(),
+    };
+
+    await setDoc(doc(db, "organizationMembers", membershipDocId), membershipData);
+    await setDoc(doc(db, "memberships", membershipDocId), membershipData);
+
+    if (params.role === "CUSTOMER") {
+      await setDoc(doc(db, "customers", membershipDocId), {
+        ...membershipData,
+        assigned_to_user_id: params.assignedAgentId || params.createdBy || "",
+      });
+    }
+
+    console.log("[FC addMember] ✓ Invitation sent to new user:", { email: emailKey, membershipDocId, role: params.role });
+  }
+
+  return { isExistingUser, userId };
+}
+
+// ─────────────────────────────────────────────────────────────
 // Pre-validation helpers (email collision checks)
 // ─────────────────────────────────────────────────────────────
 
