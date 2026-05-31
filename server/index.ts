@@ -1,5 +1,6 @@
 import express from "express";
 import cors from "cors";
+import path from "path";
 import { createClerkClient } from "@clerk/backend";
 
 const app = express();
@@ -70,7 +71,20 @@ app.post("/api/provision-user", async (req, res) => {
   return res.json({ userId, setupUrl });
 });
 
-const PORT = process.env.API_PORT ? parseInt(process.env.API_PORT) : 3001;
+if (process.env.NODE_ENV === "production") {
+  const clientDist = path.join(process.cwd(), "dist");
+  app.use(express.static(clientDist));
+  app.get("*", (_req, res) => {
+    res.sendFile(path.join(clientDist, "index.html"));
+  });
+}
+
+const PORT = process.env.PORT
+  ? parseInt(process.env.PORT)
+  : process.env.API_PORT
+  ? parseInt(process.env.API_PORT)
+  : 3001;
+
 app.listen(PORT, "0.0.0.0", () => {
-  console.log(`[FC API] Provisioning server running on port ${PORT}`);
+  console.log(`[FC API] Server running on port ${PORT}`);
 });
