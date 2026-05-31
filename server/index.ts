@@ -76,6 +76,14 @@ app.post("/api/provision-user", async (req, res) => {
   return res.json({ userId, setupUrl });
 });
 
+app.get("/health", (_req, res) => {
+  res.status(200).json({
+    status: "ok",
+    service: "fundcircle",
+    timestamp: new Date().toISOString(),
+  });
+});
+
 if (process.env.NODE_ENV === "production") {
   const clientDist = path.join(process.cwd(), "dist");
   app.use(express.static(clientDist));
