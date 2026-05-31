@@ -1,20 +1,18 @@
 import express from "express";
 import cors from "cors";
-import path from "path";
 import { createClerkClient } from "@clerk/backend";
 
 const app = express();
-app.use(cors({
-  origin: process.env.NODE_ENV === "production"
-    ? process.env.VITE_APP_ORIGIN
-    : true,
-  credentials: true,
-}));
+app.use(cors({ origin: true, credentials: true }));
 app.use(express.json({ limit: "50kb" }));
 
 const clerkClient = createClerkClient({
   secretKey: process.env.CLERK_SECRET_KEY,
 });
+
+const LOCAL_PORT = process.env.VITE_PORT
+  ? parseInt(process.env.VITE_PORT)
+  : 5000;
 
 app.post("/api/provision-user", async (req, res) => {
   const { firstName, lastName, email, organizationId, role } = req.body as {
@@ -60,11 +58,7 @@ app.post("/api/provision-user", async (req, res) => {
       userId,
       expiresInSeconds: 60 * 60 * 24 * 7,
     });
-    const origin =
-      process.env.VITE_APP_ORIGIN ||
-      (process.env.NODE_ENV === "production"
-        ? ""
-        : "http://localhost:5000");
+    const origin = `http://localhost:${LOCAL_PORT}`;
     setupUrl = `${origin}/auth/setup-password?token=${token.token}`;
     console.log("[FC Provision] Sign-in token created for userId:", userId);
   } catch (err: any) {
@@ -84,20 +78,10 @@ app.get("/health", (_req, res) => {
   });
 });
 
-if (process.env.NODE_ENV === "production") {
-  const clientDist = path.join(process.cwd(), "dist");
-  app.use(express.static(clientDist));
-  app.get("*", (_req, res) => {
-    res.sendFile(path.join(clientDist, "index.html"));
-  });
-}
-
-const PORT = process.env.PORT
-  ? parseInt(process.env.PORT)
-  : process.env.API_PORT
+const PORT = process.env.API_PORT
   ? parseInt(process.env.API_PORT)
   : 3001;
 
 app.listen(PORT, "0.0.0.0", () => {
-  console.log(`[FC API] Server running on port ${PORT}`);
+  console.log(`[FC API] Server running on http://localhost:${PORT}`);
 });
