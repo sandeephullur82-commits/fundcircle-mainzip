@@ -44,20 +44,28 @@ export default function AgentEMICollection() {
   const [submitting, setSubmitting] = useState(false);
   const [receipt, setReceipt] = useState<ReceiptData | null>(null);
 
-  // Customers assigned to this agent with active loans
-  const myCustomers = allMembers.filter((m) => {
-    const isCustomer = ["CUSTOMER", "customer"].includes(m.role as string);
-    const isAssigned = m.assignedAgentId === agentId || m.assigned_to_user_id === agentId;
-    const isActive = (m as any).status === "ACTIVE";
-    return isCustomer && isAssigned && isActive;
-  });
+  // A loan is "mine" if:
+  //   1. It has an explicit loanAssignedCollectorId that matches my userId, OR
+  //   2. It has no explicit loanAssignedCollectorId AND the customer's assignedAgentId matches mine
+  const isMyLoan = (loan: Loan, customer?: Membership) => {
+    const isActive = loan.status === "ACTIVE" || (loan.status as string) === "active";
+    if (!isActive) return false;
+    if (loan.loanAssignedCollectorId) {
+      return loan.loanAssignedCollectorId === agentId;
+    }
+    if (!customer) return false;
+    return (customer as any).assignedAgentId === agentId || (customer as any).assigned_to_user_id === agentId;
+  };
 
-  // Customers with active loans
-  const customersWithLoans = myCustomers.filter((c) => {
-    return loans.some((l) =>
-      (l.customerId === c.id || l.customerId === c.clerkUserId) &&
-      (l.status === "ACTIVE" || (l.status as string) === "active")
-    );
+  // Customers with active loans assigned to this agent
+  const customersWithLoans = allMembers.filter((m) => {
+    const isCustomer = ["CUSTOMER", "customer"].includes(m.role as string);
+    const isActive = (m as any).status === "ACTIVE";
+    if (!isCustomer || !isActive) return false;
+    return loans.some((l) => {
+      const isCustomerMatch = l.customerId === m.id || l.customerId === m.clerkUserId;
+      return isCustomerMatch && isMyLoan(l, m);
+    });
   });
 
   const filtered = customersWithLoans.filter((c) => {
@@ -70,11 +78,11 @@ export default function AgentEMICollection() {
     setCustomerLoan(null);
     setLoadingLoan(true);
     try {
-      // Get the customer's active loan
-      const activeLoan = loans.find((l) =>
-        (l.customerId === customer.id || l.customerId === customer.clerkUserId) &&
-        (l.status === "ACTIVE" || (l.status as string) === "active")
-      );
+      // Get the customer's active loan that is assigned to this agent
+      const activeLoan = loans.find((l) => {
+        const isCustomerMatch = l.customerId === customer.id || l.customerId === customer.clerkUserId;
+        return isCustomerMatch && isMyLoan(l, customer);
+      });
       if (!activeLoan) {
         setCustomerLoan(null);
         setLoadingLoan(false);
@@ -153,6 +161,17 @@ export default function AgentEMICollection() {
 
   const today = startOfDay(new Date());
 
+  // Stats: total outstanding loans assigned to me
+  const myActiveLoans = loans.filter((l) => {
+    const cust = allMembers.find((m) => m.id === l.customerId || m.clerkUserId === l.customerId);
+    return isMyLoan(l, cust);
+  });
+
+  const loansWithOutstanding = myActiveLoans.filter((l) => {
+    const outstanding = l.outstandingBalance ?? (l as any).balanceRemaining ?? 0;
+    return outstanding > 0;
+  });
+
   return (
     <div className="space-y-5">
       <div>
@@ -170,15 +189,7 @@ export default function AgentEMICollection() {
         </Card>
         <Card className="bg-red-50 border-red-100">
           <CardContent className="p-4">
-            <p className="text-2xl font-black text-red-900">
-              {loans.filter((l) => {
-                const isMyCustomer = myCustomers.some((c) => c.id === l.customerId || c.clerkUserId === l.customerId);
-                return isMyCustomer && (l.status === "ACTIVE");
-              }).reduce((s, l) => {
-                const outstanding = l.outstandingBalance ?? (l as any).balanceRemaining ?? 0;
-                return outstanding > 0 ? s + 1 : s;
-              }, 0)}
-            </p>
+            <p className="text-2xl font-black text-red-900">{loansWithOutstanding.length}</p>
             <p className="text-xs text-red-600">Loans with outstanding balance</p>
           </CardContent>
         </Card>
@@ -206,15 +217,15 @@ export default function AgentEMICollection() {
           {filtered.length === 0 ? (
             <div className="text-center py-8 text-slate-400">
               <CreditCard className="w-8 h-8 mx-auto mb-2 opacity-30" />
-              <p className="text-sm">No customers with active loans found.</p>
+              <p className="text-sm">No customers with active loans assigned to you.</p>
             </div>
           ) : (
             <div className="space-y-2">
               {filtered.map((customer) => {
-                const loan = loans.find((l) =>
-                  (l.customerId === customer.id || l.customerId === customer.clerkUserId) &&
-                  (l.status === "ACTIVE" || (l.status as string) === "active")
-                );
+                const loan = loans.find((l) => {
+                  const isCustomerMatch = l.customerId === customer.id || l.customerId === customer.clerkUserId;
+                  return isCustomerMatch && isMyLoan(l, customer);
+                });
                 const outstanding = loan ? (loan.outstandingBalance ?? (loan as any).balanceRemaining ?? 0) : 0;
                 const name = (customer as any).fullName || (customer as any).name || customer.email || "";
                 return (
@@ -227,6 +238,9 @@ export default function AgentEMICollection() {
                       <div>
                         <p className="font-semibold text-slate-900 text-sm">{name}</p>
                         <p className="text-xs text-slate-500 mt-0.5">{customer.phone || customer.email}</p>
+                        {loan?.loanAssignedCollectorName && loan.loanAssignedCollectorName !== (user?.fullName || "") && (
+                          <p className="text-xs text-indigo-500 mt-0.5">Collector: {loan.loanAssignedCollectorName}</p>
+                        )}
                       </div>
                       <div className="text-right">
                         <p className="text-xs text-slate-500">Outstanding</p>

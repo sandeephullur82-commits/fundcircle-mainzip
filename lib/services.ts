@@ -232,6 +232,9 @@ export async function createLoan(params: {
   createdByActorId: string;
   createdByActorRole: string;
   createdByActorName: string;
+  loanAssignedCollectorId?: string;
+  loanAssignedCollectorName?: string;
+  loanAssignedCollectorRole?: string;
 }): Promise<string> {
   if (params.principalAmount <= 0) throw new Error("Principal must be greater than zero.");
   if (params.interestRate < 0) throw new Error("Interest rate cannot be negative.");
@@ -251,6 +254,9 @@ export async function createLoan(params: {
     outstandingBalance: 0,
     disbursedAt: null,
     status: "PENDING",
+    loanAssignedCollectorId: params.loanAssignedCollectorId || "",
+    loanAssignedCollectorName: params.loanAssignedCollectorName || "",
+    loanAssignedCollectorRole: params.loanAssignedCollectorRole || "",
     createdAt: serverTimestamp(),
     updatedAt: serverTimestamp(),
     // Legacy compat
@@ -284,6 +290,9 @@ export async function approveLoan(params: {
   actorId: string;
   actorRole: string;
   actorName: string;
+  loanAssignedCollectorId?: string;
+  loanAssignedCollectorName?: string;
+  loanAssignedCollectorRole?: string;
 }): Promise<void> {
   const loanRef = doc(db, "loans", params.loanId);
   const loanSnap = await getDoc(loanRef);
@@ -299,6 +308,13 @@ export async function approveLoan(params: {
   const outstandingBalance = Math.round((principal + totalInterest) * 100) / 100;
   const disbursedAt = Timestamp.now();
 
+  const collectorUpdate: Record<string, any> = {};
+  if (params.loanAssignedCollectorId !== undefined) {
+    collectorUpdate.loanAssignedCollectorId = params.loanAssignedCollectorId;
+    collectorUpdate.loanAssignedCollectorName = params.loanAssignedCollectorName || "";
+    collectorUpdate.loanAssignedCollectorRole = params.loanAssignedCollectorRole || "";
+  }
+
   // Update loan document
   await updateDoc(loanRef, {
     status: "ACTIVE",
@@ -309,6 +325,7 @@ export async function approveLoan(params: {
     // Legacy compat
     balanceRemaining: outstandingBalance,
     approvedAt: serverTimestamp(),
+    ...collectorUpdate,
   });
 
   // Generate loan_installments
@@ -497,6 +514,9 @@ export async function createDirectMember(params: {
   organizationName: string;
   assignedAgentId?: string;
   assignedAgentName?: string;
+  assignedCollectorRole?: string;
+  address?: string;
+  notes?: string;
   createdBy: string;
   actorName?: string;
 }): Promise<{ clerkUserId: string; generatedPassword: string }> {
@@ -538,10 +558,12 @@ export async function createDirectMember(params: {
     organizationId: params.organizationId,
     organizationName: params.organizationName,
     phone: params.phone?.trim() || "",
-    address: "",
+    address: params.address?.trim() || "",
+    notes: params.notes?.trim() || "",
     assignedArea: "",
     assignedAgentId: params.assignedAgentId || "",
     assignedAgentName: params.assignedAgentName || "",
+    assignedCollectorRole: params.assignedCollectorRole || "",
     profileCompleted: false,
     status: "PENDING_SETUP",
     createdBy: params.createdBy,

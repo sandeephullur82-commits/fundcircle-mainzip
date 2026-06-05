@@ -64,6 +64,7 @@ export interface Membership {
   assignedAgentId?: string;
   assignedAgentName?: string;
   assigned_to_user_id?: string;
+  notes?: string;
   // Meta
   profileCompleted?: boolean;
   invitationId?: string;
@@ -148,6 +149,9 @@ export interface Loan {
   status: "PENDING" | "ACTIVE" | "CLOSED" | "REJECTED";
   outstandingBalance: number;
   rejectionReason?: string;
+  loanAssignedCollectorId?: string;
+  loanAssignedCollectorName?: string;
+  loanAssignedCollectorRole?: string;
   createdAt: FSTimestamp;
   updatedAt?: FSTimestamp;
   // Legacy compat

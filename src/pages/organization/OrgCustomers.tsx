@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { useCollectionRealtime, useDocumentRealtime } from "@/lib/firestore-hooks";
-import { Membership } from "@/types";
+import { Membership, SavingsAccount, Loan } from "@/types";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Button } from "@/components/ui/button";
@@ -36,6 +36,8 @@ export default function OrgCustomers() {
     where("role", "==", "OWNER"),
   ]);
   const { data: orgDoc } = useDocumentRealtime<any>("organizations", organization?.id);
+  const { data: savingsAccounts } = useCollectionRealtime<SavingsAccount>("savings_accounts");
+  const { data: loans } = useCollectionRealtime<Loan>("loans");
 
   const [searchTerm, setSearchTerm] = useState("");
   const [isInviteOpen, setIsInviteOpen] = useState(false);
@@ -46,6 +48,8 @@ export default function OrgCustomers() {
   const [lastName, setLastName] = useState("");
   const [email, setEmail] = useState("");
   const [phone, setPhone] = useState("");
+  const [address, setAddress] = useState("");
+  const [notes, setNotes] = useState("");
   const [selectedCollectorId, setSelectedCollectorId] = useState("");
   const [credentials, setCredentials] = useState<CreatedCredentials | null>(null);
   const [copiedField, setCopiedField] = useState<"email" | "password" | null>(null);
@@ -75,6 +79,23 @@ export default function OrgCustomers() {
     const ownerTag = isOwnerMember(c) ? " · Owner" : "";
     return `${name} (${count})${ownerTag}`;
   };
+
+  // Savings balance per customer membership ID
+  const savingsBalanceByCustomer: Record<string, number> = {};
+  savingsAccounts.forEach((sa: any) => {
+    if (sa.customerId) {
+      savingsBalanceByCustomer[sa.customerId] = (savingsBalanceByCustomer[sa.customerId] || 0) + (sa.totalBalance || 0);
+    }
+  });
+
+  // Active loan count per customer membership ID
+  const activeLoansByCustomer: Record<string, number> = {};
+  loans.forEach((l: any) => {
+    const st = (l.status || "").toUpperCase();
+    if (st === "ACTIVE" && l.customerId) {
+      activeLoansByCustomer[l.customerId] = (activeLoansByCustomer[l.customerId] || 0) + 1;
+    }
+  });
 
   useEffect(() => {
     if (isInviteOpen && collectorsForAssignment.length === 1) {
@@ -111,6 +132,8 @@ export default function OrgCustomers() {
     setLastName("");
     setEmail("");
     setPhone("");
+    setAddress("");
+    setNotes("");
     setSelectedCollectorId("");
     setCredentials(null);
     setCopiedField(null);
@@ -164,11 +187,14 @@ export default function OrgCustomers() {
         lastName: lastName.trim(),
         email: emailKey,
         phone: phone.trim(),
+        address: address.trim(),
+        notes: notes.trim(),
         role: "CUSTOMER",
         organizationId: organization.id,
         organizationName: organization.name || "",
         assignedAgentId: collectorToAssign.id,
         assignedAgentName: collectorToAssign.fullName || (collectorToAssign as any).name || "",
+        assignedCollectorRole: (collectorToAssign.role as string) || "AGENT",
         createdBy: user.id,
         actorName: user.fullName || user.firstName || "",
       });
@@ -234,7 +260,7 @@ export default function OrgCustomers() {
                 <Plus className="w-4 h-4 mr-2" /> Add Customer
               </Button>
             } />
-            <DialogContent className="max-w-md">
+            <DialogContent className="max-w-md max-h-[90vh] overflow-y-auto">
               <DialogHeader>
                 <DialogTitle className="text-lg font-bold">
                   {credentials ? "Customer Created" : "Add Customer"}
@@ -363,6 +389,35 @@ export default function OrgCustomers() {
                   </div>
 
                   <div className="space-y-1.5">
+                    <Label htmlFor="cust-address" className="text-sm font-semibold text-slate-700">
+                      Address
+                    </Label>
+                    <Input
+                      id="cust-address"
+                      type="text"
+                      placeholder="House no, street, city…"
+                      value={address}
+                      onChange={(e) => setAddress(e.target.value)}
+                      autoComplete="off"
+                      className="h-11"
+                    />
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <Label htmlFor="cust-notes" className="text-sm font-semibold text-slate-700">
+                      Notes
+                    </Label>
+                    <textarea
+                      id="cust-notes"
+                      placeholder="Any additional notes…"
+                      value={notes}
+                      onChange={(e) => setNotes(e.target.value)}
+                      rows={2}
+                      className="w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 placeholder:text-slate-400 focus:border-slate-400 focus:outline-none focus:ring-1 focus:ring-slate-300 resize-none"
+                    />
+                  </div>
+
+                  <div className="space-y-1.5">
                     <Label className="text-sm font-semibold text-slate-700">
                       Assigned Collector <span className="text-red-500">*</span>
                     </Label>
@@ -456,9 +511,10 @@ export default function OrgCustomers() {
               <TableHeader>
                 <TableRow>
                   <TableHead>Customer</TableHead>
-                  <TableHead>Email</TableHead>
                   <TableHead>Phone</TableHead>
                   <TableHead>Assigned Collector</TableHead>
+                  <TableHead className="text-right">Savings Balance</TableHead>
+                  <TableHead className="text-center">Active Loans</TableHead>
                   <TableHead>Status</TableHead>
                   <TableHead className="w-24"></TableHead>
                 </TableRow>
@@ -467,7 +523,7 @@ export default function OrgCustomers() {
                 {loading ? (
                   [...Array(3)].map((_, i) => (
                     <TableRow key={i}>
-                      {[...Array(6)].map((_, j) => (
+                      {[...Array(7)].map((_, j) => (
                         <TableCell key={j}>
                           <div className="h-4 bg-slate-100 rounded animate-pulse w-20" />
                         </TableCell>
@@ -476,7 +532,7 @@ export default function OrgCustomers() {
                   ))
                 ) : filteredCustomers.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={6} className="text-center py-12">
+                    <TableCell colSpan={7} className="text-center py-12">
                       <div className="flex flex-col items-center gap-2">
                         <Users className="w-8 h-8 text-slate-300" />
                         <p className="text-slate-500 text-sm font-medium">No customers yet.</p>
@@ -489,14 +545,20 @@ export default function OrgCustomers() {
                     const assignedCollector = allCollectors.find(
                       (c) => c.id === ((customer as any).assignedAgentId || customer.agentId)
                     );
+                    const savingsBalance = savingsBalanceByCustomer[customer.id] || 0;
+                    const activeLoans = activeLoansByCustomer[customer.id] || 0;
                     return (
                       <TableRow key={customer.id}>
-                        <TableCell className="font-medium">
-                          {customer.fullName || (customer as any).name || (
-                            <span className="text-slate-400 italic text-xs">Pending</span>
-                          )}
+                        <TableCell>
+                          <div>
+                            <p className="font-medium text-slate-900">
+                              {customer.fullName || (customer as any).name || (
+                                <span className="text-slate-400 italic text-xs">Pending</span>
+                              )}
+                            </p>
+                            <p className="text-xs text-slate-400 truncate max-w-[160px]">{customer.email || "—"}</p>
+                          </div>
                         </TableCell>
-                        <TableCell className="text-slate-600">{customer.email || "—"}</TableCell>
                         <TableCell className="text-slate-600">
                           {customer.phone || <span className="text-slate-400">—</span>}
                         </TableCell>
@@ -511,6 +573,20 @@ export default function OrgCustomers() {
                                 <span className="text-slate-400">Unassigned</span>
                               )}
                           </span>
+                        </TableCell>
+                        <TableCell className="text-right">
+                          <span className={`font-semibold text-sm ${savingsBalance > 0 ? "text-emerald-700" : "text-slate-400"}`}>
+                            {savingsBalance > 0 ? `₹${Number(savingsBalance).toLocaleString()}` : "—"}
+                          </span>
+                        </TableCell>
+                        <TableCell className="text-center">
+                          {activeLoans > 0 ? (
+                            <span className="inline-flex items-center justify-center w-6 h-6 rounded-full bg-indigo-100 text-indigo-700 text-xs font-bold">
+                              {activeLoans}
+                            </span>
+                          ) : (
+                            <span className="text-slate-400 text-xs">—</span>
+                          )}
                         </TableCell>
                         <TableCell>
                           <span className={`inline-flex items-center px-2 py-1 rounded-md text-xs font-medium border ${statusClass(customer.status as string)}`}>
@@ -558,6 +634,8 @@ export default function OrgCustomers() {
                   const assignedCollector = allCollectors.find(
                     (c) => c.id === ((customer as any).assignedAgentId || customer.agentId)
                   );
+                  const savingsBalance = savingsBalanceByCustomer[customer.id] || 0;
+                  const activeLoans = activeLoansByCustomer[customer.id] || 0;
                   return (
                     <div key={customer.id} className="px-4 py-3">
                       <div className="flex items-start justify-between gap-3">
@@ -575,6 +653,14 @@ export default function OrgCustomers() {
                               (assignedCollector as any)?.name ||
                               "Unassigned"}
                           </p>
+                          <div className="flex items-center gap-3 mt-1">
+                            {savingsBalance > 0 && (
+                              <span className="text-xs text-emerald-700 font-semibold">₹{Number(savingsBalance).toLocaleString()} savings</span>
+                            )}
+                            {activeLoans > 0 && (
+                              <span className="text-xs text-indigo-700 font-semibold">{activeLoans} active loan{activeLoans !== 1 ? "s" : ""}</span>
+                            )}
+                          </div>
                         </div>
                         <div className="flex flex-col items-end gap-1.5 shrink-0">
                           <span className={`inline-flex items-center px-2 py-1 rounded-md text-xs font-medium border ${statusClass(customer.status as string)}`}>

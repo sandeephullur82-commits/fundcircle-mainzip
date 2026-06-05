@@ -1,0 +1,265 @@
+You are a Senior FinTech SaaS Architect.
+
+Update FundCircle Pigmy Savings & Loan Management System with a complete Customer Assignment and Loan Collection Assignment workflow.
+
+====================================================
+CUSTOMER CREATION FLOW
+====================================================
+
+When Owner creates a Customer:
+
+Required Fields:
+
+- First Name
+- Last Name
+- Email
+- Phone Number
+- Address
+- Notes
+
+Add a new field:
+
+Assigned Collector
+
+Dropdown Values:
+
+- Owner (Default)
+- Agent 1
+- Agent 2
+- Agent N
+
+Rules:
+
+1. Owner is automatically selected by default.
+2. Owner can choose any active agent.
+3. Assignment must be saved in Firestore.
+4. Customer record must contain:
+
+assignedCollectorId
+assignedCollectorName
+assignedCollectorRole
+
+5. Customer list must display assigned collector.
+
+====================================================
+CUSTOMER MANAGEMENT
+====================================================
+
+Owner Dashboard → Customers
+
+Display:
+
+- Customer Name
+- Phone
+- Savings Balance
+- Active Loans
+- Assigned Collector
+- Status
+
+Actions:
+
+- View
+- Edit
+- Reassign Collector
+- Delete
+
+Owner can change assigned collector at any time.
+
+====================================================
+LOAN APPLICATION FLOW
+====================================================
+
+Customer Dashboard
+
+Loan Tab
+
+Customer can:
+
+- Apply Loan
+- Enter Amount
+- Purpose
+- Requested Tenure
+
+Status:
+
+Pending
+
+====================================================
+LOAN APPROVAL FLOW
+====================================================
+
+Owner Dashboard
+
+Loan Applications
+
+Show:
+
+- Customer
+- Requested Amount
+- Requested Tenure
+- Purpose
+- Assigned Customer Collector
+
+Owner can modify:
+
+- Approved Amount
+- Interest Rate
+- Processing Fee
+- Tenure
+- EMI Frequency
+- Start Date
+
+Add field:
+
+Collection Agent
+
+Dropdown:
+
+- Owner
+- Agent 1
+- Agent 2
+- Agent N
+
+Default:
+
+Use customer's assigned collector.
+
+Owner may change it.
+
+====================================================
+LOAN ASSIGNMENT
+====================================================
+
+Loan record must store:
+
+loanAssignedCollectorId
+loanAssignedCollectorName
+loanAssignedCollectorRole
+
+This assignment is independent from customer assignment.
+
+Example:
+
+Customer Assigned:
+Agent 1
+
+Loan Assigned:
+Agent 2
+
+System must support both.
+
+====================================================
+AGENT DASHBOARD
+====================================================
+
+Agent sees only:
+
+- Assigned Customers
+- Assigned Loans
+- Today's Collections
+- Pending Collections
+- Overdue Collections
+
+Agent cannot see data assigned to other agents.
+
+====================================================
+COLLECTION FLOW
+====================================================
+
+Agent opens assigned loan.
+
+Display:
+
+- Customer
+- Loan Number
+- Outstanding Amount
+- EMI Amount
+- Due Date
+- Penalty
+
+Button:
+
+Collect Payment
+
+Fields:
+
+- Amount
+- Payment Mode
+- Notes
+
+Payment Modes:
+
+- Cash
+- UPI
+- Bank Transfer
+
+====================================================
+AUTOMATIC SYSTEM ACTIONS
+====================================================
+
+After collection:
+
+Update:
+
+- Loan Outstanding
+- Customer Passbook
+- Collection Ledger
+- Daily Collection Summary
+- Agent Collection Summary
+
+Generate Receipt:
+
+- Receipt Number
+- Customer
+- Amount
+- Date
+- Collected By
+
+====================================================
+OWNER REPORTS
+====================================================
+
+Show:
+
+- Total Customers
+- Total Agents
+- Total Savings
+- Total Active Loans
+- Today's Collections
+- Monthly Collections
+- Overdue Loans
+- Agent Performance
+
+====================================================
+FIRESTORE STRUCTURE
+====================================================
+
+customers/
+  assignedCollectorId
+  assignedCollectorName
+
+loans/
+  loanAssignedCollectorId
+  loanAssignedCollectorName
+
+collections/
+  collectionId
+  customerId
+  loanId
+  agentId
+  amount
+  paymentMode
+  collectedAt
+
+====================================================
+RULES
+====================================================
+
+1. Default collector = Owner.
+2. Owner can reassign customers.
+3. Owner can reassign loan collectors.
+4. Agents only access assigned records.
+5. All assignment changes are logged.
+6. Use Firestore real-time updates.
+7. No mock data.
+8. Production-ready implementation.
