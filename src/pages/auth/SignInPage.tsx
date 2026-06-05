@@ -107,44 +107,29 @@ export default function SignInPage() {
         return;
       }
 
-      // ── needs_second_factor: MFA is enabled on this account / Clerk instance
-      // The app does not implement MFA. This status means the user's Clerk account
-      // has an authenticator app or SMS MFA enrolled, OR the Clerk instance has
-      // "Require MFA" enabled in the dashboard (Configure → Multi-factor).
+      // ── needs_second_factor: forward to MFA verification page
       if (status === "needs_second_factor") {
-        const secondFactors = (result as any).supportedSecondFactors?.map((f: any) => f.strategy) ?? [];
-        console.error("════════════════════════════════════════════════");
-        console.error("[FC SignIn] ✗ needs_second_factor — MFA is enabled but this app has no MFA flow");
-        console.error("[FC SignIn]   supportedSecondFactors:", JSON.stringify(secondFactors));
-        console.error("[FC SignIn]   Fix: Clerk Dashboard → Configure → Multi-factor → set to Off");
-        console.error("[FC SignIn]   OR: The user's account has an authenticator/SMS enrolled.");
-        console.error("════════════════════════════════════════════════");
-        try { await clerk.signOut(); } catch { /* ignore */ }
-        setError(
-          "Multi-factor authentication (MFA) is enabled on this account, " +
-          "but this app does not support MFA. " +
-          "Please ask your administrator to disable MFA in the Clerk dashboard, " +
-          "or remove the authenticator from your account profile."
-        );
-        setErrorCode(status);
-        setLoading(false);
+        const secondFactors = (result as any).supportedSecondFactors ?? [];
+        const strategies = secondFactors.map((f: any) => f.strategy);
+        console.log("[FC SignIn] needs_second_factor — supportedSecondFactors:", JSON.stringify(strategies));
+        console.log("[FC SignIn] → Redirecting to /auth/mfa-verify");
+        navigate("/auth/mfa-verify", { replace: true });
         return;
       }
 
-      // ── needs_first_factor: unexpected — password strategy not available
+      // ── needs_first_factor: first factor not yet satisfied (e.g. no password strategy)
       if (status === "needs_first_factor") {
         const firstFactors = (result as any).supportedFirstFactors?.map((f: any) => f.strategy) ?? [];
-        console.error("[FC SignIn] ✗ needs_first_factor — expected password strategy, got:", JSON.stringify(firstFactors));
-        try { await clerk.signOut(); } catch { /* ignore */ }
+        console.error("[FC SignIn] needs_first_factor — available strategies:", JSON.stringify(firstFactors));
         setError("Password sign-in is not available for this account. Please contact your administrator.");
         setErrorCode(status);
         setLoading(false);
         return;
       }
 
-      console.warn("[FC SignIn] Unexpected status:", status);
-      try { await clerk.signOut(); } catch { /* ignore */ }
-      setError("Sign-in returned an unexpected state. Please try again.");
+      // ── Any other non-complete, non-error status Clerk may return in future
+      console.warn("[FC SignIn] Unhandled status:", status);
+      setError(`Sign-in is incomplete (status: ${status}). Please try again.`);
       setErrorCode(status);
 
     } catch (err: any) {
