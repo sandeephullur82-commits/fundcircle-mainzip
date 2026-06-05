@@ -1,0 +1,558 @@
+You are a World-Class Principal SaaS Architect, Enterprise Full Stack Engineer, Firebase Architect, Clerk Authentication Architect, FinTech Systems Architect, Multi-Tenant RBAC Architect, UI/UX Designer, Security Architect, and Production Systems Engineer.
+
+Your task is to generate a COMPLETE PRODUCTION-GRADE SaaS application called:
+
+FundCircle
+
+FundCircle is a Multi-Tenant Pigmy Savings & Loan Management Platform used by Finance Companies, Chit Funds, Micro Finance Institutions, Daily Collection Agencies, and Small Lending Businesses.
+
+Generate the ENTIRE application with complete source code.
+
+==================================================
+CORE TECHNOLOGY STACK
+
+Frontend:
+
+- React 19
+- TypeScript
+- Vite
+- Tailwind CSS
+- Shadcn UI
+- React Query
+- React Router
+
+Authentication:
+
+- Clerk Authentication
+- Custom Sign Up Page
+- Custom Sign In Page
+- Default Clerk User Management Pages
+- Organization-based Memberships
+
+Backend:
+
+- Node.js
+- Express
+- TypeScript
+
+Database:
+
+- Firebase Firestore
+
+Storage:
+
+- Firebase Storage
+
+State Management:
+
+- Zustand
+
+Charts:
+
+- Recharts
+
+==================================================
+MULTI TENANT ARCHITECTURE
+
+Each finance company is a completely separate organization.
+
+Every organization has:
+
+- Owner
+- Agents
+- Customers
+
+Data must never leak between organizations.
+
+All Firestore queries must always filter by:
+
+organizationId
+
+Every collection must be organization scoped.
+
+==================================================
+ROLE SYSTEM
+
+DO NOT store role on user.
+
+Store role only in:
+
+organization_members
+
+Fields:
+
+- userId
+- organizationId
+- role
+
+Supported Roles:
+
+OWNER
+AGENT
+CUSTOMER
+
+A single Clerk user may belong to multiple organizations.
+
+Example:
+
+User A
+
+Org1 → AGENT
+Org2 → CUSTOMER
+
+Authorization must always use:
+
+activeOrganization
++
+membership.role
+
+==================================================
+AUTHENTICATION FLOW
+
+LANDING PAGE
+
+Public Pages:
+
+- Home
+- Features
+- Pricing
+- About
+- Contact
+
+Buttons:
+
+- Sign In
+- Get Started
+
+==================================================
+OWNER REGISTRATION
+
+Custom Sign Up
+
+Fields:
+
+- First Name
+- Last Name
+- Email
+- Password
+- Confirm Password
+
+Flow:
+
+Create Clerk User
+Verify Email
+Create Organization
+
+Organization Fields:
+
+- Company Name
+- Company Code
+- Phone Number
+- Address
+- City
+- State
+- Country
+
+Create Firestore Organization
+
+Create Membership:
+
+role = OWNER
+
+Redirect:
+
+Owner Dashboard
+
+==================================================
+OWNER LOGIN
+
+Custom Sign In
+
+Fields:
+
+- Email
+- Password
+
+Flow:
+
+Authenticate with Clerk
+
+Load Memberships
+
+If multiple organizations:
+
+Show Organization Selector
+
+User selects organization
+
+Set Active Organization
+
+Load Membership Role
+
+Redirect:
+
+OWNER → Owner Dashboard
+
+==================================================
+NO INVITATION SYSTEM
+
+REMOVE ALL OF THESE:
+
+- Clerk Invitations
+- Accept Invitation
+- Invitation Links
+- Ticket Authentication
+- Invitation Pages
+- Invitation Redirects
+- Organization Invitation Flow
+
+DO NOT USE INVITATIONS ANYWHERE.
+
+==================================================
+AGENT CREATION
+
+Owner creates agent directly.
+
+Owner enters:
+
+- First Name
+- Last Name
+- Email
+- Phone Number
+- Employee Code
+- Address
+- Notes
+
+Backend automatically:
+
+1. Generates strong random password
+
+Example:
+
+X7#Lp92@Qm
+
+2. Creates Clerk User
+
+3. Creates Organization Membership
+
+Role = AGENT
+
+4. Creates Firestore Agent Record
+
+5. Stores active status
+
+6. Stores createdBy owner
+
+7. Sends success response
+
+Display generated credentials to owner.
+
+==================================================
+CUSTOMER CREATION
+
+Owner creates customer directly.
+
+Owner enters:
+
+- First Name
+- Last Name
+- Email
+- Phone Number
+- Address
+- Aadhaar Number
+- PAN Number
+- Nominee Name
+- Nominee Relation
+- Nominee Phone
+- Notes
+
+Backend automatically:
+
+1. Generates strong random password
+
+2. Creates Clerk User
+
+3. Creates Organization Membership
+
+Role = CUSTOMER
+
+4. Creates Firestore Customer Record
+
+5. Creates Customer Savings Account
+
+6. Creates Customer Ledger
+
+7. Creates Customer Passbook
+
+Display generated credentials to owner.
+
+==================================================
+FIRST LOGIN FLOW
+
+Agent:
+
+Sign In
+↓
+Temporary Password
+↓
+Force Change Password
+↓
+Agent Dashboard
+
+Customer:
+
+Sign In
+↓
+Temporary Password
+↓
+Force Change Password
+↓
+Customer Dashboard
+
+==================================================
+OWNER DASHBOARD
+
+Modules:
+
+Dashboard
+Agents
+Customers
+Savings
+Loans
+Collections
+Reports
+Audit Logs
+Settings
+
+Analytics:
+
+Total Customers
+Total Agents
+Savings Balance
+Loan Outstanding
+Daily Collections
+Monthly Collections
+Collection Efficiency
+Growth Charts
+
+==================================================
+AGENT DASHBOARD
+
+Modules:
+
+My Customers
+Savings Collections
+Loan Collections
+EMI Collections
+Collection Calendar
+Receipts
+History
+Profile
+
+==================================================
+CUSTOMER DASHBOARD
+
+Modules:
+
+Savings Balance
+Passbook
+Transactions
+Loan Details
+EMI Schedule
+Receipts
+Profile
+
+==================================================
+PIGMY SAVINGS SYSTEM
+
+Create Savings Plans:
+
+Daily
+Weekly
+Monthly
+
+Track:
+
+Opening Balance
+Deposits
+Withdrawals
+Interest
+Closing Balance
+
+Generate:
+
+Passbook
+Statements
+Collection Reports
+
+==================================================
+LOAN MANAGEMENT SYSTEM
+
+Loan Application
+
+Loan Approval
+
+Loan Disbursement
+
+EMI Generation
+
+EMI Collection
+
+Penalty Calculation
+
+Loan Closure
+
+Support:
+
+Flat Interest
+Reducing Balance
+
+==================================================
+COLLECTION MANAGEMENT
+
+Daily Collection
+
+Weekly Collection
+
+Monthly Collection
+
+Savings Collection
+
+Loan Collection
+
+Generate Receipt
+
+Collection Tracking
+
+Missed Collection Tracking
+
+==================================================
+REPORTS
+
+Customer Reports
+
+Agent Reports
+
+Savings Reports
+
+Loan Reports
+
+Collection Reports
+
+Daily Reports
+
+Monthly Reports
+
+Yearly Reports
+
+Export:
+
+PDF
+Excel
+
+==================================================
+FIRESTORE DATABASE
+
+Generate complete collections:
+
+organizations
+
+organization_members
+
+owners
+
+agents
+
+customers
+
+savings_accounts
+
+savings_transactions
+
+loans
+
+loan_installments
+
+collections
+
+receipts
+
+ledgers
+
+audit_logs
+
+notifications
+
+settings
+
+Generate complete schema for every collection.
+
+==================================================
+SECURITY
+
+Firestore Security Rules
+
+Organization Isolation
+
+Role Based Access Control
+
+Route Protection
+
+API Protection
+
+Audit Logging
+
+Input Validation
+
+Rate Limiting
+
+==================================================
+UI/UX
+
+Modern FinTech Design
+
+Dark Mode
+
+Mobile Responsive
+
+Tablet Responsive
+
+Desktop Responsive
+
+Professional Dashboard
+
+Beautiful Charts
+
+Loading States
+
+Empty States
+
+Error States
+
+==================================================
+GENERATION RULES
+
+Generate:
+
+- Complete Folder Structure
+- Complete React Pages
+- Complete Components
+- Complete Firestore Services
+- Complete Clerk Integration
+- Complete Express Backend
+- Complete API Routes
+- Complete Types
+- Complete Hooks
+- Complete Validation
+- Complete Security Rules
+- Complete Dashboard Logic
+
+DO NOT generate pseudocode.
+
+DO NOT generate placeholders.
+
+DO NOT simplify features.
+
+Generate production-ready working code.
+
+Continue automatically until the entire FundCircle platform is fully implemented.

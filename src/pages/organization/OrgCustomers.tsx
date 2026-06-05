@@ -7,19 +7,19 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
-import { addMember, validateCustomerEmail, reassignCustomer } from "@/lib/services";
+import { createDirectMember, validateCustomerEmail, reassignCustomer } from "@/lib/services";
 import { useOrganization, useUser } from "@clerk/clerk-react";
 import { where } from "firebase/firestore";
 import {
   Search, Plus, AlertTriangle, Crown, Users, ChevronDown, RefreshCw,
-  Loader2, MailCheck, UserPlus,
+  Loader2, KeyRound, Copy, Check, ShieldCheck,
 } from "lucide-react";
 import { toast } from "sonner";
 
-type AddResult = {
-  isExistingUser: boolean;
+type CreatedCredentials = {
   name: string;
   email: string;
+  password: string;
 };
 
 export default function OrgCustomers() {
@@ -42,11 +42,13 @@ export default function OrgCustomers() {
   const [isValidating, setIsValidating] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  const [fullName, setFullName] = useState("");
+  const [firstName, setFirstName] = useState("");
+  const [lastName, setLastName] = useState("");
   const [email, setEmail] = useState("");
   const [phone, setPhone] = useState("");
   const [selectedCollectorId, setSelectedCollectorId] = useState("");
-  const [result, setResult] = useState<AddResult | null>(null);
+  const [credentials, setCredentials] = useState<CreatedCredentials | null>(null);
+  const [copiedField, setCopiedField] = useState<"email" | "password" | null>(null);
 
   const [reassigningCustomer, setReassigningCustomer] = useState<any>(null);
   const [newCollectorId, setNewCollectorId] = useState("");
@@ -105,18 +107,30 @@ export default function OrgCustomers() {
   };
 
   const resetForm = () => {
-    setFullName("");
+    setFirstName("");
+    setLastName("");
     setEmail("");
     setPhone("");
     setSelectedCollectorId("");
-    setResult(null);
+    setCredentials(null);
+    setCopiedField(null);
+  };
+
+  const copyToClipboard = async (text: string, field: "email" | "password") => {
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopiedField(field);
+      setTimeout(() => setCopiedField(null), 2000);
+    } catch {
+      toast.error("Could not copy to clipboard.");
+    }
   };
 
   const handleAddCustomer = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!organization?.id) { toast.error("No active organization selected."); return; }
     if (!user?.id) { toast.error("Missing authenticated owner identity."); return; }
-    if (!fullName.trim()) { toast.error("Full name is required."); return; }
+    if (!firstName.trim()) { toast.error("First name is required."); return; }
     if (!email.trim()) { toast.error("Email address is required."); return; }
     if (atLimit) { toast.error(`Customer limit of ${maxCustomers} reached.`); return; }
 
@@ -145,8 +159,9 @@ export default function OrgCustomers() {
 
     setIsSubmitting(true);
     try {
-      const { isExistingUser } = await addMember({
-        fullName: fullName.trim(),
+      const { generatedPassword } = await createDirectMember({
+        firstName: firstName.trim(),
+        lastName: lastName.trim(),
         email: emailKey,
         phone: phone.trim(),
         role: "CUSTOMER",
@@ -154,17 +169,13 @@ export default function OrgCustomers() {
         organizationName: organization.name || "",
         assignedAgentId: collectorToAssign.id,
         assignedAgentName: collectorToAssign.fullName || (collectorToAssign as any).name || "",
-        inviterUserId: user.id,
         createdBy: user.id,
+        actorName: user.fullName || user.firstName || "",
       });
-      setResult({ isExistingUser, name: fullName.trim(), email: emailKey });
-      if (isExistingUser) {
-        toast.success("Customer added to your organization.");
-      } else {
-        toast.success("Invitation sent! They'll receive an email to set up their account.");
-      }
+      setCredentials({ name: `${firstName.trim()} ${lastName.trim()}`.trim(), email: emailKey, password: generatedPassword });
+      toast.success("Customer account created successfully.");
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Failed to add customer");
+      toast.error(error instanceof Error ? error.message : "Failed to create customer");
     } finally {
       setIsSubmitting(false);
     }
@@ -226,31 +237,58 @@ export default function OrgCustomers() {
             <DialogContent className="max-w-md">
               <DialogHeader>
                 <DialogTitle className="text-lg font-bold">
-                  {result
-                    ? (result.isExistingUser ? "Customer Added" : "Invitation Sent")
-                    : "Add Customer"}
+                  {credentials ? "Customer Created" : "Add Customer"}
                 </DialogTitle>
               </DialogHeader>
 
-              {result ? (
+              {credentials ? (
                 <div className="space-y-4 mt-2">
-                  {result.isExistingUser ? (
-                    <div className="rounded-xl bg-emerald-50 border border-emerald-200 p-4 text-center space-y-1.5">
-                      <UserPlus className="w-6 h-6 text-emerald-600 mx-auto" />
-                      <p className="text-sm font-semibold text-emerald-800">{result.name} has been added!</p>
-                      <p className="text-xs text-emerald-600">
-                        They already have a FundCircle account and can sign in now to access this organization.
-                      </p>
+                  <div className="rounded-xl bg-emerald-50 border border-emerald-200 p-4 space-y-1.5">
+                    <div className="flex items-center gap-2">
+                      <ShieldCheck className="w-5 h-5 text-emerald-600 shrink-0" />
+                      <p className="text-sm font-bold text-emerald-800">{credentials.name} — Account Ready</p>
                     </div>
-                  ) : (
-                    <div className="rounded-xl bg-violet-50 border border-violet-200 p-4 text-center space-y-1.5">
-                      <MailCheck className="w-6 h-6 text-violet-600 mx-auto" />
-                      <p className="text-sm font-semibold text-violet-800">Invitation sent to {result.name}!</p>
-                      <p className="text-xs text-violet-600">
-                        They'll receive an email at <span className="font-semibold">{result.email}</span> with a link to set up their account.
-                      </p>
+                    <p className="text-xs text-emerald-600 ml-7">
+                      Share these credentials with the customer. They must change their password on first sign in.
+                    </p>
+                  </div>
+
+                  <div className="rounded-xl border border-slate-200 bg-slate-50 divide-y divide-slate-200">
+                    <div className="flex items-center justify-between px-4 py-3 gap-3">
+                      <div className="min-w-0">
+                        <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide">Email</p>
+                        <p className="text-sm font-medium text-slate-900 truncate">{credentials.email}</p>
+                      </div>
+                      <button
+                        onClick={() => copyToClipboard(credentials.email, "email")}
+                        className="shrink-0 p-1.5 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-200 transition-colors"
+                        title="Copy email"
+                      >
+                        {copiedField === "email" ? <Check className="w-4 h-4 text-emerald-500" /> : <Copy className="w-4 h-4" />}
+                      </button>
                     </div>
-                  )}
+                    <div className="flex items-center justify-between px-4 py-3 gap-3">
+                      <div className="min-w-0">
+                        <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide">Temporary Password</p>
+                        <p className="text-sm font-mono font-bold text-slate-900 tracking-wider">{credentials.password}</p>
+                      </div>
+                      <button
+                        onClick={() => copyToClipboard(credentials.password, "password")}
+                        className="shrink-0 p-1.5 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-200 transition-colors"
+                        title="Copy password"
+                      >
+                        {copiedField === "password" ? <Check className="w-4 h-4 text-emerald-500" /> : <Copy className="w-4 h-4" />}
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="rounded-xl bg-amber-50 border border-amber-200 px-4 py-3 flex items-start gap-2.5">
+                    <KeyRound className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+                    <p className="text-xs text-amber-700">
+                      The customer will be prompted to set a new password on their first sign in. Keep this credential secure.
+                    </p>
+                  </div>
+
                   <Button className="w-full" onClick={() => { setIsInviteOpen(false); resetForm(); }}>
                     Done
                   </Button>
@@ -258,23 +296,39 @@ export default function OrgCustomers() {
               ) : (
                 <form onSubmit={handleAddCustomer} className="space-y-4 mt-2">
                   <p className="text-sm text-slate-500 -mt-2">
-                    If the email already has a FundCircle account, they'll be added instantly. Otherwise, they'll receive an invitation email.
+                    A temporary password will be generated. Share it with the customer — they'll change it on first sign in.
                   </p>
 
-                  <div className="space-y-1.5">
-                    <Label htmlFor="cust-name" className="text-sm font-semibold text-slate-700">
-                      Full Name <span className="text-red-500">*</span>
-                    </Label>
-                    <Input
-                      id="cust-name"
-                      type="text"
-                      placeholder="Jane Doe"
-                      value={fullName}
-                      onChange={(e) => setFullName(e.target.value)}
-                      required
-                      autoComplete="off"
-                      className="h-11"
-                    />
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="space-y-1.5">
+                      <Label htmlFor="cust-firstname" className="text-sm font-semibold text-slate-700">
+                        First Name <span className="text-red-500">*</span>
+                      </Label>
+                      <Input
+                        id="cust-firstname"
+                        type="text"
+                        placeholder="Jane"
+                        value={firstName}
+                        onChange={(e) => setFirstName(e.target.value)}
+                        required
+                        autoComplete="off"
+                        className="h-11"
+                      />
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label htmlFor="cust-lastname" className="text-sm font-semibold text-slate-700">
+                        Last Name
+                      </Label>
+                      <Input
+                        id="cust-lastname"
+                        type="text"
+                        placeholder="Doe"
+                        value={lastName}
+                        onChange={(e) => setLastName(e.target.value)}
+                        autoComplete="off"
+                        className="h-11"
+                      />
+                    </div>
                   </div>
 
                   <div className="space-y-1.5">
@@ -352,12 +406,12 @@ export default function OrgCustomers() {
                   <Button
                     type="submit"
                     className="w-full h-11 font-semibold"
-                    disabled={isValidating || isSubmitting || collectorsLoading || collectorsForAssignment.length === 0 || !fullName.trim() || !email.trim()}
+                    disabled={isValidating || isSubmitting || collectorsLoading || collectorsForAssignment.length === 0 || !firstName.trim() || !email.trim()}
                   >
                     {isValidating ? (
                       <><Loader2 className="w-4 h-4 mr-2 animate-spin" />Validating…</>
                     ) : isSubmitting ? (
-                      <><Loader2 className="w-4 h-4 mr-2 animate-spin" />Adding customer…</>
+                      <><Loader2 className="w-4 h-4 mr-2 animate-spin" />Creating customer…</>
                     ) : (
                       "Create Customer"
                     )}
@@ -513,20 +567,16 @@ export default function OrgCustomers() {
                               <span className="text-slate-400 italic">Pending</span>
                             )}
                           </p>
-                          <p className="text-xs text-slate-500 truncate mt-0.5">{customer.email || "—"}</p>
-                          <p className="text-xs text-slate-400 mt-0.5">{customer.phone || "—"}</p>
-                          <div className="flex items-center gap-2 mt-1.5">
-                            <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-xs bg-slate-100 text-slate-600">
-                              {assignedCollector && isOwnerMember(assignedCollector) && (
-                                <Crown className="w-2.5 h-2.5 text-amber-500" />
-                              )}
-                              {(customer as any).assignedAgentName ||
-                                assignedCollector?.fullName ||
-                                (assignedCollector as any)?.name || "Unassigned"}
-                            </span>
-                          </div>
+                          <p className="text-xs text-slate-500 truncate">{customer.email || "—"}</p>
+                          <p className="text-xs text-slate-400 mt-0.5">
+                            {customer.phone || "—"} ·{" "}
+                            {(customer as any).assignedAgentName ||
+                              assignedCollector?.fullName ||
+                              (assignedCollector as any)?.name ||
+                              "Unassigned"}
+                          </p>
                         </div>
-                        <div className="flex flex-col items-end gap-2 shrink-0">
+                        <div className="flex flex-col items-end gap-1.5 shrink-0">
                           <span className={`inline-flex items-center px-2 py-1 rounded-md text-xs font-medium border ${statusClass(customer.status as string)}`}>
                             {statusLabel(customer.status as string)}
                           </span>
@@ -553,50 +603,47 @@ export default function OrgCustomers() {
         </CardContent>
       </Card>
 
-      {reassigningCustomer && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-          <div className="w-full max-w-sm rounded-3xl bg-white p-6 shadow-2xl space-y-4">
-            <div>
-              <h3 className="text-base font-bold text-slate-900">Reassign Customer</h3>
-              <p className="text-xs text-slate-500 mt-0.5">
-                Move <span className="font-semibold">
-                  {reassigningCustomer.fullName || (reassigningCustomer as any).name || "this customer"}
-                </span> to a different collector.
-              </p>
+      {/* Reassign Dialog */}
+      <Dialog open={!!reassigningCustomer} onOpenChange={(open) => { if (!open) { setReassigningCustomer(null); setNewCollectorId(""); } }}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Reassign Customer</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 mt-2">
+            <p className="text-sm text-slate-600">
+              Reassign <span className="font-semibold">{reassigningCustomer?.fullName || (reassigningCustomer as any)?.name}</span> to a different collector.
+            </p>
+            <div className="space-y-1.5">
+              <Label className="text-sm font-semibold text-slate-700">New Collector</Label>
+              <div className="relative">
+                <select
+                  value={newCollectorId}
+                  onChange={(e) => setNewCollectorId(e.target.value)}
+                  className="w-full appearance-none rounded-md border border-slate-200 bg-white px-3 py-2 pr-8 text-sm text-slate-900 h-11 focus:border-slate-400 focus:outline-none focus:ring-1 focus:ring-slate-300"
+                >
+                  <option value="">Select collector…</option>
+                  {collectorsForAssignment.map((c) => (
+                    <option key={c.id} value={c.id}>{collectorLabel(c)}</option>
+                  ))}
+                </select>
+                <ChevronDown className="absolute right-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" />
+              </div>
             </div>
-            <div className="relative">
-              <select
-                value={newCollectorId}
-                onChange={(e) => setNewCollectorId(e.target.value)}
-                className="w-full appearance-none rounded-md border border-slate-200 bg-white px-3 py-2 pr-8 text-sm text-slate-900 h-11 focus:border-slate-400 focus:outline-none"
-              >
-                <option value="">Select collector…</option>
-                {collectorsForAssignment.map((c) => (
-                  <option key={c.id} value={c.id}>{collectorLabel(c)}</option>
-                ))}
-              </select>
-              <ChevronDown className="absolute right-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" />
-            </div>
-            <div className="flex gap-2 pt-1">
-              <Button
-                variant="outline"
-                className="flex-1 h-10"
-                onClick={() => { setReassigningCustomer(null); setNewCollectorId(""); }}
-                disabled={isReassigning}
-              >
+            <div className="flex gap-3">
+              <Button variant="outline" className="flex-1" onClick={() => { setReassigningCustomer(null); setNewCollectorId(""); }}>
                 Cancel
               </Button>
               <Button
-                className="flex-1 h-10"
-                onClick={handleReassign}
+                className="flex-1"
                 disabled={!newCollectorId || isReassigning}
+                onClick={handleReassign}
               >
-                {isReassigning ? <><Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" />Reassigning…</> : "Confirm"}
+                {isReassigning ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" />Reassigning…</> : "Reassign"}
               </Button>
             </div>
           </div>
-        </div>
-      )}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

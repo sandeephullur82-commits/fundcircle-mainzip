@@ -485,6 +485,115 @@ export async function recordEMICollection(params: {
 
 // ── Provisioning (existing, kept) ─────────────────────────────────────────────
 
+// ── Direct Member Creation (no invitations) ───────────────────────────────────
+
+export async function createDirectMember(params: {
+  firstName: string;
+  lastName: string;
+  email: string;
+  phone: string;
+  role: "AGENT" | "CUSTOMER";
+  organizationId: string;
+  organizationName: string;
+  assignedAgentId?: string;
+  assignedAgentName?: string;
+  createdBy: string;
+  actorName?: string;
+}): Promise<{ clerkUserId: string; generatedPassword: string }> {
+  const emailKey = params.email.trim().toLowerCase();
+  const endpoint = params.role === "AGENT" ? "/api/create-agent" : "/api/create-customer";
+
+  const res = await fetch(endpoint, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      firstName: params.firstName.trim(),
+      lastName: params.lastName.trim(),
+      email: emailKey,
+      phone: params.phone?.trim() || "",
+      organizationId: params.organizationId,
+      createdBy: params.createdBy,
+    }),
+  });
+
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw new Error(body.error || `Failed to create ${params.role.toLowerCase()} (HTTP ${res.status})`);
+  }
+
+  const { userId: clerkUserId, generatedPassword } = await res.json();
+  const membershipDocId = membershipIdFor(params.organizationId, clerkUserId);
+  const fullName = `${params.firstName.trim()} ${params.lastName.trim()}`.trim();
+
+  const membershipData: any = {
+    id: membershipDocId,
+    clerkUserId,
+    email: emailKey,
+    fullName,
+    name: fullName,
+    firstName: params.firstName.trim(),
+    lastName: params.lastName.trim(),
+    role: params.role,
+    clerkRole: params.role === "AGENT" ? "org:pigmy_collector" : "org:customer",
+    organizationId: params.organizationId,
+    organizationName: params.organizationName,
+    phone: params.phone?.trim() || "",
+    address: "",
+    assignedArea: "",
+    assignedAgentId: params.assignedAgentId || "",
+    assignedAgentName: params.assignedAgentName || "",
+    profileCompleted: false,
+    status: "PENDING_SETUP",
+    createdBy: params.createdBy,
+    createdAt: serverTimestamp(),
+    updatedAt: serverTimestamp(),
+  };
+
+  await setDoc(doc(db, "organizationMembers", membershipDocId), membershipData, { merge: true });
+  await setDoc(doc(db, "memberships", membershipDocId), membershipData, { merge: true });
+
+  if (params.role === "CUSTOMER") {
+    const accountNumber = generateAccountNumber();
+    const existingAccount = await getSavingsAccountByCustomer(membershipDocId, params.organizationId);
+    await setDoc(doc(db, "customers", membershipDocId), {
+      ...membershipData,
+      accountNumber,
+      agentId: params.assignedAgentId || params.createdBy || "",
+      assigned_to_user_id: params.assignedAgentId || params.createdBy || "",
+    }, { merge: true });
+    if (!existingAccount) {
+      await createSavingsAccountForCustomer({ customerId: membershipDocId, organizationId: params.organizationId });
+    }
+    try {
+      await setDoc(doc(db, "organizations", params.organizationId), {
+        "usage.activeCustomers": increment(1),
+        updatedAt: serverTimestamp(),
+      }, { merge: true });
+    } catch (_) {}
+  }
+
+  await setDoc(doc(db, "users", clerkUserId), {
+    clerkUserId, id: clerkUserId,
+    email: emailKey, name: fullName,
+    status: "PENDING_SETUP",
+    createdAt: serverTimestamp(),
+    updatedAt: serverTimestamp(),
+  }, { merge: true });
+
+  await createAuditLog({
+    organizationId: params.organizationId,
+    actorId: params.createdBy,
+    actorRole: "OWNER",
+    actorName: params.actorName || "",
+    action: params.role === "AGENT" ? "AGENT_CREATED" : "CUSTOMER_CREATED",
+    entityType: params.role === "AGENT" ? "Agent" : "Customer",
+    entityId: membershipDocId,
+    metadata: { email: emailKey, fullName, role: params.role },
+  });
+
+  return { clerkUserId, generatedPassword };
+}
+
 export async function provisionUser(params: {
   firstName: string;
   lastName: string;

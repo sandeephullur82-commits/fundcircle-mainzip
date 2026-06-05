@@ -17,6 +17,31 @@ const getBaseUrl = () => {
   return `http://localhost:${localPort}`;
 };
 
+// ─── Password generator ───────────────────────────────────────────────────────
+function generatePassword(): string {
+  const upper = "ABCDEFGHJKLMNPQRSTUVWXYZ";
+  const lower = "abcdefghjkmnpqrstuvwxyz";
+  const digits = "23456789";
+  const special = "@#$!%^&*";
+
+  const pick = (s: string) => s[Math.floor(Math.random() * s.length)];
+
+  const parts = [
+    pick(upper), pick(upper),
+    pick(lower), pick(lower), pick(lower),
+    pick(digits), pick(digits),
+    pick(special),
+    pick(upper), pick(lower),
+  ];
+
+  for (let i = parts.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [parts[i], parts[j]] = [parts[j], parts[i]];
+  }
+
+  return parts.join("");
+}
+
 // ─── Auth Middleware ──────────────────────────────────────────────────────────
 async function authMiddleware(req: Request, res: Response, next: NextFunction) {
   const authHeader = req.headers.authorization;
@@ -34,109 +59,121 @@ async function authMiddleware(req: Request, res: Response, next: NextFunction) {
   }
 }
 
-// ─── Legacy: provision-user ───────────────────────────────────────────────────
-app.post("/api/provision-user", async (req, res) => {
-  const { firstName, lastName, email, organizationId, role } = req.body as {
+// ─── Create Agent (direct creation, no invitation) ───────────────────────────
+app.post("/api/create-agent", async (req, res) => {
+  const { firstName, lastName, email, phone, organizationId, createdBy } = req.body as {
     firstName: string; lastName: string; email: string;
-    organizationId: string; role: string;
+    phone?: string; organizationId: string; createdBy?: string;
   };
 
-  if (!firstName || !email || !organizationId || !role) {
-    return res.status(400).json({ error: "firstName, email, organizationId and role are required." });
+  if (!firstName || !email || !organizationId) {
+    return res.status(400).json({ error: "firstName, email, and organizationId are required." });
   }
 
   const emailKey = email.trim().toLowerCase();
+  const generatedPassword = generatePassword();
+
   let userId: string;
 
   try {
     const existing = await clerkClient.users.getUserList({ emailAddress: [emailKey] });
+
     if (existing.data.length > 0) {
       userId = existing.data[0].id;
+      // Update password for existing user so they use the new temp password
+      await clerkClient.users.updateUser(userId, { password: generatedPassword });
     } else {
       const created = await clerkClient.users.createUser({
         emailAddress: [emailKey],
         firstName: firstName.trim(),
         lastName: (lastName || "").trim(),
-        skipPasswordRequirement: true,
+        password: generatedPassword,
+        skipPasswordChecks: false,
       });
       userId = created.id;
     }
   } catch (err: any) {
     const msg = err?.errors?.[0]?.longMessage || err?.message || "Failed to create Clerk user";
-    console.error("[FC Provision] Clerk user creation failed:", msg);
+    console.error("[FC CreateAgent] Clerk user creation failed:", msg);
     return res.status(500).json({ error: msg });
   }
 
-  let setupUrl: string;
+  // Add to org as agent
   try {
-    const token = await clerkClient.signInTokens.createSignInToken({
-      userId,
-      expiresInSeconds: 60 * 60 * 24 * 7,
+    const list = await clerkClient.organizations.getOrganizationMembershipList({
+      organizationId, limit: 500,
     });
-    setupUrl = `${getBaseUrl()}/auth/setup-password?token=${token.token}`;
+    const alreadyMember = list.data.some((m: any) => m.publicUserData?.userId === userId);
+    if (!alreadyMember) {
+      await clerkClient.organizations.createOrganizationMembership({
+        organizationId, userId, role: "org:pigmy_collector",
+      });
+    }
   } catch (err: any) {
-    const msg = err?.errors?.[0]?.longMessage || err?.message || "Failed to create setup link";
-    console.error("[FC Provision] Sign-in token creation failed:", msg);
+    const msg = err?.errors?.[0]?.longMessage || err?.message || "Failed to add to organization";
+    console.error("[FC CreateAgent] Org membership failed:", msg);
     return res.status(500).json({ error: msg });
   }
 
-  return res.json({ userId, setupUrl });
+  return res.json({ userId, email: emailKey, generatedPassword });
 });
 
-// ─── Add member ───────────────────────────────────────────────────────────────
-app.post("/api/add-member", async (req, res) => {
-  const { email, organizationId, role, inviterUserId } = req.body as {
-    email: string; organizationId: string; role: "AGENT" | "CUSTOMER"; inviterUserId?: string;
+// ─── Create Customer (direct creation, no invitation) ────────────────────────
+app.post("/api/create-customer", async (req, res) => {
+  const { firstName, lastName, email, phone, organizationId, createdBy } = req.body as {
+    firstName: string; lastName: string; email: string;
+    phone?: string; organizationId: string; createdBy?: string;
   };
 
-  if (!email || !organizationId || !role) {
-    return res.status(400).json({ error: "email, organizationId and role are required." });
+  if (!firstName || !email || !organizationId) {
+    return res.status(400).json({ error: "firstName, email, and organizationId are required." });
   }
 
   const emailKey = email.trim().toLowerCase();
-  const clerkRole = role === "AGENT" ? "org:pigmy_collector" : "org:customer";
+  const generatedPassword = generatePassword();
+
+  let userId: string;
 
   try {
     const existing = await clerkClient.users.getUserList({ emailAddress: [emailKey] });
 
     if (existing.data.length > 0) {
-      const userId = existing.data[0].id;
-
-      let alreadyMember = false;
-      try {
-        const list = await clerkClient.organizations.getOrganizationMembershipList({
-          organizationId, limit: 500,
-        });
-        alreadyMember = list.data.some((m: any) => m.publicUserData?.userId === userId);
-      } catch (e) {
-        console.warn("[FC AddMember] Could not check existing membership:", e);
-      }
-
-      if (!alreadyMember) {
-        await clerkClient.organizations.createOrganizationMembership({
-          organizationId, userId, role: clerkRole,
-        });
-      }
-
-      return res.json({ userId, isExistingUser: true });
+      userId = existing.data[0].id;
+      await clerkClient.users.updateUser(userId, { password: generatedPassword });
+    } else {
+      const created = await clerkClient.users.createUser({
+        emailAddress: [emailKey],
+        firstName: firstName.trim(),
+        lastName: (lastName || "").trim(),
+        password: generatedPassword,
+        skipPasswordChecks: false,
+      });
+      userId = created.id;
     }
-
-    // New user — create Clerk org invitation
-    const invitation = await clerkClient.organizations.createOrganizationInvitation({
-      organizationId,
-      emailAddress: emailKey,
-      role: clerkRole,
-      redirectUrl: `${getBaseUrl()}/accept-invitation`,
-      ...(inviterUserId ? { inviterUserId } : {}),
-    });
-
-    return res.json({ isExistingUser: false, invitationId: invitation.id });
-
   } catch (err: any) {
-    const msg = err?.errors?.[0]?.longMessage || err?.message || "Failed to add member";
-    console.error("[FC AddMember] Error:", msg, err);
+    const msg = err?.errors?.[0]?.longMessage || err?.message || "Failed to create Clerk user";
+    console.error("[FC CreateCustomer] Clerk user creation failed:", msg);
     return res.status(500).json({ error: msg });
   }
+
+  // Add to org as customer
+  try {
+    const list = await clerkClient.organizations.getOrganizationMembershipList({
+      organizationId, limit: 500,
+    });
+    const alreadyMember = list.data.some((m: any) => m.publicUserData?.userId === userId);
+    if (!alreadyMember) {
+      await clerkClient.organizations.createOrganizationMembership({
+        organizationId, userId, role: "org:customer",
+      });
+    }
+  } catch (err: any) {
+    const msg = err?.errors?.[0]?.longMessage || err?.message || "Failed to add to organization";
+    console.error("[FC CreateCustomer] Org membership failed:", msg);
+    return res.status(500).json({ error: msg });
+  }
+
+  return res.json({ userId, email: emailKey, generatedPassword });
 });
 
 // ─── Deactivate agent ─────────────────────────────────────────────────────────
@@ -146,7 +183,6 @@ app.post("/api/agents/:userId/deactivate", async (req, res) => {
   if (!organizationId) return res.status(400).json({ error: "organizationId required" });
 
   try {
-    // Remove from Clerk org
     await clerkClient.organizations.deleteOrganizationMembership({
       organizationId, userId,
     });

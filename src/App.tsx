@@ -13,7 +13,6 @@ import { PWAInstallPrompt, OfflineToast } from "@/src/components/pwa";
 
 import LandingPage from "./pages/LandingPage";
 import AuthCallbackPage from "./pages/AuthCallback";
-import AcceptInvitationPage from "./pages/AcceptInvitationPage";
 import CompleteProfilePage from "./pages/CompleteProfilePage";
 import NotFoundPage from "./pages/NotFoundPage";
 
@@ -23,6 +22,7 @@ import VerifyEmailPage from "./pages/auth/VerifyEmailPage";
 import ForgotPasswordPage from "./pages/auth/ForgotPasswordPage";
 import ResetPasswordPage from "./pages/auth/ResetPasswordPage";
 import SetupPasswordPage from "./pages/auth/SetupPasswordPage";
+import ChangePasswordPage from "./pages/auth/ChangePasswordPage";
 
 import OrgDashboard from "./pages/organization/OrgDashboard";
 import OwnerOnboarding from "./pages/organization/OwnerOnboarding";
@@ -339,13 +339,20 @@ function RoleRouter() {
     const rawRole = membershipDoc.clerkRole || membershipDoc.role || null;
     const normalizedRole = normalizeClerkRole(rawRole);
     const profileCompleted = membershipDoc.profileCompleted !== false;
+    const status = (membershipDoc.status || "").toUpperCase();
     const dashPath = getDashboardPath(normalizedRole);
 
     console.log("[FC RoleRouter] Auth redirect decision (Firestore):");
     console.log("[FC RoleRouter]   rawRole         :", rawRole ?? "MISSING");
     console.log("[FC RoleRouter]   normalizedRole  :", normalizedRole ?? "null");
+    console.log("[FC RoleRouter]   status          :", status);
     console.log("[FC RoleRouter]   profileCompleted:", profileCompleted);
-    console.log("[FC RoleRouter]   → destination   :", !profileCompleted && (normalizedRole === "pigmy_collector" || normalizedRole === "customer") ? "/complete-profile" : dashPath);
+
+    // First-login: force password change for provisioned users
+    if (status === "PENDING_SETUP" && (normalizedRole === "pigmy_collector" || normalizedRole === "customer")) {
+      console.log("[FC RoleRouter]   → /auth/change-password (first login)");
+      return <Navigate to="/auth/change-password" replace />;
+    }
 
     if (!profileCompleted && (normalizedRole === "pigmy_collector" || normalizedRole === "customer")) {
       return <Navigate to="/complete-profile" replace />;
@@ -428,10 +435,8 @@ export default function App() {
               <Route path="/auth/forgot-password" element={<ForgotPasswordPage />} />
               <Route path="/auth/reset-password" element={<ResetPasswordPage />} />
               <Route path="/auth/setup-password" element={<SetupPasswordPage />} />
+              <Route path="/auth/change-password" element={<ProtectedRoute><ChangePasswordPage /></ProtectedRoute>} />
               <Route path="/auth/callback" element={<AuthCallbackPage />} />
-
-              {/* Invitation acceptance — must be public (no auth required) */}
-              <Route path="/accept-invitation" element={<AcceptInvitationPage />} />
 
               {/* Legacy sign-in redirects */}
               <Route path="/sign-in/*" element={<Navigate to="/auth/sign-in" replace />} />

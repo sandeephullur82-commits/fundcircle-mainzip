@@ -7,19 +7,19 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
-import { addMember, validateAgentEmail } from "@/lib/services";
+import { createDirectMember, validateAgentEmail } from "@/lib/services";
 import { useOrganization, useUser } from "@clerk/clerk-react";
 import { where } from "firebase/firestore";
 import {
   Search, Plus, AlertTriangle, UserCheck, Info, Loader2,
-  MailCheck, UserPlus,
+  KeyRound, Copy, Check, ShieldCheck,
 } from "lucide-react";
 import { toast } from "sonner";
 
-type AddResult = {
-  isExistingUser: boolean;
+type CreatedCredentials = {
   name: string;
   email: string;
+  password: string;
 };
 
 export default function OrgAgents() {
@@ -33,12 +33,14 @@ export default function OrgAgents() {
 
   const [searchTerm, setSearchTerm] = useState("");
   const [isOpen, setIsOpen] = useState(false);
-  const [fullName, setFullName] = useState("");
+  const [firstName, setFirstName] = useState("");
+  const [lastName, setLastName] = useState("");
   const [email, setEmail] = useState("");
   const [phone, setPhone] = useState("");
   const [isValidating, setIsValidating] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [result, setResult] = useState<AddResult | null>(null);
+  const [credentials, setCredentials] = useState<CreatedCredentials | null>(null);
+  const [copiedField, setCopiedField] = useState<"email" | "password" | null>(null);
 
   const filteredCollectors = members.filter((u) =>
     ((u?.fullName || (u as any)?.name || "").toLowerCase().includes(searchTerm.toLowerCase())) ||
@@ -66,17 +68,29 @@ export default function OrgAgents() {
   };
 
   const resetForm = () => {
-    setFullName("");
+    setFirstName("");
+    setLastName("");
     setEmail("");
     setPhone("");
-    setResult(null);
+    setCredentials(null);
+    setCopiedField(null);
+  };
+
+  const copyToClipboard = async (text: string, field: "email" | "password") => {
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopiedField(field);
+      setTimeout(() => setCopiedField(null), 2000);
+    } catch {
+      toast.error("Could not copy to clipboard.");
+    }
   };
 
   const handleAddAgent = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!organization?.id) { toast.error("No active organization selected."); return; }
     if (!user?.id) { toast.error("No authenticated owner."); return; }
-    if (!fullName.trim()) { toast.error("Full name is required."); return; }
+    if (!firstName.trim()) { toast.error("First name is required."); return; }
     if (!email.trim()) { toast.error("Email address is required."); return; }
     if (atLimit) { toast.error(`Collector limit of ${maxCollectors} reached.`); return; }
 
@@ -95,24 +109,21 @@ export default function OrgAgents() {
 
     setIsSubmitting(true);
     try {
-      const { isExistingUser } = await addMember({
-        fullName: fullName.trim(),
+      const { generatedPassword } = await createDirectMember({
+        firstName: firstName.trim(),
+        lastName: lastName.trim(),
         email: emailKey,
         phone: phone.trim(),
         role: "AGENT",
         organizationId: organization.id,
         organizationName: organization.name || "",
-        inviterUserId: user.id,
         createdBy: user.id,
+        actorName: user.fullName || user.firstName || "",
       });
-      setResult({ isExistingUser, name: fullName.trim(), email: emailKey });
-      if (isExistingUser) {
-        toast.success("Agent added to your organization.");
-      } else {
-        toast.success("Invitation sent! They'll receive an email to set up their account.");
-      }
+      setCredentials({ name: `${firstName.trim()} ${lastName.trim()}`.trim(), email: emailKey, password: generatedPassword });
+      toast.success("Agent account created successfully.");
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Failed to add agent");
+      toast.error(error instanceof Error ? error.message : "Failed to create agent");
     } finally {
       setIsSubmitting(false);
     }
@@ -150,29 +161,58 @@ export default function OrgAgents() {
             <DialogContent className="max-w-sm">
               <DialogHeader>
                 <DialogTitle className="text-lg font-bold">
-                  {result ? (result.isExistingUser ? "Agent Added" : "Invitation Sent") : "Add Agent"}
+                  {credentials ? "Agent Created" : "Add Agent"}
                 </DialogTitle>
               </DialogHeader>
 
-              {result ? (
+              {credentials ? (
                 <div className="space-y-4 mt-2">
-                  {result.isExistingUser ? (
-                    <div className="rounded-xl bg-emerald-50 border border-emerald-200 p-4 text-center space-y-1.5">
-                      <UserPlus className="w-6 h-6 text-emerald-600 mx-auto" />
-                      <p className="text-sm font-semibold text-emerald-800">{result.name} has been added!</p>
-                      <p className="text-xs text-emerald-600">
-                        They already have a FundCircle account and can sign in now to access this organization.
-                      </p>
+                  <div className="rounded-xl bg-emerald-50 border border-emerald-200 p-4 space-y-1.5">
+                    <div className="flex items-center gap-2">
+                      <ShieldCheck className="w-5 h-5 text-emerald-600 shrink-0" />
+                      <p className="text-sm font-bold text-emerald-800">{credentials.name} — Account Ready</p>
                     </div>
-                  ) : (
-                    <div className="rounded-xl bg-violet-50 border border-violet-200 p-4 text-center space-y-1.5">
-                      <MailCheck className="w-6 h-6 text-violet-600 mx-auto" />
-                      <p className="text-sm font-semibold text-violet-800">Invitation sent to {result.name}!</p>
-                      <p className="text-xs text-violet-600">
-                        They'll receive an email at <span className="font-semibold">{result.email}</span> with a link to set up their account.
-                      </p>
+                    <p className="text-xs text-emerald-600 ml-7">
+                      Share these credentials with the agent. They must change their password on first sign in.
+                    </p>
+                  </div>
+
+                  <div className="rounded-xl border border-slate-200 bg-slate-50 divide-y divide-slate-200">
+                    <div className="flex items-center justify-between px-4 py-3 gap-3">
+                      <div className="min-w-0">
+                        <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide">Email</p>
+                        <p className="text-sm font-medium text-slate-900 truncate">{credentials.email}</p>
+                      </div>
+                      <button
+                        onClick={() => copyToClipboard(credentials.email, "email")}
+                        className="shrink-0 p-1.5 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-200 transition-colors"
+                        title="Copy email"
+                      >
+                        {copiedField === "email" ? <Check className="w-4 h-4 text-emerald-500" /> : <Copy className="w-4 h-4" />}
+                      </button>
                     </div>
-                  )}
+                    <div className="flex items-center justify-between px-4 py-3 gap-3">
+                      <div className="min-w-0">
+                        <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide">Temporary Password</p>
+                        <p className="text-sm font-mono font-bold text-slate-900 tracking-wider">{credentials.password}</p>
+                      </div>
+                      <button
+                        onClick={() => copyToClipboard(credentials.password, "password")}
+                        className="shrink-0 p-1.5 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-200 transition-colors"
+                        title="Copy password"
+                      >
+                        {copiedField === "password" ? <Check className="w-4 h-4 text-emerald-500" /> : <Copy className="w-4 h-4" />}
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="rounded-xl bg-amber-50 border border-amber-200 px-4 py-3 flex items-start gap-2.5">
+                    <KeyRound className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+                    <p className="text-xs text-amber-700">
+                      The agent will be prompted to set a new password on their first sign in. Keep this credential secure.
+                    </p>
+                  </div>
+
                   <Button className="w-full" onClick={() => { setIsOpen(false); resetForm(); }}>
                     Done
                   </Button>
@@ -180,23 +220,39 @@ export default function OrgAgents() {
               ) : (
                 <form onSubmit={handleAddAgent} className="space-y-4 mt-2">
                   <p className="text-sm text-slate-500 -mt-2">
-                    If the email already has a FundCircle account, they'll be added instantly. Otherwise, they'll receive an invitation email.
+                    A temporary password will be generated. Share it with the agent — they'll change it on first sign in.
                   </p>
 
-                  <div className="space-y-1.5">
-                    <Label htmlFor="agent-name" className="text-sm font-semibold text-slate-700">
-                      Full Name <span className="text-red-500">*</span>
-                    </Label>
-                    <Input
-                      id="agent-name"
-                      type="text"
-                      placeholder="John Doe"
-                      value={fullName}
-                      onChange={(e) => setFullName(e.target.value)}
-                      className="h-11"
-                      required
-                      autoComplete="off"
-                    />
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="space-y-1.5">
+                      <Label htmlFor="agent-firstname" className="text-sm font-semibold text-slate-700">
+                        First Name <span className="text-red-500">*</span>
+                      </Label>
+                      <Input
+                        id="agent-firstname"
+                        type="text"
+                        placeholder="John"
+                        value={firstName}
+                        onChange={(e) => setFirstName(e.target.value)}
+                        className="h-11"
+                        required
+                        autoComplete="off"
+                      />
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label htmlFor="agent-lastname" className="text-sm font-semibold text-slate-700">
+                        Last Name
+                      </Label>
+                      <Input
+                        id="agent-lastname"
+                        type="text"
+                        placeholder="Doe"
+                        value={lastName}
+                        onChange={(e) => setLastName(e.target.value)}
+                        className="h-11"
+                        autoComplete="off"
+                      />
+                    </div>
                   </div>
 
                   <div className="space-y-1.5">
@@ -233,12 +289,12 @@ export default function OrgAgents() {
                   <Button
                     type="submit"
                     className="w-full h-11 font-semibold"
-                    disabled={isValidating || isSubmitting || !fullName.trim() || !email.trim()}
+                    disabled={isValidating || isSubmitting || !firstName.trim() || !email.trim()}
                   >
                     {isValidating ? (
                       <><Loader2 className="w-4 h-4 mr-2 animate-spin" />Validating…</>
                     ) : isSubmitting ? (
-                      <><Loader2 className="w-4 h-4 mr-2 animate-spin" />Adding agent…</>
+                      <><Loader2 className="w-4 h-4 mr-2 animate-spin" />Creating agent…</>
                     ) : (
                       "Create Agent"
                     )}
