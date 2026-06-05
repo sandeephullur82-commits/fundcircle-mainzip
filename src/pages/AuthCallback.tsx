@@ -90,14 +90,18 @@ export default function AuthCallbackPage() {
   }, [timedOut, navigate]);
 
   useEffect(() => {
+    // ── Wait for Clerk to fully propagate ────────────────────────────────────
+    // setActive() activates the session synchronously in Clerk's internals, but
+    // the React context (isSignedIn / user) updates one render cycle later.
+    // Without this guard, performRedirect() fires on the intermediate render
+    // where isLoaded=true + orgListLoaded=true but isSignedIn=false, causing it
+    // to immediately navigate("/auth/sign-in") and lock redirectedRef permanently.
     if (!isLoaded || !orgListLoaded) return;
+    if (!isSignedIn || !user) return; // session not propagated yet — wait for next render
 
     const performRedirect = async () => {
-      if (!isSignedIn || !user) {
-        redirectedRef.current = true;
-        navigate("/auth/sign-in", { replace: true });
-        return;
-      }
+      // Safety: this can no longer fire when !isSignedIn, but keep for type narrowing.
+      if (!user) return;
 
       setStatus("Verifying your account…");
       console.log("[FC AuthCallback] ▶ performRedirect() userId:", user.id);
