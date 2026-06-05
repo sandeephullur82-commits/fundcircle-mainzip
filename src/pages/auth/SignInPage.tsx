@@ -75,10 +75,16 @@ export default function SignInPage() {
       const result = await signIn.create({ identifier, password });
       const status = result.status as string;
 
-      console.log("[FC SignIn] signIn.create() result:");
-      console.log("[FC SignIn]   status           :", status);
-      console.log("[FC SignIn]   createdSessionId :", result.createdSessionId ?? "null");
-      console.log("[FC SignIn]   firstFactorVerification:", (result as any).firstFactorVerification?.status ?? "—");
+      // ── Full result dump for debugging ──────────────────────────────────
+      console.log("[FC SignIn] signIn.create() FULL result:");
+      console.log("[FC SignIn]   status                 :", status);
+      console.log("[FC SignIn]   createdSessionId        :", result.createdSessionId ?? "null");
+      console.log("[FC SignIn]   firstFactorVerification :", (result as any).firstFactorVerification?.status ?? "—");
+      console.log("[FC SignIn]   supportedFirstFactors   :", JSON.stringify((result as any).supportedFirstFactors?.map((f: any) => f.strategy) ?? []));
+      console.log("[FC SignIn]   supportedSecondFactors  :", JSON.stringify((result as any).supportedSecondFactors?.map((f: any) => f.strategy) ?? []));
+      console.log("[FC SignIn]   identifier              :", identifier);
+      console.log("[FC SignIn]   VITE_CLERK_PUBLISHABLE_KEY prefix:", (import.meta.env.VITE_CLERK_PUBLISHABLE_KEY ?? "").slice(0, 12));
+      // ────────────────────────────────────────────────────────────────────
 
       if (status === "complete") {
         console.log("[FC SignIn] ▶ Session creation — calling setActive()");
@@ -98,6 +104,41 @@ export default function SignInPage() {
         console.log("[FC SignIn] Recovery: activating session despite status:", status);
         await setActive({ session: result.createdSessionId });
         navigate("/router", { replace: true });
+        return;
+      }
+
+      // ── needs_second_factor: MFA is enabled on this account / Clerk instance
+      // The app does not implement MFA. This status means the user's Clerk account
+      // has an authenticator app or SMS MFA enrolled, OR the Clerk instance has
+      // "Require MFA" enabled in the dashboard (Configure → Multi-factor).
+      if (status === "needs_second_factor") {
+        const secondFactors = (result as any).supportedSecondFactors?.map((f: any) => f.strategy) ?? [];
+        console.error("════════════════════════════════════════════════");
+        console.error("[FC SignIn] ✗ needs_second_factor — MFA is enabled but this app has no MFA flow");
+        console.error("[FC SignIn]   supportedSecondFactors:", JSON.stringify(secondFactors));
+        console.error("[FC SignIn]   Fix: Clerk Dashboard → Configure → Multi-factor → set to Off");
+        console.error("[FC SignIn]   OR: The user's account has an authenticator/SMS enrolled.");
+        console.error("════════════════════════════════════════════════");
+        try { await clerk.signOut(); } catch { /* ignore */ }
+        setError(
+          "Multi-factor authentication (MFA) is enabled on this account, " +
+          "but this app does not support MFA. " +
+          "Please ask your administrator to disable MFA in the Clerk dashboard, " +
+          "or remove the authenticator from your account profile."
+        );
+        setErrorCode(status);
+        setLoading(false);
+        return;
+      }
+
+      // ── needs_first_factor: unexpected — password strategy not available
+      if (status === "needs_first_factor") {
+        const firstFactors = (result as any).supportedFirstFactors?.map((f: any) => f.strategy) ?? [];
+        console.error("[FC SignIn] ✗ needs_first_factor — expected password strategy, got:", JSON.stringify(firstFactors));
+        try { await clerk.signOut(); } catch { /* ignore */ }
+        setError("Password sign-in is not available for this account. Please contact your administrator.");
+        setErrorCode(status);
+        setLoading(false);
         return;
       }
 
