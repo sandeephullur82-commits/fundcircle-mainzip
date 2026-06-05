@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from "react";
 import {
   User, Edit3, Save, X, Phone, MapPin, Shield, Camera,
-  Eye, EyeOff, LogOut, RefreshCw, Calendar, Users,
+  LogOut, Calendar, Users,
   CreditCard, ChevronRight,
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -10,6 +10,7 @@ import { doc, updateDoc, serverTimestamp } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import { toast } from "sonner";
 import type { Membership } from "@/types";
+import ChangePasswordForm from "./ChangePasswordForm";
 
 interface Props {
   user: any;
@@ -45,26 +46,6 @@ function Field({
   );
 }
 
-function PasswordInput({ label, value, onChange, show, onToggle }: {
-  label: string; value: string; onChange: (v: string) => void; show: boolean; onToggle: () => void;
-}) {
-  return (
-    <div className="space-y-1">
-      <p className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">{label}</p>
-      <div className="relative">
-        <input
-          type={show ? "text" : "password"} value={value} onChange={(e) => onChange(e.target.value)}
-          required minLength={8} placeholder="••••••••"
-          className="w-full h-10 pl-3 pr-10 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-white text-sm focus:outline-none focus:ring-2 focus:ring-emerald-400/30 focus:border-emerald-400"
-        />
-        <button type="button" onClick={onToggle}
-          className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600">
-          {show ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-        </button>
-      </div>
-    </div>
-  );
-}
 
 export default function ProfileTab({ user, membershipId, membershipDoc }: Props) {
   const { signOut } = useClerk();
@@ -90,12 +71,6 @@ export default function ProfileTab({ user, membershipId, membershipDoc }: Props)
 
   // Password
   const [showPwForm, setShowPwForm] = useState(false);
-  const [currentPassword, setCurrentPassword] = useState("");
-  const [newPassword, setNewPassword] = useState("");
-  const [confirmPassword, setConfirmPassword] = useState("");
-  const [changingPw, setChangingPw] = useState(false);
-  const [showCurr, setShowCurr] = useState(false);
-  const [showNew, setShowNew] = useState(false);
 
   // Load from membershipDoc
   const mem = membershipDoc;
@@ -151,22 +126,6 @@ export default function ProfileTab({ user, membershipId, membershipDoc }: Props)
     }
   };
 
-  const handlePasswordChange = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (newPassword !== confirmPassword) return toast.error("Passwords don't match.");
-    if (newPassword.length < 8) return toast.error("Password must be at least 8 characters.");
-    setChangingPw(true);
-    try {
-      await user?.updatePassword({ currentPassword, newPassword });
-      toast.success("Password updated successfully!");
-      setCurrentPassword(""); setNewPassword(""); setConfirmPassword("");
-      setShowPwForm(false);
-    } catch (err: any) {
-      toast.error(err?.errors?.[0]?.longMessage || err.message || "Failed to update password");
-    } finally {
-      setChangingPw(false);
-    }
-  };
 
   const displayName = mem?.fullName || `${mem?.firstName || ""} ${mem?.lastName || ""}`.trim() || user?.fullName || "Customer";
   const displayEmail = mem?.email || user?.primaryEmailAddress?.emailAddress || "";
@@ -353,27 +312,21 @@ export default function ProfileTab({ user, membershipId, membershipDoc }: Props)
               <p className="font-semibold text-slate-900 dark:text-white text-sm">Change Password</p>
               <p className="text-xs text-slate-500 mt-0.5">Update your account password</p>
             </div>
-            <button
-              onClick={() => setShowPwForm(!showPwForm)}
-              className="px-3 py-1.5 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 text-sm font-semibold transition-colors"
-            >
-              {showPwForm ? "Cancel" : "Change"}
-            </button>
+            {!showPwForm && (
+              <button
+                onClick={() => setShowPwForm(true)}
+                className="px-3 py-1.5 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 text-sm font-semibold transition-colors"
+              >
+                Change
+              </button>
+            )}
           </div>
           {showPwForm && (
-            <form onSubmit={handlePasswordChange} className="mt-4 space-y-3">
-              <PasswordInput label="Current Password" value={currentPassword}
-                onChange={setCurrentPassword} show={showCurr} onToggle={() => setShowCurr(!showCurr)} />
-              <PasswordInput label="New Password" value={newPassword}
-                onChange={setNewPassword} show={showNew} onToggle={() => setShowNew(!showNew)} />
-              <PasswordInput label="Confirm New Password" value={confirmPassword}
-                onChange={setConfirmPassword} show={showNew} onToggle={() => setShowNew(!showNew)} />
-              <button type="submit" disabled={changingPw}
-                className="w-full h-10 bg-slate-900 dark:bg-slate-700 hover:bg-slate-800 dark:hover:bg-slate-600 text-white rounded-xl font-semibold text-sm transition-colors flex items-center justify-center gap-2">
-                {changingPw ? <RefreshCw className="w-4 h-4 animate-spin" /> : null}
-                {changingPw ? "Updating…" : "Update Password"}
-              </button>
-            </form>
+            <ChangePasswordForm
+              userEmail={displayEmail}
+              onSuccess={() => setShowPwForm(false)}
+              onCancel={() => setShowPwForm(false)}
+            />
           )}
         </CardContent>
       </Card>
