@@ -294,6 +294,30 @@ export interface Invoice {
   createdAt: FSTimestamp;
 }
 
+// ── Loan Applications (customer-submitted requests) ───────────────────────────
+export interface LoanApplication {
+  id: string;
+  organizationId: string;
+  customerId: string;
+  customerName: string;
+  customerEmail: string;
+  loanAmount: number;
+  loanPurpose: string;
+  tenureMonths: number;
+  monthlyIncome: number;
+  employmentType: string;
+  address: string;
+  notes: string;
+  status: "PENDING" | "APPROVED" | "REJECTED";
+  rejectionReason?: string;
+  reviewedByActorId?: string;
+  reviewedByActorName?: string;
+  reviewedAt?: FSTimestamp;
+  loanId?: string;
+  createdAt: FSTimestamp;
+  updatedAt?: FSTimestamp;
+}
+
 // ── EMIPayment (legacy) ───────────────────────────────────────────────────────
 export interface EMIPayment {
   id: string;
