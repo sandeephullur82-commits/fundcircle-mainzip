@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { useSignIn, useUser, useClerk } from "@clerk/clerk-react";
 import { useNavigate, Link } from "react-router-dom";
 import { Eye, EyeOff, Loader2, AlertCircle, KeyRound, ShieldOff, ExternalLink } from "lucide-react";
@@ -32,6 +32,7 @@ export default function SignInPage() {
   const { isLoaded, signIn, setActive }       = useSignIn();
   const clerk                                  = useClerk();
   const navigate                               = useNavigate();
+  const mfaResetAttempted                      = useRef(false);
 
   const [email, setEmail]       = useState("");
   const [password, setPassword] = useState("");
@@ -41,6 +42,7 @@ export default function SignInPage() {
   const [errorCode, setErrorCode] = useState("");
   const [needsPasswordSetup, setNeedsPasswordSetup] = useState(false);
   const [needsMfa, setNeedsMfa] = useState(false);
+  const [mfaResetting, setMfaResetting] = useState(false);
 
   useEffect(() => {
     if (userLoaded && isSignedIn) {
@@ -110,26 +112,61 @@ export default function SignInPage() {
       }
 
       // ── needs_second_factor ─────────────────────────────────────────────
-      // Clerk requires a second factor but the app does not use MFA.
-      // This is a Clerk Dashboard configuration issue, not an app bug.
-      // Log full diagnostics and show an inline fix guide — no redirect.
+      // Clerk requires a second factor. Strategy:
+      //   1st attempt  → call server to strip enrolled MFA factors, retry sign-in.
+      //   2nd attempt  → instance-level MFA is "Required" in Clerk Dashboard;
+      //                  nothing more we can do from app code — show fix instructions.
       if (status === "needs_second_factor") {
         const secondFactors: any[] = (result as any).supportedSecondFactors ?? [];
         const strategies = secondFactors.map((f: any) => f.strategy);
-        const sessionStatus = (result as any).status;
-        const userId = (result as any).identifier ?? identifier;
 
         console.error("════════════════════════════════════════════════");
-        console.error("[FC SignIn] ✗ needs_second_factor — MFA required by Clerk instance");
-        console.error("[FC SignIn]   session status      :", sessionStatus);
-        console.error("[FC SignIn]   user identifier     :", userId);
-        console.error("[FC SignIn]   MFA requirement     : ON (set in Clerk Dashboard)");
-        console.error("[FC SignIn]   enrolled factors    :", strategies.length ? JSON.stringify(strategies) : "NONE");
-        console.error("[FC SignIn]   createdSessionId    :", result.createdSessionId ?? "null — no session issued");
-        console.error("[FC SignIn]   IS_DEV              :", IS_DEV);
-        console.error("[FC SignIn]   Fix: Clerk Dashboard → Configure → Multi-factor → Off");
+        console.error("[FC SignIn] ✗ needs_second_factor");
+        console.error("[FC SignIn]   session status   :", status);
+        console.error("[FC SignIn]   user id          :", identifier);
+        console.error("[FC SignIn]   MFA requirement  : ON (Clerk Dashboard setting)");
+        console.error("[FC SignIn]   enrolled factors :", strategies.length ? JSON.stringify(strategies) : "NONE");
+        console.error("[FC SignIn]   reset attempted  :", mfaResetAttempted.current);
         console.error("════════════════════════════════════════════════");
 
+        // First attempt: auto-strip enrolled factors via server, then retry
+        if (!mfaResetAttempted.current) {
+          mfaResetAttempted.current = true;
+          setMfaResetting(true);
+          console.log("[FC SignIn] → Calling /api/clerk/reset-user-mfa for:", identifier);
+          try {
+            const resetRes = await fetch("/api/clerk/reset-user-mfa", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ email: identifier }),
+            });
+            const resetData = await resetRes.json();
+            console.log("[FC SignIn] reset-user-mfa response:", JSON.stringify(resetData));
+
+            if (resetData.cleared) {
+              // Factors cleared — retry sign-in immediately
+              console.log("[FC SignIn] → Retrying signIn.create() after MFA factor removal…");
+              setMfaResetting(false);
+              // Recurse: call signIn.create again — this time MFA optional mode will pass
+              const retry = await signIn.create({ identifier, password });
+              const retryStatus = retry.status as string;
+              console.log("[FC SignIn] Retry status:", retryStatus, "sessionId:", retry.createdSessionId ?? "null");
+
+              if (retryStatus === "complete" || retry.createdSessionId) {
+                if (retry.createdSessionId) await setActive({ session: retry.createdSessionId });
+                navigate("/router", { replace: true });
+                return;
+              }
+              // Still blocked — fall through to show Dashboard instructions
+              console.error("[FC SignIn] Still blocked after factor removal — MFA is Required at instance level");
+            }
+          } catch (resetErr: any) {
+            console.error("[FC SignIn] reset-user-mfa call failed:", resetErr?.message);
+          }
+          setMfaResetting(false);
+        }
+
+        // Second pass or reset failed — show Dashboard fix instructions
         setNeedsMfa(true);
         setLoading(false);
         return;
@@ -190,34 +227,49 @@ export default function SignInPage() {
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-4">
-          {/* ── MFA required block ──────────────────────────────────────────── */}
-          {needsMfa && (
+          {/* ── MFA resetting (auto-fix in progress) ────────────────────────── */}
+          {mfaResetting && (
+            <div className="rounded-xl border border-violet-500/25 bg-violet-500/[0.08] px-4 py-3 flex items-center gap-3">
+              <Loader2 className="h-4 w-4 shrink-0 text-violet-400 animate-spin" />
+              <div>
+                <p className="text-sm font-semibold text-violet-200">Removing MFA factors…</p>
+                <p className="text-xs text-violet-300/70 mt-0.5">Attempting automatic fix. Please wait.</p>
+              </div>
+            </div>
+          )}
+
+          {/* ── MFA required — Dashboard fix needed ─────────────────────────── */}
+          {needsMfa && !mfaResetting && (
             <div className="rounded-xl border border-amber-500/30 bg-amber-500/[0.09] px-4 py-4 space-y-3">
               <div className="flex items-start gap-2.5">
                 <ShieldOff className="h-4 w-4 shrink-0 mt-0.5 text-amber-400" />
                 <div>
                   <p className="text-sm font-semibold text-amber-200">
-                    Multi-factor authentication is required
+                    MFA is required in your Clerk Dashboard
                   </p>
                   <p className="mt-0.5 text-xs text-amber-300/80">
-                    Your Clerk instance has MFA enabled. To sign in with email and password only,
-                    disable it in the Clerk Dashboard.
+                    Automatic factor removal did not bypass the block — your Clerk instance
+                    has MFA set to <strong>Required</strong>. Disable it in the Dashboard
+                    to allow email + password sign-in only.
                   </p>
                 </div>
               </div>
-              <div className="rounded-lg border border-amber-500/20 bg-amber-900/20 px-3 py-2.5 space-y-1">
-                <p className="text-[11px] font-semibold text-amber-300 uppercase tracking-wider">Fix — Clerk Dashboard steps</p>
+              <div className="rounded-lg border border-amber-500/20 bg-amber-900/20 px-3 py-2.5 space-y-1.5">
+                <p className="text-[11px] font-semibold text-amber-300 uppercase tracking-wider">
+                  One-time fix — Clerk Dashboard
+                </p>
                 <ol className="text-xs text-amber-200/80 space-y-0.5 list-decimal list-inside">
-                  <li>Go to <strong>dashboard.clerk.com</strong></li>
-                  <li>Select your application</li>
-                  <li>Navigate to <strong>Configure → Multi-factor auth</strong></li>
-                  <li>Set to <strong>Off</strong> and save</li>
+                  <li>Open <strong>dashboard.clerk.com</strong></li>
+                  <li>Select your application → <strong>Configure</strong></li>
+                  <li>Click <strong>Multi-factor authentication</strong></li>
+                  <li>Set the mode to <strong>Off</strong> and save</li>
+                  <li>Return here and sign in normally</li>
                 </ol>
                 <a
                   href="https://dashboard.clerk.com"
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="mt-1.5 inline-flex items-center gap-1 text-xs font-semibold text-amber-300 hover:text-amber-200 transition-colors"
+                  className="mt-1 inline-flex items-center gap-1 text-xs font-semibold text-amber-300 hover:text-amber-200 transition-colors"
                 >
                   Open Clerk Dashboard
                   <ExternalLink className="h-3 w-3" />
@@ -225,7 +277,7 @@ export default function SignInPage() {
               </div>
               <button
                 type="button"
-                onClick={() => setNeedsMfa(false)}
+                onClick={() => { setNeedsMfa(false); mfaResetAttempted.current = false; }}
                 className="w-full rounded-lg border border-amber-500/20 bg-amber-500/[0.07] py-2 text-xs font-semibold text-amber-300 hover:bg-amber-500/[0.14] transition-colors"
               >
                 Try again

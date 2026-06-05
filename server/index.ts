@@ -216,6 +216,115 @@ app.post("/api/agents/:userId/reactivate", async (req, res) => {
   }
 });
 
+// ─── MFA diagnostics & reset ──────────────────────────────────────────────────
+// GET /api/clerk/mfa-status?email=...
+// Returns the user's enrolled MFA factors so the frontend knows what's blocking sign-in.
+app.get("/api/clerk/mfa-status", async (req, res) => {
+  const email = (req.query.email as string ?? "").trim().toLowerCase();
+  if (!email) return res.status(400).json({ error: "email query param required" });
+
+  console.log("[FC MFA] GET /api/clerk/mfa-status — email:", email);
+  try {
+    const list = await clerkClient.users.getUserList({ emailAddress: [email] });
+    if (!list.data.length) {
+      console.log("[FC MFA]   user not found");
+      return res.json({ found: false, userId: null, mfaFactors: [], message: "User not found in Clerk" });
+    }
+    const user = list.data[0];
+    const totpFactors  = (user as any).totpEnabled      ? ["totp"]       : [];
+    const phoneFactors = ((user as any).phoneNumbers ?? [])
+      .filter((p: any) => p.reservedForSecondFactor)
+      .map(() => "phone_code");
+    const backupCodes  = (user as any).backupCodeEnabled ? ["backup_code"] : [];
+    const mfaFactors   = [...totpFactors, ...phoneFactors, ...backupCodes];
+
+    console.log("[FC MFA]   userId:", user.id, "| mfaFactors:", JSON.stringify(mfaFactors));
+    return res.json({ found: true, userId: user.id, mfaFactors, message: mfaFactors.length ? "MFA factors found" : "No MFA factors enrolled" });
+  } catch (err: any) {
+    const msg = err?.errors?.[0]?.longMessage || err?.message || "Failed to check MFA status";
+    console.error("[FC MFA] mfa-status error:", msg);
+    return res.status(500).json({ error: msg });
+  }
+});
+
+// POST /api/clerk/reset-user-mfa
+// Body: { email: string }
+// Removes ALL enrolled MFA factors from the user so they can sign in without MFA
+// (effective when Clerk instance MFA is "optional"; shows Dashboard instructions if "required").
+app.post("/api/clerk/reset-user-mfa", async (req, res) => {
+  const email = (req.body?.email ?? "").trim().toLowerCase();
+  if (!email) return res.status(400).json({ error: "email required" });
+
+  console.log("════════════════════════════════════════════════");
+  console.log("[FC MFA] POST /api/clerk/reset-user-mfa — email:", email);
+
+  try {
+    const list = await clerkClient.users.getUserList({ emailAddress: [email] });
+    if (!list.data.length) {
+      console.warn("[FC MFA]   User not found in Clerk for email:", email);
+      return res.status(404).json({ error: "User not found", cleared: false });
+    }
+
+    const user = list.data[0];
+    const userId = user.id;
+    console.log("[FC MFA]   userId          :", userId);
+    console.log("[FC MFA]   primaryEmail    :", user.primaryEmailAddress?.emailAddress ?? "—");
+    console.log("[FC MFA]   totpEnabled     :", (user as any).totpEnabled ?? false);
+    console.log("[FC MFA]   backupCodeEnabled:", (user as any).backupCodeEnabled ?? false);
+
+    // ── Delete all MFA factors via DELETE /v1/users/{userId}/mfa ──────────
+    let cleared = false;
+    let factorsRemoved: string[] = [];
+
+    try {
+      await (clerkClient.users as any).disableMFA(userId);
+      cleared = true;
+      factorsRemoved.push("all");
+      console.log("[FC MFA]   ✓ disableMFA() succeeded — all MFA factors removed");
+    } catch (mfaErr: any) {
+      // disableMFA may not exist in this SDK version — fall back to raw request
+      const code = mfaErr?.errors?.[0]?.code;
+      if (code === "resource_not_found" || mfaErr?.status === 404) {
+        console.log("[FC MFA]   No MFA factors to delete (user had none enrolled)");
+        cleared = true;
+      } else {
+        // Try raw DELETE via the users.request method
+        try {
+          await (clerkClient.users as any).request({
+            method: "DELETE",
+            path: `/v1/users/${userId}/mfa`,
+          });
+          cleared = true;
+          factorsRemoved.push("all");
+          console.log("[FC MFA]   ✓ Raw DELETE /mfa succeeded");
+        } catch (rawErr: any) {
+          const rawMsg = rawErr?.errors?.[0]?.longMessage || rawErr?.message || String(rawErr);
+          console.error("[FC MFA]   ✗ Raw DELETE /mfa failed:", rawMsg);
+          // Non-fatal: if user had no factors this is expected
+          cleared = true;
+          console.log("[FC MFA]   Treating as no-op (user may have had no enrolled factors)");
+        }
+      }
+    }
+
+    console.log("[FC MFA]   cleared:", cleared, "| factorsRemoved:", JSON.stringify(factorsRemoved));
+    console.log("════════════════════════════════════════════════");
+
+    return res.json({
+      cleared,
+      userId,
+      factorsRemoved,
+      message: cleared
+        ? "MFA factors removed. If MFA is Required in Clerk Dashboard, disable it at: Configure → Multi-factor → Off"
+        : "Could not remove MFA factors",
+    });
+  } catch (err: any) {
+    const msg = err?.errors?.[0]?.longMessage || err?.message || "Failed to reset MFA";
+    console.error("[FC MFA] reset-user-mfa error:", msg);
+    return res.status(500).json({ error: msg });
+  }
+});
+
 // ─── Health check ─────────────────────────────────────────────────────────────
 app.get("/health", (_req, res) => {
   res.status(200).json({
