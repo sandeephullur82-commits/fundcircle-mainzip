@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { useSignIn, useUser, useClerk } from "@clerk/clerk-react";
 import { useNavigate, Link } from "react-router-dom";
-import { Eye, EyeOff, Loader2, AlertCircle, KeyRound } from "lucide-react";
+import { Eye, EyeOff, Loader2, AlertCircle, KeyRound, ShieldOff, ExternalLink } from "lucide-react";
 import AuthLayout from "./AuthLayout";
 
 const IS_DEV =
@@ -40,6 +40,7 @@ export default function SignInPage() {
   const [error, setError]       = useState("");
   const [errorCode, setErrorCode] = useState("");
   const [needsPasswordSetup, setNeedsPasswordSetup] = useState(false);
+  const [needsMfa, setNeedsMfa] = useState(false);
 
   useEffect(() => {
     if (userLoaded && isSignedIn) {
@@ -55,6 +56,7 @@ export default function SignInPage() {
     setError("");
     setErrorCode("");
     setNeedsPasswordSetup(false);
+    setNeedsMfa(false);
     setLoading(true);
 
     const identifier = email.trim().toLowerCase();
@@ -107,13 +109,29 @@ export default function SignInPage() {
         return;
       }
 
-      // ── needs_second_factor: forward to MFA verification page
+      // ── needs_second_factor ─────────────────────────────────────────────
+      // Clerk requires a second factor but the app does not use MFA.
+      // This is a Clerk Dashboard configuration issue, not an app bug.
+      // Log full diagnostics and show an inline fix guide — no redirect.
       if (status === "needs_second_factor") {
-        const secondFactors = (result as any).supportedSecondFactors ?? [];
+        const secondFactors: any[] = (result as any).supportedSecondFactors ?? [];
         const strategies = secondFactors.map((f: any) => f.strategy);
-        console.log("[FC SignIn] needs_second_factor — supportedSecondFactors:", JSON.stringify(strategies));
-        console.log("[FC SignIn] → Redirecting to /auth/mfa-verify");
-        navigate("/auth/mfa-verify", { replace: true });
+        const sessionStatus = (result as any).status;
+        const userId = (result as any).identifier ?? identifier;
+
+        console.error("════════════════════════════════════════════════");
+        console.error("[FC SignIn] ✗ needs_second_factor — MFA required by Clerk instance");
+        console.error("[FC SignIn]   session status      :", sessionStatus);
+        console.error("[FC SignIn]   user identifier     :", userId);
+        console.error("[FC SignIn]   MFA requirement     : ON (set in Clerk Dashboard)");
+        console.error("[FC SignIn]   enrolled factors    :", strategies.length ? JSON.stringify(strategies) : "NONE");
+        console.error("[FC SignIn]   createdSessionId    :", result.createdSessionId ?? "null — no session issued");
+        console.error("[FC SignIn]   IS_DEV              :", IS_DEV);
+        console.error("[FC SignIn]   Fix: Clerk Dashboard → Configure → Multi-factor → Off");
+        console.error("════════════════════════════════════════════════");
+
+        setNeedsMfa(true);
+        setLoading(false);
         return;
       }
 
@@ -172,8 +190,51 @@ export default function SignInPage() {
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-4">
+          {/* ── MFA required block ──────────────────────────────────────────── */}
+          {needsMfa && (
+            <div className="rounded-xl border border-amber-500/30 bg-amber-500/[0.09] px-4 py-4 space-y-3">
+              <div className="flex items-start gap-2.5">
+                <ShieldOff className="h-4 w-4 shrink-0 mt-0.5 text-amber-400" />
+                <div>
+                  <p className="text-sm font-semibold text-amber-200">
+                    Multi-factor authentication is required
+                  </p>
+                  <p className="mt-0.5 text-xs text-amber-300/80">
+                    Your Clerk instance has MFA enabled. To sign in with email and password only,
+                    disable it in the Clerk Dashboard.
+                  </p>
+                </div>
+              </div>
+              <div className="rounded-lg border border-amber-500/20 bg-amber-900/20 px-3 py-2.5 space-y-1">
+                <p className="text-[11px] font-semibold text-amber-300 uppercase tracking-wider">Fix — Clerk Dashboard steps</p>
+                <ol className="text-xs text-amber-200/80 space-y-0.5 list-decimal list-inside">
+                  <li>Go to <strong>dashboard.clerk.com</strong></li>
+                  <li>Select your application</li>
+                  <li>Navigate to <strong>Configure → Multi-factor auth</strong></li>
+                  <li>Set to <strong>Off</strong> and save</li>
+                </ol>
+                <a
+                  href="https://dashboard.clerk.com"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="mt-1.5 inline-flex items-center gap-1 text-xs font-semibold text-amber-300 hover:text-amber-200 transition-colors"
+                >
+                  Open Clerk Dashboard
+                  <ExternalLink className="h-3 w-3" />
+                </a>
+              </div>
+              <button
+                type="button"
+                onClick={() => setNeedsMfa(false)}
+                className="w-full rounded-lg border border-amber-500/20 bg-amber-500/[0.07] py-2 text-xs font-semibold text-amber-300 hover:bg-amber-500/[0.14] transition-colors"
+              >
+                Try again
+              </button>
+            </div>
+          )}
+
           {/* ── Error block ─────────────────────────────────────────────────── */}
-          {error && (
+          {error && !needsMfa && (
             <div className="rounded-xl border border-red-500/25 bg-red-500/12 px-4 py-3 space-y-2">
               <div className="flex items-start gap-2.5">
                 <AlertCircle className="h-4 w-4 shrink-0 mt-0.5 text-red-400" />

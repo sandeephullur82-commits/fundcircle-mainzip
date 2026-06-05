@@ -23,7 +23,6 @@ import ForgotPasswordPage from "./pages/auth/ForgotPasswordPage";
 import ResetPasswordPage from "./pages/auth/ResetPasswordPage";
 import SetupPasswordPage from "./pages/auth/SetupPasswordPage";
 import ChangePasswordPage from "./pages/auth/ChangePasswordPage";
-import MfaVerifyPage from "./pages/auth/MfaVerifyPage";
 
 import OrgDashboard from "./pages/organization/OrgDashboard";
 import OwnerOnboarding from "./pages/organization/OwnerOnboarding";
@@ -437,7 +436,6 @@ export default function App() {
               <Route path="/auth/reset-password" element={<ResetPasswordPage />} />
               <Route path="/auth/setup-password" element={<SetupPasswordPage />} />
               <Route path="/auth/change-password" element={<ProtectedRoute><ChangePasswordPage /></ProtectedRoute>} />
-              <Route path="/auth/mfa-verify" element={<MfaVerifyPage />} />
               <Route path="/auth/callback" element={<AuthCallbackPage />} />
 
               {/* Legacy sign-in redirects */}
