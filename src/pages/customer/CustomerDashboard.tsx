@@ -37,7 +37,7 @@ interface NavItem {
   badgeKey?: "notifications";
 }
 
-const NAV_ITEMS: NavItem[] = [
+const ALL_NAV_ITEMS: NavItem[] = [
   { id: "dashboard", label: "Dashboard", icon: LayoutDashboard },
   { id: "savings", label: "Savings", icon: PiggyBank },
   { id: "passbook", label: "Passbook", icon: BookOpen },
@@ -51,8 +51,8 @@ const NAV_ITEMS: NavItem[] = [
   { id: "security", label: "Security", icon: Shield },
 ];
 
-// Bottom bar: 5 primary tabs + "More" drawer
-const BOTTOM_PRIMARY: Tab[] = ["dashboard", "savings", "loans", "receipts", "notifications"];
+const SAVINGS_TABS: Tab[] = ["dashboard", "savings", "passbook", "receipts", "notifications", "support", "profile", "security"];
+const LOAN_TABS: Tab[] = ["dashboard", "loans", "apply_loan", "emi_schedule", "receipts", "notifications", "support", "profile", "security"];
 
 function toDate(ts: any): Date {
   if (!ts) return new Date(0);
@@ -86,6 +86,20 @@ export default function CustomerDashboard() {
     "organizationMembers",
     membershipId ?? undefined
   );
+
+  // Derive visible nav items from customerType (must be after membershipDoc hook)
+  const customerType = (membershipDoc?.customerType as string | undefined);
+  const visibleTabIds: Tab[] = customerType === "SAVINGS"
+    ? SAVINGS_TABS
+    : customerType === "LOAN"
+    ? LOAN_TABS
+    : ALL_NAV_ITEMS.map((n) => n.id);
+  const NAV_ITEMS = ALL_NAV_ITEMS.filter((n) => visibleTabIds.includes(n.id));
+  const BOTTOM_PRIMARY: Tab[] = customerType === "SAVINGS"
+    ? ["dashboard", "savings", "passbook", "receipts", "notifications"]
+    : customerType === "LOAN"
+    ? ["dashboard", "loans", "apply_loan", "emi_schedule", "notifications"]
+    : ["dashboard", "savings", "loans", "receipts", "notifications"];
 
   const { data: savingsAccounts } = useCollectionRealtimeRaw<SavingsAccount>(
     "savingsAccounts",

@@ -1,0 +1,304 @@
+Refactor FundCircle Loan Management System.
+
+Current Problem:
+
+The project assumes every customer must have savings before receiving a loan.
+
+This is not suitable for many real-world finance companies.
+
+Update the system to support:
+
+1. Savings Customers
+2. Loan Customers
+3. Savings + Loan Customers
+
+==================================================
+CUSTOMER TYPE SYSTEM
+
+Add a new field during customer creation:
+
+Customer Type
+
+Options:
+
+- Savings Only
+- Loan Only
+- Savings + Loan
+
+Store in Firestore:
+
+customerType
+
+Values:
+
+SAVINGS
+LOAN
+SAVINGS_LOAN
+
+==================================================
+CUSTOMER CREATION FLOW
+
+Owner Dashboard
+↓
+Create Customer
+
+Fields:
+
+- First Name
+- Last Name
+- Email
+- Phone
+- Address
+- Nominee Details
+- Assigned Collector
+- Customer Type
+
+No savings account should be created automatically for Loan Only customers.
+
+==================================================
+SAVINGS CUSTOMER
+
+Modules Available:
+
+- Savings Account
+- Savings Collections
+- Passbook
+- Receipts
+
+Hide:
+
+- Loan Module
+- Loan Application
+
+==================================================
+LOAN CUSTOMER
+
+Modules Available:
+
+- Loan Application
+- Active Loans
+- EMI Schedule
+- Receipts
+
+Hide:
+
+- Savings Account
+- Passbook
+- Savings Collections
+
+Loan customers must be allowed to apply for loans without any savings history.
+
+==================================================
+SAVINGS + LOAN CUSTOMER
+
+Modules Available:
+
+- Savings
+- Passbook
+- Loan Application
+- Active Loans
+- EMI Schedule
+- Receipts
+
+==================================================
+LOAN APPROVAL RULES
+
+Remove any validation that requires:
+
+- Savings Account
+- Savings Balance
+- Savings Transactions
+- Savings History
+
+before loan approval.
+
+==================================================
+NEW LOAN APPROVAL WORKFLOW
+
+Customer
+↓
+Apply Loan
+↓
+Pending Review
+↓
+Agent Verification
+↓
+Owner Review
+↓
+Approve / Reject
+↓
+Loan Created
+↓
+Disbursement
+↓
+EMI Collection
+
+==================================================
+AGENT VERIFICATION MODULE
+
+Before approval:
+
+Agent can verify:
+
+- Residence Verified
+- Identity Verified
+- Income Verified
+- Business Verified
+- Reference Verified
+
+Status:
+
+Verified
+Pending
+Rejected
+
+==================================================
+LOAN RISK ASSESSMENT
+
+Owner Dashboard
+
+Add:
+
+Risk Level
+
+Options:
+
+- Low Risk
+- Medium Risk
+- High Risk
+
+Add Notes:
+
+Verification Notes
+Approval Notes
+
+==================================================
+LOAN APPROVAL SCREEN
+
+Show:
+
+Customer Details
+Verification Status
+Risk Level
+
+Owner can modify:
+
+- Approved Amount
+- Interest Rate
+- Processing Fee
+- Loan Tenure
+- EMI Frequency
+- Start Date
+- Assigned Collection Agent
+
+==================================================
+LOAN DISBURSEMENT
+
+Methods:
+
+- Cash
+- UPI
+- Bank Transfer
+
+Store:
+
+Disbursement Date
+Disbursement Method
+Reference Number
+
+==================================================
+EMI COLLECTION
+
+After approval:
+
+Generate:
+
+- EMI Schedule
+- Outstanding Balance
+- Collection Calendar
+
+Agent collects EMI.
+
+System updates:
+
+- Outstanding Amount
+- Loan Ledger
+- Customer Dashboard
+- Receipt
+
+==================================================
+CUSTOMER DASHBOARD
+
+If Customer Type = LOAN
+
+Show:
+
+- Loan Summary
+- Active Loans
+- Outstanding Balance
+- EMI Schedule
+- Loan Receipts
+
+Hide all savings-related widgets.
+
+==================================================
+OWNER REPORTS
+
+Separate Reports:
+
+Savings Customers
+
+Loan Customers
+
+Savings + Loan Customers
+
+Loan Portfolio
+
+Outstanding Loans
+
+Overdue Loans
+
+Collections
+
+==================================================
+DATABASE CHANGES
+
+customers
+
+Add:
+
+customerType
+
+loanApplications
+
+Add:
+
+verificationStatus
+riskLevel
+verificationNotes
+
+loans
+
+Add:
+
+assignedCollectorId
+assignedCollectorName
+riskLevel
+disbursementMethod
+
+==================================================
+FINAL REQUIREMENT
+
+FundCircle must support:
+
+✓ Savings-only customers
+✓ Loan-only customers
+✓ Savings + Loan customers
+
+Loan approval must not depend on savings history.
+
+Use Firestore realtime updates.
+
+Do not use mock data.
+
+Production-ready implementation only.

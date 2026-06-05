@@ -65,6 +65,7 @@ export interface Membership {
   assignedAgentName?: string;
   assigned_to_user_id?: string;
   notes?: string;
+  customerType?: "SAVINGS" | "LOAN" | "SAVINGS_LOAN";
   // Meta
   profileCompleted?: boolean;
   invitationId?: string;
@@ -103,6 +104,7 @@ export interface Customer {
   lastName: string;
   phone?: string;
   address?: string;
+  customerType?: "SAVINGS" | "LOAN" | "SAVINGS_LOAN";
   status: "ACTIVE" | "DORMANT" | "CLOSED";
   createdAt: FSTimestamp;
   updatedAt?: FSTimestamp;
@@ -152,6 +154,10 @@ export interface Loan {
   loanAssignedCollectorId?: string;
   loanAssignedCollectorName?: string;
   loanAssignedCollectorRole?: string;
+  riskLevel?: "LOW" | "MEDIUM" | "HIGH";
+  disbursementMethod?: "CASH" | "UPI" | "BANK_TRANSFER";
+  disbursementReference?: string;
+  approvalNotes?: string;
   createdAt: FSTimestamp;
   updatedAt?: FSTimestamp;
   // Legacy compat
@@ -365,6 +371,10 @@ export interface LoanApplication {
   reviewedByActorName?: string;
   reviewedAt?: FSTimestamp;
   loanId?: string;
+  verificationStatus?: "PENDING" | "VERIFIED" | "REJECTED";
+  riskLevel?: "LOW" | "MEDIUM" | "HIGH";
+  verificationNotes?: string;
+  approvalNotes?: string;
   createdAt: FSTimestamp;
   updatedAt?: FSTimestamp;
 }

@@ -50,6 +50,7 @@ export default function OrgCustomers() {
   const [phone, setPhone] = useState("");
   const [address, setAddress] = useState("");
   const [notes, setNotes] = useState("");
+  const [customerType, setCustomerType] = useState<"SAVINGS" | "LOAN" | "SAVINGS_LOAN">("SAVINGS_LOAN");
   const [selectedCollectorId, setSelectedCollectorId] = useState("");
   const [credentials, setCredentials] = useState<CreatedCredentials | null>(null);
   const [copiedField, setCopiedField] = useState<"email" | "password" | null>(null);
@@ -134,6 +135,7 @@ export default function OrgCustomers() {
     setPhone("");
     setAddress("");
     setNotes("");
+    setCustomerType("SAVINGS_LOAN");
     setSelectedCollectorId("");
     setCredentials(null);
     setCopiedField(null);
@@ -195,6 +197,7 @@ export default function OrgCustomers() {
         assignedAgentId: collectorToAssign.id,
         assignedAgentName: collectorToAssign.fullName || (collectorToAssign as any).name || "",
         assignedCollectorRole: (collectorToAssign.role as string) || "AGENT",
+        customerType,
         createdBy: user.id,
         actorName: user.fullName || user.firstName || "",
       });
@@ -404,6 +407,32 @@ export default function OrgCustomers() {
                   </div>
 
                   <div className="space-y-1.5">
+                    <Label className="text-sm font-semibold text-slate-700">
+                      Customer Type <span className="text-red-500">*</span>
+                    </Label>
+                    <div className="grid grid-cols-3 gap-2">
+                      {(["SAVINGS", "LOAN", "SAVINGS_LOAN"] as const).map((type) => {
+                        const labels: Record<string, string> = { SAVINGS: "Savings Only", LOAN: "Loan Only", SAVINGS_LOAN: "Savings + Loan" };
+                        const colors: Record<string, string> = {
+                          SAVINGS: customerType === type ? "bg-emerald-600 text-white border-emerald-600" : "bg-white text-slate-600 border-slate-200 hover:bg-emerald-50",
+                          LOAN: customerType === type ? "bg-blue-600 text-white border-blue-600" : "bg-white text-slate-600 border-slate-200 hover:bg-blue-50",
+                          SAVINGS_LOAN: customerType === type ? "bg-violet-600 text-white border-violet-600" : "bg-white text-slate-600 border-slate-200 hover:bg-violet-50",
+                        };
+                        return (
+                          <button
+                            key={type}
+                            type="button"
+                            onClick={() => setCustomerType(type)}
+                            className={`px-2 py-2 rounded-lg border text-xs font-semibold transition-colors ${colors[type]}`}
+                          >
+                            {labels[type]}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  <div className="space-y-1.5">
                     <Label htmlFor="cust-notes" className="text-sm font-semibold text-slate-700">
                       Notes
                     </Label>
@@ -511,6 +540,7 @@ export default function OrgCustomers() {
               <TableHeader>
                 <TableRow>
                   <TableHead>Customer</TableHead>
+                  <TableHead>Type</TableHead>
                   <TableHead>Phone</TableHead>
                   <TableHead>Assigned Collector</TableHead>
                   <TableHead className="text-right">Savings Balance</TableHead>
@@ -558,6 +588,14 @@ export default function OrgCustomers() {
                             </p>
                             <p className="text-xs text-slate-400 truncate max-w-[160px]">{customer.email || "—"}</p>
                           </div>
+                        </TableCell>
+                        <TableCell>
+                          {(() => {
+                            const ct = (customer as any).customerType as string | undefined;
+                            if (ct === "SAVINGS") return <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-100">Savings</span>;
+                            if (ct === "LOAN") return <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[10px] font-bold bg-blue-50 text-blue-700 border border-blue-100">Loan</span>;
+                            return <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[10px] font-bold bg-violet-50 text-violet-700 border border-violet-100">S+L</span>;
+                          })()}
                         </TableCell>
                         <TableCell className="text-slate-600">
                           {customer.phone || <span className="text-slate-400">—</span>}

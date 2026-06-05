@@ -517,6 +517,7 @@ export async function createDirectMember(params: {
   assignedCollectorRole?: string;
   address?: string;
   notes?: string;
+  customerType?: "SAVINGS" | "LOAN" | "SAVINGS_LOAN";
   createdBy: string;
   actorName?: string;
 }): Promise<{ clerkUserId: string; generatedPassword: string }> {
@@ -545,6 +546,10 @@ export async function createDirectMember(params: {
   const membershipDocId = membershipIdFor(params.organizationId, clerkUserId);
   const fullName = `${params.firstName.trim()} ${params.lastName.trim()}`.trim();
 
+  const effectiveCustomerType = params.role === "CUSTOMER"
+    ? (params.customerType || "SAVINGS_LOAN")
+    : undefined;
+
   const membershipData: any = {
     id: membershipDocId,
     clerkUserId,
@@ -569,6 +574,7 @@ export async function createDirectMember(params: {
     createdBy: params.createdBy,
     createdAt: serverTimestamp(),
     updatedAt: serverTimestamp(),
+    ...(effectiveCustomerType ? { customerType: effectiveCustomerType } : {}),
   };
 
   await setDoc(doc(db, "organizationMembers", membershipDocId), membershipData, { merge: true });
@@ -583,7 +589,8 @@ export async function createDirectMember(params: {
       agentId: params.assignedAgentId || params.createdBy || "",
       assigned_to_user_id: params.assignedAgentId || params.createdBy || "",
     }, { merge: true });
-    if (!existingAccount) {
+    const needsSavings = effectiveCustomerType !== "LOAN";
+    if (!existingAccount && needsSavings) {
       await createSavingsAccountForCustomer({ customerId: membershipDocId, organizationId: params.organizationId });
     }
     try {

@@ -9,11 +9,15 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { toast } from "sonner";
 import { format, isBefore, startOfDay } from "date-fns";
-import { Search, Plus, CheckCircle, XCircle, Eye, Loader2, AlertTriangle, CreditCard, Inbox, ChevronDown, Crown } from "lucide-react";
+import { Search, Plus, CheckCircle, XCircle, Eye, Loader2, AlertTriangle, CreditCard, Inbox, ChevronDown, Crown, ShieldCheck, TrendingUp, Banknote } from "lucide-react";
 import { useUser, useOrganization } from "@clerk/clerk-react";
 import { createLoan, approveLoan, rejectLoan, calculateEMI } from "@/lib/services";
 import { where, getDocs, query, collection, doc, updateDoc, serverTimestamp } from "firebase/firestore";
 import { db } from "@/lib/firebase";
+
+type RiskLevel = "LOW" | "MEDIUM" | "HIGH";
+type DisbursementMethod = "CASH" | "UPI" | "BANK_TRANSFER";
+type VerificationStatus = "PENDING" | "VERIFIED" | "REJECTED";
 
 function toDate(ts: any): Date {
   if (!ts) return new Date(0);
@@ -67,6 +71,10 @@ export default function OrgLoans() {
   // ── Approve PENDING loan dialog ──────────────────────────────────────────────
   const [approveDialogLoan, setApproveDialogLoan] = useState<Loan | null>(null);
   const [approveDialogCollectorId, setApproveDialogCollectorId] = useState("");
+  const [approveRiskLevel, setApproveRiskLevel] = useState<RiskLevel>("LOW");
+  const [approveApprovalNotes, setApproveApprovalNotes] = useState("");
+  const [approveDisbursementMethod, setApproveDisbursementMethod] = useState<DisbursementMethod>("CASH");
+  const [approveDisbursementRef, setApproveDisbursementRef] = useState("");
   const [approvingDialog, setApprovingDialog] = useState(false);
 
   // ── Reject loan ──────────────────────────────────────────────────────────────
@@ -78,6 +86,12 @@ export default function OrgLoans() {
   const [approveApp, setApproveApp] = useState<LoanApplication | null>(null);
   const [appInterestRate, setAppInterestRate] = useState("12");
   const [appCollectorId, setAppCollectorId] = useState("");
+  const [appRiskLevel, setAppRiskLevel] = useState<RiskLevel>("LOW");
+  const [appVerificationStatus, setAppVerificationStatus] = useState<VerificationStatus>("PENDING");
+  const [appVerificationNotes, setAppVerificationNotes] = useState("");
+  const [appApprovalNotes, setAppApprovalNotes] = useState("");
+  const [appDisbursementMethod, setAppDisbursementMethod] = useState<DisbursementMethod>("CASH");
+  const [appDisbursementRef, setAppDisbursementRef] = useState("");
   const [approvingAppId, setApprovingAppId] = useState<string | null>(null);
   const [rejectAppId, setRejectAppId] = useState<string | null>(null);
   const [appRejectReason, setAppRejectReason] = useState("");
@@ -187,6 +201,10 @@ export default function OrgLoans() {
 
   const handleOpenApproveDialog = (loan: Loan) => {
     setApproveDialogLoan(loan);
+    setApproveRiskLevel((loan.riskLevel as RiskLevel) || "LOW");
+    setApproveApprovalNotes(loan.approvalNotes || "");
+    setApproveDisbursementMethod((loan.disbursementMethod as DisbursementMethod) || "CASH");
+    setApproveDisbursementRef(loan.disbursementReference || "");
   };
 
   const handleConfirmApprove = async () => {
@@ -201,8 +219,16 @@ export default function OrgLoans() {
         loanAssignedCollectorName: collector ? (collector.fullName || (collector as any).name || "") : "",
         loanAssignedCollectorRole: collector ? ((collector.role as string) || "AGENT") : "",
       });
+      await updateDoc(doc(db, "loans", approveDialogLoan.id), {
+        riskLevel: approveRiskLevel,
+        approvalNotes: approveApprovalNotes,
+        disbursementMethod: approveDisbursementMethod,
+        disbursementReference: approveDisbursementRef,
+        updatedAt: serverTimestamp(),
+      });
       toast.success("Loan approved and EMI schedule generated.");
       setApproveDialogLoan(null);
+      setApproveApprovalNotes(""); setApproveDisbursementRef("");
     } catch (err: any) {
       toast.error(err?.message || "Approval failed");
     } finally {
@@ -246,13 +272,27 @@ export default function OrgLoans() {
         loanAssignedCollectorName: collector ? (collector.fullName || (collector as any).name || "") : "",
         loanAssignedCollectorRole: collector ? ((collector.role as string) || "AGENT") : "",
       });
+      await updateDoc(doc(db, "loans", loanId), {
+        riskLevel: appRiskLevel,
+        approvalNotes: appApprovalNotes,
+        disbursementMethod: appDisbursementMethod,
+        disbursementReference: appDisbursementRef,
+        updatedAt: serverTimestamp(),
+      });
       await updateDoc(doc(db, "loanApplications", approveApp.id), {
         status: "APPROVED", loanId,
         reviewedByActorId: user.id, reviewedByActorName: actorName,
         reviewedAt: serverTimestamp(), updatedAt: serverTimestamp(),
+        verificationStatus: appVerificationStatus,
+        riskLevel: appRiskLevel,
+        verificationNotes: appVerificationNotes,
+        approvalNotes: appApprovalNotes,
       });
       toast.success("Application approved — loan created and EMI schedule generated.");
       setApproveApp(null); setAppInterestRate("12"); setAppCollectorId("");
+      setAppRiskLevel("LOW"); setAppVerificationStatus("PENDING");
+      setAppVerificationNotes(""); setAppApprovalNotes("");
+      setAppDisbursementMethod("CASH"); setAppDisbursementRef("");
     } catch (err: any) {
       toast.error(err?.message || "Approval failed");
     } finally {
@@ -657,7 +697,7 @@ export default function OrgLoans() {
 
       {/* ── Approve Pending Loan Dialog ──────────────────────────────────────── */}
       <Dialog open={!!approveDialogLoan} onOpenChange={(o) => !o && setApproveDialogLoan(null)}>
-        <DialogContent className="max-w-md">
+        <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle className="text-emerald-700 flex items-center gap-2">
               <CheckCircle className="w-5 h-5" /> Approve Loan
@@ -689,6 +729,53 @@ export default function OrgLoans() {
                   );
                 })()}
               </div>
+
+              {/* Risk Level */}
+              <div className="space-y-1.5">
+                <Label className="flex items-center gap-1.5"><TrendingUp className="w-3.5 h-3.5 text-slate-400" /> Risk Level</Label>
+                <div className="grid grid-cols-3 gap-2">
+                  {(["LOW", "MEDIUM", "HIGH"] as RiskLevel[]).map((r) => {
+                    const colors: Record<RiskLevel, string> = {
+                      LOW: approveRiskLevel === r ? "bg-emerald-600 text-white border-emerald-600" : "bg-white text-slate-600 border-slate-200 hover:bg-emerald-50",
+                      MEDIUM: approveRiskLevel === r ? "bg-amber-500 text-white border-amber-500" : "bg-white text-slate-600 border-slate-200 hover:bg-amber-50",
+                      HIGH: approveRiskLevel === r ? "bg-red-600 text-white border-red-600" : "bg-white text-slate-600 border-slate-200 hover:bg-red-50",
+                    };
+                    return (
+                      <button key={r} type="button" onClick={() => setApproveRiskLevel(r)}
+                        className={`py-1.5 rounded-lg border text-xs font-bold transition-colors ${colors[r]}`}>
+                        {r}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Disbursement Method */}
+              <div className="space-y-1.5">
+                <Label className="flex items-center gap-1.5"><Banknote className="w-3.5 h-3.5 text-slate-400" /> Disbursement Method</Label>
+                <div className="grid grid-cols-3 gap-2">
+                  {(["CASH", "UPI", "BANK_TRANSFER"] as DisbursementMethod[]).map((m) => (
+                    <button key={m} type="button" onClick={() => setApproveDisbursementMethod(m)}
+                      className={`py-1.5 rounded-lg border text-xs font-semibold transition-colors ${approveDisbursementMethod === m ? "bg-indigo-600 text-white border-indigo-600" : "bg-white text-slate-600 border-slate-200 hover:bg-indigo-50"}`}>
+                      {m === "BANK_TRANSFER" ? "Bank" : m}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              {(approveDisbursementMethod === "UPI" || approveDisbursementMethod === "BANK_TRANSFER") && (
+                <div className="space-y-1.5">
+                  <Label>Reference / UTR Number</Label>
+                  <Input value={approveDisbursementRef} onChange={(e) => setApproveDisbursementRef(e.target.value)} placeholder="e.g. UTR123456789" />
+                </div>
+              )}
+
+              <div className="space-y-1.5">
+                <Label>Approval Notes</Label>
+                <textarea value={approveApprovalNotes} onChange={(e) => setApproveApprovalNotes(e.target.value)}
+                  rows={2} placeholder="Internal approval notes…"
+                  className="w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 placeholder:text-slate-400 focus:border-slate-400 focus:outline-none focus:ring-1 focus:ring-slate-300 resize-none" />
+              </div>
+
               <CollectorSelect value={approveDialogCollectorId} onChange={setApproveDialogCollectorId} />
               <div className="flex gap-3 pt-1">
                 <Button variant="outline" className="flex-1" onClick={() => setApproveDialogLoan(null)}>Cancel</Button>
@@ -707,7 +794,7 @@ export default function OrgLoans() {
 
       {/* ── Approve Application Dialog ───────────────────────────────────────── */}
       <Dialog open={!!approveApp} onOpenChange={(o) => !o && setApproveApp(null)}>
-        <DialogContent className="max-w-md">
+        <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle className="text-emerald-700 flex items-center gap-2">
               <CheckCircle className="w-5 h-5" /> Approve Loan Application
@@ -715,6 +802,7 @@ export default function OrgLoans() {
           </DialogHeader>
           {approveApp && (
             <div className="space-y-4 mt-2">
+              {/* Customer details */}
               <div className="bg-slate-50 rounded-xl p-4 space-y-2">
                 <div className="flex items-center justify-between text-sm">
                   <span className="text-slate-500">Customer</span>
@@ -737,6 +825,48 @@ export default function OrgLoans() {
                   <span className="font-semibold text-slate-900">₹{Number(approveApp.monthlyIncome).toLocaleString()}</span>
                 </div>
               </div>
+
+              {/* Agent Verification Status */}
+              <div className="space-y-1.5">
+                <Label className="flex items-center gap-1.5"><ShieldCheck className="w-3.5 h-3.5 text-slate-400" /> Verification Status</Label>
+                <div className="grid grid-cols-3 gap-2">
+                  {(["PENDING", "VERIFIED", "REJECTED"] as VerificationStatus[]).map((v) => {
+                    const colors: Record<VerificationStatus, string> = {
+                      PENDING: appVerificationStatus === v ? "bg-amber-500 text-white border-amber-500" : "bg-white text-slate-600 border-slate-200 hover:bg-amber-50",
+                      VERIFIED: appVerificationStatus === v ? "bg-emerald-600 text-white border-emerald-600" : "bg-white text-slate-600 border-slate-200 hover:bg-emerald-50",
+                      REJECTED: appVerificationStatus === v ? "bg-red-600 text-white border-red-600" : "bg-white text-slate-600 border-slate-200 hover:bg-red-50",
+                    };
+                    return (
+                      <button key={v} type="button" onClick={() => setAppVerificationStatus(v)}
+                        className={`py-1.5 rounded-lg border text-xs font-bold transition-colors ${colors[v]}`}>
+                        {v}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Risk Level */}
+              <div className="space-y-1.5">
+                <Label className="flex items-center gap-1.5"><TrendingUp className="w-3.5 h-3.5 text-slate-400" /> Risk Level</Label>
+                <div className="grid grid-cols-3 gap-2">
+                  {(["LOW", "MEDIUM", "HIGH"] as RiskLevel[]).map((r) => {
+                    const colors: Record<RiskLevel, string> = {
+                      LOW: appRiskLevel === r ? "bg-emerald-600 text-white border-emerald-600" : "bg-white text-slate-600 border-slate-200 hover:bg-emerald-50",
+                      MEDIUM: appRiskLevel === r ? "bg-amber-500 text-white border-amber-500" : "bg-white text-slate-600 border-slate-200 hover:bg-amber-50",
+                      HIGH: appRiskLevel === r ? "bg-red-600 text-white border-red-600" : "bg-white text-slate-600 border-slate-200 hover:bg-red-50",
+                    };
+                    return (
+                      <button key={r} type="button" onClick={() => setAppRiskLevel(r)}
+                        className={`py-1.5 rounded-lg border text-xs font-bold transition-colors ${colors[r]}`}>
+                        {r}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Loan terms */}
               <div className="space-y-1.5">
                 <Label>Interest Rate (% per annum)</Label>
                 <Input
@@ -751,6 +881,40 @@ export default function OrgLoans() {
                   <p className="text-xs text-emerald-500 mt-0.5">Total repayment: ₹{(approvePreviewEMI * approveApp.tenureMonths).toFixed(2)}</p>
                 </div>
               )}
+
+              {/* Disbursement */}
+              <div className="space-y-1.5">
+                <Label className="flex items-center gap-1.5"><Banknote className="w-3.5 h-3.5 text-slate-400" /> Disbursement Method</Label>
+                <div className="grid grid-cols-3 gap-2">
+                  {(["CASH", "UPI", "BANK_TRANSFER"] as DisbursementMethod[]).map((m) => (
+                    <button key={m} type="button" onClick={() => setAppDisbursementMethod(m)}
+                      className={`py-1.5 rounded-lg border text-xs font-semibold transition-colors ${appDisbursementMethod === m ? "bg-indigo-600 text-white border-indigo-600" : "bg-white text-slate-600 border-slate-200 hover:bg-indigo-50"}`}>
+                      {m === "BANK_TRANSFER" ? "Bank" : m}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              {(appDisbursementMethod === "UPI" || appDisbursementMethod === "BANK_TRANSFER") && (
+                <div className="space-y-1.5">
+                  <Label>Reference / UTR Number</Label>
+                  <Input value={appDisbursementRef} onChange={(e) => setAppDisbursementRef(e.target.value)} placeholder="e.g. UTR123456789" />
+                </div>
+              )}
+
+              {/* Notes */}
+              <div className="space-y-1.5">
+                <Label>Verification Notes</Label>
+                <textarea value={appVerificationNotes} onChange={(e) => setAppVerificationNotes(e.target.value)}
+                  rows={2} placeholder="Residence verified, identity check passed…"
+                  className="w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 placeholder:text-slate-400 focus:border-slate-400 focus:outline-none focus:ring-1 focus:ring-slate-300 resize-none" />
+              </div>
+              <div className="space-y-1.5">
+                <Label>Approval Notes</Label>
+                <textarea value={appApprovalNotes} onChange={(e) => setAppApprovalNotes(e.target.value)}
+                  rows={2} placeholder="Internal approval notes…"
+                  className="w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 placeholder:text-slate-400 focus:border-slate-400 focus:outline-none focus:ring-1 focus:ring-slate-300 resize-none" />
+              </div>
+
               <CollectorSelect value={appCollectorId} onChange={setAppCollectorId} />
               <div className="flex gap-3 pt-1">
                 <Button variant="outline" className="flex-1" onClick={() => setApproveApp(null)}>Cancel</Button>
