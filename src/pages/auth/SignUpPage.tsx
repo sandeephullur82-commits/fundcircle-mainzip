@@ -1,6 +1,6 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { useSignUp, useUser } from "@clerk/clerk-react";
-import { useNavigate, Link, useSearchParams } from "react-router-dom";
+import { useNavigate, useLocation, Link, useSearchParams } from "react-router-dom";
 import { Eye, EyeOff, Loader2, AlertCircle } from "lucide-react";
 import AuthLayout from "./AuthLayout";
 
@@ -12,72 +12,79 @@ function recordOtpSent(type: "signup_verify" | "reset_password") {
   sessionStorage.removeItem("fc_otp_errors");
   const count = parseInt(sessionStorage.getItem("fc_otp_request_count") || "0") + 1;
   sessionStorage.setItem("fc_otp_request_count", String(count));
-  console.log("────────────────────────────────────────────");
-  console.log("[FC OTP] ✉  OTP dispatched");
-  console.log("[FC OTP]    type         :", type);
-  console.log("[FC OTP]    sent_at      :", sentAt);
-  console.log("[FC OTP]    request_count:", count);
-  console.log("────────────────────────────────────────────");
+  console.log("[FC OTP] ✉ OTP dispatched | type:", type, "| sent_at:", sentAt, "| request_count:", count);
 }
 
 export default function SignUpPage() {
   const { isLoaded: userLoaded, isSignedIn } = useUser();
   const { isLoaded, signUp, setActive } = useSignUp();
-  const navigate = useNavigate();
+  const navigate  = useNavigate();
+  const location  = useLocation();
   const [searchParams] = useSearchParams();
 
   const invitationTicket = searchParams.get("__clerk_ticket") || "";
 
-  const [fullName, setFullName]             = useState("");
-  const [email, setEmail]                   = useState("");
-  const [password, setPassword]             = useState("");
-  const [confirmPassword, setConfirmPassword] = useState("");
-  const [showPassword, setShowPassword]     = useState(false);
-  const [showConfirm, setShowConfirm]       = useState(false);
-  const [agreedToTerms, setAgreedToTerms]   = useState(false);
-  const [loading, setLoading]               = useState(false);
-  const [error, setError]                   = useState("");
+  // When the user clicks "Edit Email" on the OTP screen, they arrive here with
+  // this flag set. It tells the resume-detection useEffect to stand down and let
+  // the user interact with the form instead of bouncing them back to verify-email.
+  const isEditingEmail = (location.state as any)?.editingEmail === true;
 
+  // Guard the resume-detection useEffect from firing while handleSubmit is in
+  // progress. After signUp.create() resolves, Clerk pushes a reactive state update
+  // (status → "missing_requirements") which would normally trigger the useEffect
+  // and navigate to /auth/verify-email before prepareEmailAddressVerification()
+  // is called. This ref blocks that premature redirect.
+  const submittingRef = useRef(false);
+
+  const [fullName, setFullName]               = useState("");
+  const [email, setEmail]                     = useState("");
+  const [password, setPassword]               = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [showPassword, setShowPassword]       = useState(false);
+  const [showConfirm, setShowConfirm]         = useState(false);
+  const [agreedToTerms, setAgreedToTerms]     = useState(false);
+  const [loading, setLoading]                 = useState(false);
+  const [error, setError]                     = useState("");
+
+  // Redirect already-signed-in users immediately.
   useEffect(() => {
     if (userLoaded && isSignedIn) {
-      console.log("[FC STEP 2] User already signed in — redirecting to /router");
+      console.log("[FC SignUp] Already signed in — redirecting to /router");
       navigate("/router", { replace: true });
     }
   }, [userLoaded, isSignedIn, navigate]);
 
+  // Resume-detection: if an in-progress (non-submitted) signUp session exists,
+  // send the user back to the verify screen so they can complete it.
+  // Skipped when:
+  //   - submittingRef is true (we are in the middle of handleSubmit)
+  //   - isEditingEmail is true (user deliberately came back to change their email)
   useEffect(() => {
     if (!isLoaded) return;
-    if (invitationTicket) {
-      console.log("════════════════════════════════════════════════");
-      console.log("[FC STEP 2] Invitation ticket detected in URL");
-      console.log("[FC STEP 2]   ticket prefix :", invitationTicket.substring(0, 20) + "…");
-      console.log("[FC STEP 2]   flow          : invitation sign-up (Email + Password via ticket)");
-      console.log("════════════════════════════════════════════════");
-    } else {
-      console.log("[FC STEP 2] Normal sign-up flow (no invitation ticket)");
-    }
-  }, [isLoaded, invitationTicket]);
+    if (submittingRef.current) return;
+    if (isEditingEmail) return;
 
-  useEffect(() => {
-    if (!isLoaded) return;
     if (signUp?.status === "complete" && signUp.createdSessionId && setActive) {
-      console.log("[FC STEP 3] Already-complete signUp detected — activating session:", signUp.createdSessionId);
+      console.log("[FC SignUp] Complete signUp on mount — activating session:", signUp.createdSessionId);
       setActive({ session: signUp.createdSessionId }).then(() => {
-        console.log("[FC STEP 3] Session activated — redirecting to /auth/callback");
         navigate("/auth/callback", { replace: true });
       });
       return;
     }
+
     if (signUp?.status === "missing_requirements" && signUp.id) {
-      console.log("[FC STEP 3] Existing incomplete signUp (status: missing_requirements)");
-      console.log("[FC STEP 3]   unverifiedFields:", signUp.unverifiedFields);
       if (signUp.unverifiedFields?.includes("email_address")) {
-        console.log("[FC STEP 4] Email verification required — resuming at /auth/verify-email");
-        sessionStorage.setItem("fc_signup_email", signUp.emailAddress || "");
-        navigate("/auth/verify-email", { replace: true });
+        const otpCount = parseInt(sessionStorage.getItem("fc_otp_request_count") || "0");
+        if (otpCount > 0) {
+          console.log("[FC SignUp] Resuming incomplete signUp — OTP already sent, returning to verify screen");
+          sessionStorage.setItem("fc_signup_email", signUp.emailAddress || "");
+          navigate("/auth/verify-email", { replace: true });
+        } else {
+          console.log("[FC SignUp] Incomplete signUp found but OTP not yet sent — staying on sign-up page");
+        }
       }
     }
-  }, [isLoaded, signUp?.status, signUp?.id, signUp?.createdSessionId]);
+  }, [isLoaded, signUp?.status, signUp?.id, signUp?.createdSessionId, isEditingEmail]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -85,7 +92,7 @@ export default function SignUpPage() {
     setError("");
 
     if (password !== confirmPassword) { setError("Passwords do not match."); return; }
-    if (password.length < 8)           { setError("Password must be at least 8 characters."); return; }
+    if (password.length < 8)          { setError("Password must be at least 8 characters."); return; }
     if (!invitationTicket && !agreedToTerms) {
       setError("Please accept the terms and conditions to continue.");
       return;
@@ -94,17 +101,15 @@ export default function SignUpPage() {
     const nameParts = fullName.trim().split(/\s+/);
     const firstName = nameParts[0] || "";
     const lastName  = nameParts.slice(1).join(" ") || "";
+
+    submittingRef.current = true;
     setLoading(true);
 
     try {
+      // ── Invitation ticket flow ──────────────────────────────────────────
       if (invitationTicket) {
-        console.log("════════════════════════════════════════════════");
-        console.log("[FC STEP 2] ▶ Clerk user creation via invitation ticket");
-        console.log("[FC STEP 2]   firstName:", firstName || "(not provided)");
-        console.log("[FC STEP 2]   lastName :", lastName  || "(not provided)");
-        console.log("[FC STEP 2]   ticket   :", invitationTicket.substring(0, 20) + "…");
-        console.log("════════════════════════════════════════════════");
-        console.log("[FC STEP 3] ▶ Password setup — calling signUp.create({ strategy: 'ticket', password })…");
+        console.log("[FC SignUp] ▶ Invitation ticket flow | firstName:", firstName, "| lastName:", lastName);
+        console.log("[FC SignUp] ▶ signUp.create({ strategy: 'ticket', password })…");
 
         const t0 = Date.now();
         const result = await signUp.create({
@@ -112,29 +117,29 @@ export default function SignUpPage() {
           ticket: invitationTicket,
           password,
           firstName: firstName || undefined,
-          lastName: lastName || undefined,
+          lastName:  lastName  || undefined,
         });
-        console.log("[FC STEP 3] signUp.create() (invitation) — took:", `${Date.now() - t0}ms`);
-        console.log("[FC STEP 3]   status           :", result.status);
-        console.log("[FC STEP 3]   createdSessionId :", result.createdSessionId ?? "null");
-        console.log("[FC STEP 3]   emailAddress     :", result.emailAddress ?? "—");
-        console.log("[FC STEP 3]   unverifiedFields :", result.unverifiedFields ?? []);
+        console.log("[FC SignUp] signUp.create() (invitation) done in", `${Date.now() - t0}ms`);
+        console.log("[FC SignUp]   status           :", result.status);
+        console.log("[FC SignUp]   createdSessionId :", result.createdSessionId ?? "null");
+        console.log("[FC SignUp]   emailAddress     :", result.emailAddress ?? "—");
+        console.log("[FC SignUp]   unverifiedFields :", result.unverifiedFields ?? []);
 
         if (result.status === "complete" && result.createdSessionId) {
-          console.log("[FC STEP 8] ▶ Session creation — activating session:", result.createdSessionId);
+          console.log("[FC SignUp] ▶ Activating session:", result.createdSessionId);
           await setActive!({ session: result.createdSessionId });
-          console.log("[FC STEP 8] ✓ Session activated — redirecting to /auth/callback");
+          console.log("[FC SignUp] ✓ Session activated — redirecting to /auth/callback");
           sessionStorage.removeItem("fc_signup_email");
           navigate("/auth/callback", { replace: true });
           return;
         }
 
         if (result.status === "missing_requirements") {
-          console.log("[FC STEP 3] Password set — email verification still required");
           if (result.unverifiedFields?.includes("email_address")) {
+            console.log("[FC SignUp] ▶ Email verification required — calling prepareEmailAddressVerification…");
             const t1 = Date.now();
-            await signUp.prepareEmailAddressVerification({ strategy: "email_code" });
-            console.log("[FC STEP 4] prepareEmailAddressVerification — took:", `${Date.now() - t1}ms`);
+            await result.prepareEmailAddressVerification({ strategy: "email_code" });
+            console.log("[FC SignUp] ✓ prepareEmailAddressVerification done in", `${Date.now() - t1}ms`);
             recordOtpSent("signup_verify");
             sessionStorage.setItem("fc_signup_email", result.emailAddress || "");
             navigate("/auth/verify-email", { replace: true });
@@ -142,28 +147,34 @@ export default function SignUpPage() {
           return;
         }
 
-        console.error("[FC STEP 3] ✗ Unexpected invitation sign-up status:", result.status);
+        console.error("[FC SignUp] ✗ Unexpected invitation sign-up status:", result.status);
         setError("Invitation sign-up returned an unexpected state. Please try again.");
         return;
       }
 
+      // ── Normal sign-up flow ─────────────────────────────────────────────
       const emailKey = email.trim().toLowerCase();
-      console.log("════════════════════════════════════════════════");
-      console.log("[FC STEP 2] ▶ Clerk user creation (normal sign-up)");
-      console.log("[FC STEP 2]   email    :", emailKey);
-      console.log("[FC STEP 2]   firstName:", firstName || "(not provided)");
-      console.log("[FC STEP 2]   lastName :", lastName  || "(not provided)");
-      console.log("════════════════════════════════════════════════");
+      console.log("[FC SignUp] ▶ Normal sign-up | email:", emailKey, "| firstName:", firstName, "| lastName:", lastName);
 
+      console.log("[FC SignUp] ▶ Step 1: signUp.create({ emailAddress, password })…");
       const t0 = Date.now();
-      console.log("[FC STEP 3] ▶ signUp.create({ emailAddress, password })…");
-      await signUp.create({ emailAddress: emailKey, password, firstName, lastName });
-      console.log("[FC STEP 3] signUp.create() done — took:", `${Date.now() - t0}ms`, "| status:", signUp.status);
+      const created = await signUp.create({ emailAddress: emailKey, password, firstName, lastName });
+      console.log("[FC SignUp] ✓ signUp.create() done in", `${Date.now() - t0}ms`);
+      console.log("[FC SignUp]   status          :", created.status);
+      console.log("[FC SignUp]   unverifiedFields:", created.unverifiedFields ?? []);
 
-      console.log("[FC STEP 4] ▶ Email verification — calling prepareEmailAddressVerification…");
+      if (created.status === "complete" && created.createdSessionId) {
+        console.log("[FC SignUp] ▶ Signup already complete — activating session:", created.createdSessionId);
+        await setActive!({ session: created.createdSessionId });
+        navigate("/auth/callback", { replace: true });
+        return;
+      }
+
+      console.log("[FC SignUp] ▶ Step 2: prepareEmailAddressVerification({ strategy: 'email_code' })…");
       const t1 = Date.now();
-      await signUp.prepareEmailAddressVerification({ strategy: "email_code" });
-      console.log("[FC STEP 4] prepareEmailAddressVerification — took:", `${Date.now() - t1}ms`);
+      await created.prepareEmailAddressVerification({ strategy: "email_code" });
+      console.log("[FC SignUp] ✓ prepareEmailAddressVerification done in", `${Date.now() - t1}ms`);
+      console.log("[FC SignUp] ✓ OTP email dispatched to:", emailKey);
 
       recordOtpSent("signup_verify");
       sessionStorage.setItem("fc_signup_email", emailKey);
@@ -172,19 +183,19 @@ export default function SignUpPage() {
     } catch (err: any) {
       const code = err?.errors?.[0]?.code ?? "unknown";
       const msg  = err?.errors?.[0]?.longMessage ?? err?.errors?.[0]?.message ?? err?.message ?? "unknown";
-      console.error("════════════════════════════════════════════════");
-      console.error("[FC STEP 2/3] ✗ signUp.create() threw an exception");
-      console.error("[FC STEP 2/3]   error.code    :", code);
-      console.error("[FC STEP 2/3]   error.message :", msg);
-      console.error("[FC STEP 2/3]   error.errors  :", err?.errors ?? "none");
-      console.error("[FC STEP 2/3]   full error    :", err);
-      console.error("════════════════════════════════════════════════");
-      if (code === "form_identifier_exists")  setError("An account with this email already exists.");
+      console.error("[FC SignUp] ✗ Error during sign-up flow");
+      console.error("[FC SignUp]   code   :", code);
+      console.error("[FC SignUp]   message:", msg);
+      console.error("[FC SignUp]   errors :", err?.errors ?? "none");
+
+      if (code === "form_identifier_exists")     setError("An account with this email already exists.");
       else if (code === "form_param_format_invalid") setError("Please enter a valid email address.");
-      else if (code === "too_many_requests")  setError("Too many attempts. Please wait a moment and try again.");
-      else if (code === "form_password_pwned" || code === "form_password_size_check_failed") setError("Please choose a stronger password (min. 8 characters).");
+      else if (code === "too_many_requests")     setError("Too many attempts. Please wait a moment and try again.");
+      else if (code === "form_password_pwned" || code === "form_password_size_check_failed")
+        setError("Please choose a stronger password (min. 8 characters).");
       else setError("Could not create account. Please try again.");
     } finally {
+      submittingRef.current = false;
       setLoading(false);
     }
   };

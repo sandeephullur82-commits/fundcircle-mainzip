@@ -2,44 +2,30 @@ import React, { useState, useRef, useEffect, useCallback } from "react";
 import { useSignUp } from "@clerk/clerk-react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
-import { Loader2, Mail, RefreshCw, Pencil, Clock } from "lucide-react";
+import { Loader2, Mail, RefreshCw, Pencil } from "lucide-react";
 import AuthLayout from "./AuthLayout";
-import OtpDiagnosticsPanel from "./OtpDiagnosticsPanel";
-
-function appendOtpError(code: string, message: string) {
-  const existing = JSON.parse(sessionStorage.getItem("fc_otp_errors") || "[]");
-  existing.push({ code, message, time: new Date().toLocaleTimeString() });
-  sessionStorage.setItem("fc_otp_errors", JSON.stringify(existing.slice(-10)));
-}
 
 function markOtpSent() {
   sessionStorage.setItem("fc_otp_sent_at", new Date().toISOString());
   sessionStorage.removeItem("fc_otp_verified_at");
   const count = parseInt(sessionStorage.getItem("fc_otp_request_count") || "0") + 1;
   sessionStorage.setItem("fc_otp_request_count", String(count));
-
-  console.log("────────────────────────────────────────────");
-  console.log("[FC OTP] ✉  OTP resent");
-  console.log("[FC OTP]    sent_at      :", new Date().toISOString());
-  console.log("[FC OTP]    request_count:", count);
-  console.log("────────────────────────────────────────────");
+  console.log("[FC OTP] ✉ OTP resent | request_count:", count);
 }
 
 export default function VerifyEmailPage() {
   const { isLoaded, signUp, setActive } = useSignUp();
   const navigate = useNavigate();
 
-  const [otp, setOtp]           = useState(["", "", "", "", "", ""]);
-  const [loading, setLoading]   = useState(false);
+  const [otp, setOtp]             = useState(["", "", "", "", "", ""]);
+  const [loading, setLoading]     = useState(false);
   const [resending, setResending] = useState(false);
-  const [error, setError]       = useState("");
+  const [error, setError]         = useState("");
   const [countdown, setCountdown] = useState(30);
-  const [elapsed, setElapsed]   = useState(0);
 
   const inputRefs  = useRef<(HTMLInputElement | null)[]>([]);
   const loadingRef = useRef(false);
   const email      = sessionStorage.getItem("fc_signup_email") || "";
-  const sentAtStr  = sessionStorage.getItem("fc_otp_sent_at") || "";
 
   useEffect(() => { loadingRef.current = loading; }, [loading]);
 
@@ -50,29 +36,48 @@ export default function VerifyEmailPage() {
     }
   }, [countdown]);
 
-  useEffect(() => {
-    if (!sentAtStr) return;
-    const sentAt = new Date(sentAtStr).getTime();
-    const iv = setInterval(() => setElapsed(Math.floor((Date.now() - sentAt) / 1000)), 500);
-    return () => clearInterval(iv);
-  }, [sentAtStr]);
-
+  // Guard: ensure the user arrived here with an active signUp session and a
+  // successfully dispatched OTP. If either condition fails, send them back to
+  // sign-up with an explanatory error so they can try again cleanly.
   useEffect(() => {
     if (!isLoaded) return;
-    if (signUp?.status === "complete" && signUp.createdSessionId && setActive) {
-      console.log("[FC STEP 4] Already complete — activating session:", signUp.createdSessionId);
+
+    // No Clerk signUp session at all — user navigated here directly.
+    if (!signUp?.id) {
+      console.warn("[FC Verify] No active signUp session — redirecting to /auth/sign-up");
+      navigate("/auth/sign-up", { replace: true });
+      return;
+    }
+
+    // signUp session exists but OTP was never dispatched (fc_otp_request_count === 0).
+    // This happens when the resume-detection useEffect in SignUpPage was supposed to
+    // be suppressed but still fired — catch it here as a second line of defence.
+    const otpCount = parseInt(sessionStorage.getItem("fc_otp_request_count") || "0");
+    if (otpCount === 0 && signUp.status === "missing_requirements") {
+      console.warn("[FC Verify] OTP not yet sent (request_count=0) — redirecting to /auth/sign-up with error");
+      sessionStorage.setItem("fc_verify_error", "Verification code could not be sent. Please try again.");
+      navigate("/auth/sign-up", { replace: true });
+      return;
+    }
+
+    // Already complete — activate and move on.
+    if (signUp.status === "complete" && signUp.createdSessionId && setActive) {
+      console.log("[FC Verify] signUp already complete — activating session:", signUp.createdSessionId);
       setActive({ session: signUp.createdSessionId }).then(() => {
-        console.log("[FC STEP 8] ✓ Session activated — redirecting to /auth/callback");
+        console.log("[FC Verify] ✓ Session activated — redirecting to /auth/callback");
         navigate("/auth/callback", { replace: true });
       });
     }
-    if (!signUp || (signUp.status !== "missing_requirements" && signUp.status !== null)) {
-      if (isLoaded && !signUp?.id) {
-        console.warn("[FC STEP 4] No active signUp session — redirecting to /auth/sign-up");
-        navigate("/auth/sign-up", { replace: true });
-      }
+  }, [isLoaded, signUp?.status, signUp?.id, signUp?.createdSessionId]);
+
+  // Pick up the verify error written by the guard above when the user is sent back.
+  useEffect(() => {
+    const stored = sessionStorage.getItem("fc_verify_error");
+    if (stored) {
+      sessionStorage.removeItem("fc_verify_error");
+      setError(stored);
     }
-  }, [isLoaded, signUp?.status, signUp?.createdSessionId]);
+  }, []);
 
   const performVerify = useCallback(async (code: string) => {
     if (!isLoaded || !signUp || loadingRef.current) return;
@@ -80,71 +85,59 @@ export default function VerifyEmailPage() {
     setError("");
     setLoading(true);
 
+    const sentAt      = sessionStorage.getItem("fc_otp_sent_at");
     const verifyStart = Date.now();
-    const sentAt = sessionStorage.getItem("fc_otp_sent_at");
-    console.log("════════════════════════════════════════════════");
-    console.log("[FC STEP 4] ▶ Email verification attempt");
-    console.log("[FC STEP 4]   email        :", email || "(not in sessionStorage)");
-    console.log("[FC STEP 4]   code length  : 6 digits");
-    console.log("[FC STEP 4]   signUp.id    :", signUp.id ?? "null");
-    console.log("[FC STEP 4]   signUp.status:", signUp.status);
-    console.log("[FC STEP 4]   otp_sent_at  :", sentAt ?? "not recorded");
+    console.log("[FC Verify] ▶ Attempting email verification");
+    console.log("[FC Verify]   email        :", email || "(not in sessionStorage)");
+    console.log("[FC Verify]   signUp.id    :", signUp.id ?? "null");
+    console.log("[FC Verify]   signUp.status:", signUp.status);
+    console.log("[FC Verify]   otp_sent_at  :", sentAt ?? "not recorded");
     if (sentAt) {
-      const waitMs = Date.now() - new Date(sentAt).getTime();
-      console.log("[FC STEP 4]   wait since sent:", `${(waitMs / 1000).toFixed(1)}s`);
+      console.log("[FC Verify]   wait since sent:", `${((Date.now() - new Date(sentAt).getTime()) / 1000).toFixed(1)}s`);
     }
-    console.log("════════════════════════════════════════════════");
 
     try {
-      console.log("[FC STEP 4] Calling signUp.attemptEmailAddressVerification({ code })…");
+      console.log("[FC Verify] ▶ signUp.attemptEmailAddressVerification({ code })…");
       const result = await signUp.attemptEmailAddressVerification({ code });
       const status = result.status as string;
 
-      console.log("[FC STEP 4] attemptEmailAddressVerification result:");
-      console.log("[FC STEP 4]   status           :", status);
-      console.log("[FC STEP 4]   createdSessionId :", result.createdSessionId ?? "null");
-      console.log("[FC STEP 4]   api_took         :", `${Date.now() - verifyStart}ms`);
+      console.log("[FC Verify] ✓ attemptEmailAddressVerification result:");
+      console.log("[FC Verify]   status           :", status);
+      console.log("[FC Verify]   createdSessionId :", result.createdSessionId ?? "null");
+      console.log("[FC Verify]   api_took         :", `${Date.now() - verifyStart}ms`);
 
       if (status === "complete") {
         const verifiedAt = new Date().toISOString();
         sessionStorage.setItem("fc_otp_verified_at", verifiedAt);
         if (sentAt) {
           const deliveryMs = new Date(verifiedAt).getTime() - new Date(sentAt).getTime();
-          console.log("────────────────────────────────────────────");
-          console.log("[FC OTP] ✓ Verification complete — delivery metrics:");
-          console.log("[FC OTP]   otp_sent_at    :", sentAt);
-          console.log("[FC OTP]   otp_verified_at:", verifiedAt);
-          console.log("[FC OTP]   delivery_ms    :", deliveryMs, `(${(deliveryMs / 1000).toFixed(1)}s)`);
-          console.log("────────────────────────────────────────────");
+          console.log("[FC OTP] ✓ Verification complete | delivery_ms:", deliveryMs, `(${(deliveryMs / 1000).toFixed(1)}s)`);
         }
 
         if (result.createdSessionId) {
-          console.log("[FC STEP 8] ▶ Session creation — activating session:", result.createdSessionId);
+          console.log("[FC Verify] ▶ Activating session:", result.createdSessionId);
           await setActive({ session: result.createdSessionId });
-          console.log("[FC STEP 8] ✓ Session activated");
+          console.log("[FC Verify] ✓ Session activated");
         } else {
-          console.warn("[FC STEP 8] status=complete, sessionId=null — session already active");
+          console.warn("[FC Verify] status=complete, sessionId=null — session already active");
         }
 
         sessionStorage.removeItem("fc_signup_email");
-        console.log("[FC STEP 4] → Redirecting to /auth/callback");
+        console.log("[FC Verify] → Redirecting to /auth/callback");
         navigate("/auth/callback", { replace: true });
       } else {
-        console.warn("[FC STEP 4] ✗ Unexpected verification status:", status);
+        console.warn("[FC Verify] ✗ Unexpected verification status:", status);
         setError("Verification incomplete. Please try again.");
       }
     } catch (err: any) {
       const errCode = err?.errors?.[0]?.code ?? "unknown";
       const msg     = err?.errors?.[0]?.longMessage ?? err?.errors?.[0]?.message ?? "unknown";
-      console.error("════════════════════════════════════════════════");
-      console.error("[FC STEP 4] ✗ Verification threw an exception");
-      console.error("[FC STEP 4]   error.code    :", errCode);
-      console.error("[FC STEP 4]   error.message :", msg);
-      console.error("[FC STEP 4]   error.errors  :", err?.errors ?? "none");
-      console.error("[FC STEP 4]   full error    :", err);
-      console.error("════════════════════════════════════════════════");
-      appendOtpError(errCode, msg);
-      if (errCode === "too_many_requests")   setError("Too many attempts. Please wait a moment and try again.");
+      console.error("[FC Verify] ✗ Verification error");
+      console.error("[FC Verify]   code   :", errCode);
+      console.error("[FC Verify]   message:", msg);
+      console.error("[FC Verify]   errors :", err?.errors ?? "none");
+
+      if (errCode === "too_many_requests")       setError("Too many attempts. Please wait a moment and try again.");
       else if (errCode === "verification_expired") setError("Code expired. Please request a new one.");
       else setError("Invalid or expired code. Please try again.");
       setOtp(["", "", "", "", "", ""]);
@@ -159,6 +152,7 @@ export default function VerifyEmailPage() {
     await performVerify(otp.join(""));
   };
 
+  // Auto-submit when all 6 digits are filled.
   useEffect(() => {
     const code = otp.join("");
     if (code.length === 6 && !loadingRef.current && isLoaded && signUp) {
@@ -195,7 +189,7 @@ export default function VerifyEmailPage() {
   const handleResend = async () => {
     if (!isLoaded || !signUp || countdown > 0 || resending) return;
     setResending(true);
-    console.log("[FC STEP 4] Resending OTP to:", email);
+    console.log("[FC Verify] Resending OTP to:", email);
     try {
       await signUp.prepareEmailAddressVerification({ strategy: "email_code" });
       markOtpSent();
@@ -205,20 +199,27 @@ export default function VerifyEmailPage() {
       inputRefs.current[0]?.focus();
       toast.success("A new code has been sent to your email.");
     } catch (err: any) {
-      const msg = err?.errors?.[0]?.message ?? String(err);
-      console.error("[FC STEP 4] Failed to resend OTP:", msg);
-      appendOtpError(err?.errors?.[0]?.code ?? "resend_failed", msg);
+      const msg  = err?.errors?.[0]?.longMessage ?? err?.errors?.[0]?.message ?? String(err);
+      const code = err?.errors?.[0]?.code ?? "resend_failed";
+      console.error("[FC Verify] Failed to resend OTP | code:", code, "| message:", msg);
       toast.error("Failed to resend code. Please try again.");
     } finally {
       setResending(false);
     }
   };
 
-  const handleEditEmail = () => navigate("/auth/sign-up", { replace: true });
+  // Clear OTP sessionStorage flags so the guard resets on the next signup attempt,
+  // then navigate back to sign-up with a flag that prevents the resume-detection
+  // useEffect from bouncing the user straight back here.
+  const handleEditEmail = () => {
+    sessionStorage.removeItem("fc_otp_request_count");
+    sessionStorage.removeItem("fc_otp_sent_at");
+    sessionStorage.removeItem("fc_otp_type");
+    sessionStorage.removeItem("fc_verify_error");
+    navigate("/auth/sign-up", { replace: true, state: { editingEmail: true } });
+  };
 
   const allFilled = otp.join("").length === 6;
-  const isDev = import.meta.env.DEV ||
-    (import.meta.env.VITE_CLERK_PUBLISHABLE_KEY ?? "").startsWith("pk_test_");
 
   return (
     <AuthLayout hideBackButton>
@@ -240,22 +241,7 @@ export default function VerifyEmailPage() {
             <span className="text-sm font-semibold text-white">{email || "your email"}</span>
             <Pencil className="h-3.5 w-3.5 text-white/40 group-hover:text-violet-400 transition-colors" />
           </button>
-          {elapsed > 0 && (
-            <p className="mt-2 flex items-center gap-1 text-[11px] text-white/30">
-              <Clock className="h-3 w-3" />
-              Waiting {elapsed < 60 ? `${elapsed}s` : `${Math.floor(elapsed / 60)}m ${elapsed % 60}s`}
-            </p>
-          )}
         </div>
-
-        {isDev && (
-          <div className="mb-5 rounded-xl border border-amber-500/20 bg-amber-500/[0.07] px-3.5 py-2.5">
-            <p className="text-[11px] text-amber-300/90 leading-relaxed">
-              <strong>Development mode:</strong> Emails are routed through Clerk's shared dev servers.
-              Expect <strong>15–60 s</strong> delivery. Switch to a Production Clerk instance + custom SMTP for instant delivery.
-            </p>
-          </div>
-        )}
 
         <form onSubmit={handleVerify} className="space-y-6">
           {error && (
@@ -328,8 +314,6 @@ export default function VerifyEmailPage() {
             )}
           </div>
         </form>
-
-        <OtpDiagnosticsPanel />
       </div>
     </AuthLayout>
   );
