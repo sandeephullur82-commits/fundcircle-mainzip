@@ -43,6 +43,18 @@ export interface Membership {
   email: string;
   phone?: string;
   address?: string;
+  city?: string;
+  state?: string;
+  pincode?: string;
+  dateOfBirth?: string;
+  gender?: string;
+  profilePhotoUrl?: string;
+  nominee?: {
+    name?: string;
+    relation?: string;
+    phone?: string;
+  };
+  aadhaarLast4?: string;
   // Agent-specific
   assignedArea?: string;
   actsAsAgent?: boolean;
@@ -203,6 +215,51 @@ export interface AuditLog {
   createdAt: FSTimestamp;
 }
 
+// ── Notification ──────────────────────────────────────────────────────────────
+export type NotificationType =
+  | "DEPOSIT_COLLECTED"
+  | "EMI_DUE"
+  | "EMI_OVERDUE"
+  | "LOAN_APPROVED"
+  | "LOAN_REJECTED"
+  | "LOAN_DISBURSED"
+  | "ACCOUNT_UPDATE"
+  | "GENERAL";
+
+export interface Notification {
+  id: string;
+  organizationId: string;
+  userId: string;
+  type?: NotificationType;
+  title: string;
+  message: string;
+  read: boolean;
+  timestamp: FSTimestamp;
+  createdAt?: FSTimestamp;
+}
+
+// ── Support Ticket ────────────────────────────────────────────────────────────
+export type SupportTicketStatus = "OPEN" | "IN_PROGRESS" | "RESOLVED" | "CLOSED";
+export type SupportTicketCategory = "ACCOUNT" | "SAVINGS" | "LOAN" | "EMI" | "TECHNICAL" | "COMPLAINT" | "GENERAL";
+export type SupportTicketPriority = "LOW" | "MEDIUM" | "HIGH";
+
+export interface SupportTicket {
+  id: string;
+  organizationId: string;
+  customerId: string;
+  customerName: string;
+  customerEmail: string;
+  subject: string;
+  description: string;
+  category: SupportTicketCategory;
+  priority: SupportTicketPriority;
+  status: SupportTicketStatus;
+  agentResponse?: string;
+  resolvedAt?: FSTimestamp;
+  createdAt: FSTimestamp;
+  updatedAt?: FSTimestamp;
+}
+
 // ── Legacy / Misc ─────────────────────────────────────────────────────────────
 export interface User {
   id: string;
@@ -230,16 +287,6 @@ export interface Transaction {
   type: "deposit" | "withdrawal" | "emi_payment" | "loan_disbursement";
   timestamp: FSTimestamp;
   referenceId?: string;
-}
-
-export interface Notification {
-  id: string;
-  organizationId: string;
-  userId: string;
-  title: string;
-  message: string;
-  read: boolean;
-  timestamp: FSTimestamp;
 }
 
 export type SubscriptionPlanId = "starter" | "professional" | "enterprise";
@@ -308,7 +355,7 @@ export interface LoanApplication {
   employmentType: string;
   address: string;
   notes: string;
-  status: "PENDING" | "APPROVED" | "REJECTED";
+  status: "DRAFT" | "PENDING" | "APPROVED" | "REJECTED" | "DISBURSED";
   rejectionReason?: string;
   reviewedByActorId?: string;
   reviewedByActorName?: string;
