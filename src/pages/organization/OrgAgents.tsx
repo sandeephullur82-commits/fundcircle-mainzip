@@ -149,7 +149,7 @@ export default function OrgAgents() {
         organizationId: organization.id, organizationName: organization.name || "",
         createdBy: user.id, actorName: user.fullName || user.firstName || "",
         address: address.trim(), notes: createNotes.trim(),
-        ...(employeeCode.trim() ? { employeeCode: employeeCode.trim() } : {}),
+        employeeCode: employeeCode.trim() || undefined,
       });
       setCredentials({ name: `${firstName.trim()} ${lastName.trim()}`.trim(), email: emailKey, password: generatedPassword });
       toast.success("Agent account created successfully.");

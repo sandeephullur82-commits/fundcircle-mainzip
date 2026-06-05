@@ -521,6 +521,7 @@ export async function createDirectMember(params: {
   assignedCollectorRole?: string;
   address?: string;
   notes?: string;
+  employeeCode?: string;
   customerType?: "SAVINGS" | "LOAN" | "SAVINGS_LOAN";
   createdBy: string;
   actorName?: string;
@@ -573,6 +574,7 @@ export async function createDirectMember(params: {
     assignedAgentId: params.assignedAgentId || "",
     assignedAgentName: params.assignedAgentName || "",
     assignedCollectorRole: params.assignedCollectorRole || "",
+    ...(params.employeeCode?.trim() ? { employeeCode: params.employeeCode.trim() } : {}),
     profileCompleted: false,
     status: "PENDING_SETUP",
     createdBy: params.createdBy,

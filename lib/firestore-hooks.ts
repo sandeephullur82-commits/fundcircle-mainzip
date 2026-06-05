@@ -22,10 +22,19 @@ export function useCollectionRealtime<T>(collectionName: string, queryConstraint
       ...queryConstraints
     );
 
-    const unsubscribe = subscribeToCollection<T>(q, (results) => {
-      setData(results);
-      setLoading(false);
-    });
+    const unsubscribe = subscribeToCollection<T>(
+      q,
+      (results) => {
+        setData(results);
+        setLoading(false);
+        setError(null);
+      },
+      (err) => {
+        console.error(`[useCollectionRealtime] ${collectionName} listener error:`, err);
+        setError(err);
+        setLoading(false);
+      }
+    );
 
     return () => unsubscribe();
   }, [collectionName, organization?.id, JSON.stringify(queryConstraints)]);
@@ -44,10 +53,19 @@ export function useCollectionRealtimeRaw<T>(collectionName: string, queryConstra
       ...queryConstraints
     );
 
-    const unsubscribe = subscribeToCollection<T>(q, (results) => {
-      setData(results);
-      setLoading(false);
-    });
+    const unsubscribe = subscribeToCollection<T>(
+      q,
+      (results) => {
+        setData(results);
+        setLoading(false);
+        setError(null);
+      },
+      (err) => {
+        console.error(`[useCollectionRealtimeRaw] ${collectionName} listener error:`, err);
+        setError(err);
+        setLoading(false);
+      }
+    );
 
     return () => unsubscribe();
   }, [collectionName, JSON.stringify(queryConstraints)]);
@@ -67,10 +85,19 @@ export function useDocumentRealtime<T>(collectionName: string, documentId: strin
     }
 
     const docRef = doc(db, collectionName, documentId);
-    const unsubscribe = subscribeToDocument<T>(docRef, (result) => {
-      setData(result);
-      setLoading(false);
-    });
+    const unsubscribe = subscribeToDocument<T>(
+      docRef,
+      (result) => {
+        setData(result);
+        setLoading(false);
+        setError(null);
+      },
+      (err) => {
+        console.error(`[useDocumentRealtime] ${collectionName}/${documentId} listener error:`, err);
+        setError(err);
+        setLoading(false);
+      }
+    );
 
     return () => unsubscribe();
   }, [collectionName, documentId]);

@@ -1,0 +1,148 @@
+Audit Agent Creation and Agent Dashboard.
+
+Problem:
+
+Agent is successfully created in:
+
+- Clerk Users
+- Clerk Organization Members
+
+However the agent does not appear in the Owner Dashboard.
+
+Investigate the complete flow.
+
+==================================================
+
+STEP 1
+
+Trace Agent Creation.
+
+Check:
+
+Create Clerk User
+
+Create Organization Membership
+
+Create Firestore Agent Record
+
+==================================================
+
+STEP 2
+
+Verify Firestore Write.
+
+Expected collection:
+
+agents
+
+Expected fields:
+
+id
+organizationId
+clerkUserId
+firstName
+lastName
+email
+phone
+status
+createdAt
+
+Report whether the document is actually created.
+
+==================================================
+
+STEP 3
+
+Trace Owner Dashboard.
+
+Check:
+
+Which collection is queried?
+
+Expected:
+
+agents
+
+Verify query filters:
+
+organizationId
+
+status
+
+active
+
+==================================================
+
+STEP 4
+
+Check Realtime Listener.
+
+Verify:
+
+onSnapshot()
+
+or
+
+Firestore listener
+
+refreshes after agent creation.
+
+==================================================
+
+STEP 5
+
+Check Organization Sync.
+
+Verify:
+
+Clerk User ID
+
+matches
+
+Firestore clerkUserId
+
+==================================================
+
+STEP 6
+
+Add Debug Logs.
+
+Agent Creation:
+
+console.log("Clerk User Created", user.id);
+
+console.log("Membership Created");
+
+console.log("Creating Firestore Agent");
+
+console.log("Firestore Agent Created");
+
+Owner Dashboard:
+
+console.log("Agents Returned", agents.length);
+
+==================================================
+
+EXPECTED RESULT
+
+After creating an agent:
+
+Clerk User Created
+↓
+Organization Membership Created
+↓
+Firestore Agent Document Created
+↓
+Owner Dashboard Refreshes
+↓
+Agent Visible Immediately
+
+==================================================
+
+Output:
+
+- Exact file
+- Exact failing step
+- Exact missing Firestore write
+- Exact query issue
+- Final fix

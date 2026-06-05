@@ -1,6 +1,10 @@
 import { onSnapshot, Query, DocumentReference } from "firebase/firestore";
 
-export function subscribeToCollection<T>(queryRef: Query, callback: (data: T[]) => void) {
+export function subscribeToCollection<T>(
+  queryRef: Query,
+  callback: (data: T[]) => void,
+  onError?: (err: Error) => void
+) {
   return onSnapshot(
     queryRef,
     (snapshot) => {
@@ -12,11 +16,16 @@ export function subscribeToCollection<T>(queryRef: Query, callback: (data: T[]) 
     },
     (error) => {
       console.error("Firestore realtime collection listener failed:", error);
+      onError?.(error);
     }
   );
 }
 
-export function subscribeToDocument<T>(docRef: DocumentReference, callback: (data: T | null) => void) {
+export function subscribeToDocument<T>(
+  docRef: DocumentReference,
+  callback: (data: T | null) => void,
+  onError?: (err: Error) => void
+) {
   return onSnapshot(
     docRef,
     (snapshot) => {
@@ -28,6 +37,7 @@ export function subscribeToDocument<T>(docRef: DocumentReference, callback: (dat
     },
     (error) => {
       console.error("Firestore realtime document listener failed:", error);
+      onError?.(error);
     }
   );
 }
