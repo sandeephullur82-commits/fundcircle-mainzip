@@ -62,9 +62,17 @@ export default function AgentLoanVerification() {
   const [overallStatus, setOverallStatus] = useState<"PENDING" | "VERIFIED" | "REJECTED">("PENDING");
   const [submitting, setSubmitting] = useState(false);
 
+  // Scope to only this agent's assigned customers
+  const myCustomerIds = new Set(
+    allMembers
+      .filter((m) => m.assignedAgentId === agentId || (m as any).assigned_to_user_id === agentId)
+      .flatMap((m) => [m.id, m.clerkUserId].filter(Boolean) as string[])
+  );
+
   const filtered = allApps.filter((app) => {
     const name = app.customerName || "";
-    return !search || name.toLowerCase().includes(search.toLowerCase());
+    const isMyCustomer = myCustomerIds.size === 0 || myCustomerIds.has(app.customerId);
+    return isMyCustomer && (!search || name.toLowerCase().includes(search.toLowerCase()));
   });
 
   const getStatusColor = (s: CheckStatus) => {

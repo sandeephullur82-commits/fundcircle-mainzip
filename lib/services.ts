@@ -1172,3 +1172,266 @@ export async function recordEMIPayment(organizationId: string, emiData: { loanId
 export async function updateCustomerBalance(customerId: string, newBalance: number) {
   await updateDoc(doc(db, "users", customerId), { balance: newBalance });
 }
+
+// ════════════════════════════════════════════════════════════════════════════
+// SAVINGS PLANS
+// ════════════════════════════════════════════════════════════════════════════
+
+export async function createSavingsPlan(params: {
+  organizationId: string;
+  planName: string;
+  planType: string;
+  minDeposit: number;
+  maxDeposit: number;
+  collectionFrequency: string;
+  interestRate: number;
+  penaltyAmount: number;
+  graceDays: number;
+  createdByActorId: string;
+  createdByActorName: string;
+}): Promise<string> {
+  const ref = doc(collection(db, "savings_plans"));
+  await setDoc(ref, {
+    id: ref.id,
+    organizationId: params.organizationId,
+    planName: params.planName.trim(),
+    planType: params.planType,
+    minDeposit: params.minDeposit,
+    maxDeposit: params.maxDeposit,
+    collectionFrequency: params.collectionFrequency,
+    interestRate: params.interestRate,
+    penaltyAmount: params.penaltyAmount,
+    graceDays: params.graceDays,
+    status: "ACTIVE",
+    createdAt: serverTimestamp(),
+    updatedAt: serverTimestamp(),
+  });
+  await createAuditLog({
+    organizationId: params.organizationId,
+    actorId: params.createdByActorId,
+    actorRole: "OWNER",
+    actorName: params.createdByActorName,
+    action: "SAVINGS_PLAN_CREATED",
+    entityType: "SavingsPlan",
+    entityId: ref.id,
+    metadata: { planName: params.planName, planType: params.planType },
+  });
+  return ref.id;
+}
+
+export async function updateSavingsPlan(planId: string, params: Partial<{
+  planName: string;
+  planType: string;
+  minDeposit: number;
+  maxDeposit: number;
+  collectionFrequency: string;
+  interestRate: number;
+  penaltyAmount: number;
+  graceDays: number;
+  status: "ACTIVE" | "DISABLED";
+}> & { organizationId: string; actorId: string; actorName: string }): Promise<void> {
+  const { organizationId, actorId, actorName, ...fields } = params;
+  await updateDoc(doc(db, "savings_plans", planId), { ...fields, updatedAt: serverTimestamp() });
+  await createAuditLog({
+    organizationId,
+    actorId,
+    actorRole: "OWNER",
+    actorName,
+    action: "SAVINGS_PLAN_UPDATED",
+    entityType: "SavingsPlan",
+    entityId: planId,
+    metadata: fields,
+  });
+}
+
+export async function deleteSavingsPlan(planId: string, organizationId: string, actorId: string, actorName: string): Promise<void> {
+  await deleteDoc(doc(db, "savings_plans", planId));
+  await createAuditLog({
+    organizationId,
+    actorId,
+    actorRole: "OWNER",
+    actorName,
+    action: "SAVINGS_PLAN_DELETED",
+    entityType: "SavingsPlan",
+    entityId: planId,
+    metadata: {},
+  });
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// SAVINGS APPLICATIONS
+// ════════════════════════════════════════════════════════════════════════════
+
+export async function createSavingsApplication(params: {
+  organizationId: string;
+  customerId: string;
+  customerName: string;
+  customerEmail: string;
+  customerPhone?: string;
+  planId: string;
+  planName: string;
+  planType: string;
+  depositAmount: number;
+  notes?: string;
+}): Promise<string> {
+  const ref = doc(collection(db, "savings_applications"));
+  await setDoc(ref, {
+    id: ref.id,
+    organizationId: params.organizationId,
+    customerId: params.customerId,
+    customerName: params.customerName,
+    customerEmail: params.customerEmail,
+    customerPhone: params.customerPhone || "",
+    planId: params.planId,
+    planName: params.planName,
+    planType: params.planType,
+    depositAmount: params.depositAmount,
+    notes: params.notes || "",
+    status: "PENDING",
+    createdAt: serverTimestamp(),
+    updatedAt: serverTimestamp(),
+  });
+  return ref.id;
+}
+
+export async function approveSavingsApplication(params: {
+  applicationId: string;
+  organizationId: string;
+  customerId: string;
+  customerName: string;
+  customerPhone?: string;
+  planId: string;
+  planName: string;
+  planType: string;
+  depositAmount: number;
+  interestRate?: number;
+  assignedAgentId: string;
+  assignedAgentName: string;
+  reviewedByActorId: string;
+  reviewedByActorName: string;
+}): Promise<string> {
+  const accountNumber = generateAccountNumber();
+  const accRef = doc(collection(db, "savings_accounts"));
+  await setDoc(accRef, {
+    id: accRef.id,
+    accountNumber,
+    customerId: params.customerId,
+    customerName: params.customerName,
+    customerPhone: params.customerPhone || "",
+    organizationId: params.organizationId,
+    planId: params.planId,
+    planName: params.planName,
+    planType: params.planType,
+    scheduledAmount: params.depositAmount,
+    totalBalance: 0,
+    interestRate: params.interestRate ?? 0,
+    assignedAgentId: params.assignedAgentId,
+    assignedAgentName: params.assignedAgentName,
+    startDate: serverTimestamp(),
+    status: "ACTIVE",
+    createdAt: serverTimestamp(),
+    updatedAt: serverTimestamp(),
+  });
+
+  await updateDoc(doc(db, "savings_applications", params.applicationId), {
+    status: "APPROVED",
+    savingsAccountId: accRef.id,
+    assignedAgentId: params.assignedAgentId,
+    assignedAgentName: params.assignedAgentName,
+    reviewedByActorId: params.reviewedByActorId,
+    reviewedByActorName: params.reviewedByActorName,
+    reviewedAt: serverTimestamp(),
+    updatedAt: serverTimestamp(),
+  });
+
+  await createAuditLog({
+    organizationId: params.organizationId,
+    actorId: params.reviewedByActorId,
+    actorRole: "OWNER",
+    actorName: params.reviewedByActorName,
+    action: "SAVINGS_APPLICATION_APPROVED",
+    entityType: "SavingsAccount",
+    entityId: accRef.id,
+    metadata: { planName: params.planName, customerId: params.customerId, accountNumber, assignedAgent: params.assignedAgentName },
+  });
+  return accRef.id;
+}
+
+export async function rejectSavingsApplication(params: {
+  applicationId: string;
+  organizationId: string;
+  reviewedByActorId: string;
+  reviewedByActorName: string;
+  rejectionReason: string;
+}): Promise<void> {
+  await updateDoc(doc(db, "savings_applications", params.applicationId), {
+    status: "REJECTED",
+    rejectionReason: params.rejectionReason,
+    reviewedByActorId: params.reviewedByActorId,
+    reviewedByActorName: params.reviewedByActorName,
+    reviewedAt: serverTimestamp(),
+    updatedAt: serverTimestamp(),
+  });
+  await createAuditLog({
+    organizationId: params.organizationId,
+    actorId: params.reviewedByActorId,
+    actorRole: "OWNER",
+    actorName: params.reviewedByActorName,
+    action: "SAVINGS_APPLICATION_REJECTED",
+    entityType: "SavingsApplication",
+    entityId: params.applicationId,
+    metadata: { reason: params.rejectionReason },
+  });
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// SAVINGS ACCOUNT MANAGEMENT
+// ════════════════════════════════════════════════════════════════════════════
+
+export async function updateSavingsAccountStatus(
+  accountId: string,
+  status: "ACTIVE" | "FROZEN" | "CLOSED",
+  organizationId: string,
+  actorId: string,
+  actorName: string
+): Promise<void> {
+  await updateDoc(doc(db, "savings_accounts", accountId), {
+    status,
+    updatedAt: serverTimestamp(),
+  });
+  await createAuditLog({
+    organizationId,
+    actorId,
+    actorRole: "OWNER",
+    actorName,
+    action: status === "FROZEN" ? "SAVINGS_ACCOUNT_FROZEN" : status === "CLOSED" ? "SAVINGS_ACCOUNT_CLOSED" : "SAVINGS_ACCOUNT_OPENED",
+    entityType: "SavingsAccount",
+    entityId: accountId,
+    metadata: { status },
+  });
+}
+
+export async function transferSavingsAgent(
+  accountId: string,
+  agentId: string,
+  agentName: string,
+  organizationId: string,
+  actorId: string,
+  actorName: string
+): Promise<void> {
+  await updateDoc(doc(db, "savings_accounts", accountId), {
+    assignedAgentId: agentId,
+    assignedAgentName: agentName,
+    updatedAt: serverTimestamp(),
+  });
+  await createAuditLog({
+    organizationId,
+    actorId,
+    actorRole: "OWNER",
+    actorName,
+    action: "SAVINGS_AGENT_TRANSFERRED",
+    entityType: "SavingsAccount",
+    entityId: accountId,
+    metadata: { newAgentId: agentId, newAgentName: agentName },
+  });
+}

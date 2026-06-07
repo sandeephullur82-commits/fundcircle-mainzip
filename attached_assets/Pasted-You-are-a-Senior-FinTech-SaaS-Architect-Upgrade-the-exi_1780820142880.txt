@@ -1,0 +1,336 @@
+You are a Senior FinTech SaaS Architect.
+
+Upgrade the existing FundCircle Pigmy Savings & Loan Platform.
+
+IMPORTANT:
+Do NOT modify, break, remove, or regress any existing functionality.
+
+Preserve:
+- Clerk Authentication
+- Clerk Organizations
+- Owner Dashboard
+- Agent Dashboard
+- Customer Dashboard
+- Loan Module
+- EMI Module
+- Collections Module
+- Reports Module
+- Firestore Database
+- Existing Roles & Permissions
+- Existing Realtime Features
+
+Only ADD the missing Savings Management System for Owners.
+
+==================================================
+OWNER SAVINGS MANAGEMENT MODULE
+==================================================
+
+Add a new sidebar menu:
+
+Dashboard
+Customers
+Collectors
+Collections
+Savings Management
+Loans & EMI
+Reports
+Audit Logs
+Notifications
+Billing
+Settings
+
+==================================================
+SAVINGS MANAGEMENT DASHBOARD
+==================================================
+
+Create a complete Owner Savings Management page.
+
+Top KPI Cards:
+
+Total Savings Customers
+Total Savings Balance
+Today's Savings Collection
+Monthly Savings Collection
+Active Savings Accounts
+Closed Savings Accounts
+
+All cards must update in realtime from Firestore.
+
+==================================================
+SAVINGS PLANS MANAGEMENT
+==================================================
+
+Owner can create unlimited savings plans.
+
+Fields:
+
+Plan Name
+Plan Type
+
+Daily Pigmy
+Weekly Pigmy
+Monthly Pigmy
+Recurring Deposit
+Fixed Deposit
+
+Minimum Deposit
+Maximum Deposit
+Collection Frequency
+Interest Rate
+Penalty Amount
+Grace Days
+Status
+
+Actions:
+
+Create Plan
+Edit Plan
+Disable Plan
+Delete Plan
+View Plan
+
+Realtime synchronization.
+
+==================================================
+SAVINGS ACCOUNT MANAGEMENT
+==================================================
+
+Owner can manage customer savings accounts.
+
+Columns:
+
+Account Number
+Customer Name
+Customer Phone
+Assigned Agent
+Plan Name
+Current Balance
+Total Deposits
+Status
+Created Date
+
+Actions:
+
+View
+Edit
+Freeze
+Activate
+Close Account
+Transfer Agent
+
+Realtime updates.
+
+==================================================
+SAVINGS APPLICATION WORKFLOW
+==================================================
+
+Customer Dashboard:
+
+Add:
+
+Open Savings Account
+
+When customer applies:
+
+Status = Pending
+
+Firestore Save
+
+Owner Dashboard receives realtime application.
+
+Owner Actions:
+
+Approve
+Reject
+
+Upon Approval:
+
+Create Savings Account
+Generate Account Number
+Assign Agent
+Activate Account
+
+==================================================
+AGENT ASSIGNMENT
+==================================================
+
+Owner can assign:
+
+Owner Self
+OR
+Any Active Agent
+
+during:
+
+Customer Creation
+Savings Approval
+Savings Account Transfer
+
+Assigned Agent must instantly see customer.
+
+==================================================
+SAVINGS COLLECTIONS
+==================================================
+
+Agent Dashboard:
+
+Record Savings Collection
+
+Fields:
+
+Customer
+Account
+Amount
+Date
+Collection Notes
+Receipt Number
+
+Upon Collection:
+
+Update Savings Balance
+Update Passbook
+Create Receipt
+Update Customer Dashboard
+Update Owner Dashboard
+Update Reports
+
+Realtime everywhere.
+
+==================================================
+CUSTOMER SAVINGS DASHBOARD
+==================================================
+
+Improve Savings Section.
+
+Show:
+
+Account Number
+Plan Type
+Current Balance
+Total Deposits
+Interest Earned
+Next Collection Date
+Assigned Agent
+Account Status
+
+Add:
+
+Deposit History
+Savings Analytics
+Download Statement
+Receipt History
+
+Realtime.
+
+==================================================
+CUSTOMER PASSBOOK
+==================================================
+
+Auto-generate entries:
+
+Opening Balance
+Savings Deposits
+Interest Credits
+Penalty Deductions
+Adjustments
+
+Columns:
+
+Date
+Description
+Credit
+Debit
+Balance
+
+Realtime.
+
+==================================================
+SAVINGS REPORTS
+==================================================
+
+Owner Reports:
+
+Savings Collection Report
+Agent Collection Report
+Customer Savings Report
+Daily Collection Report
+Monthly Collection Report
+Interest Report
+
+Export:
+
+CSV
+Excel
+PDF
+
+==================================================
+REALTIME REQUIREMENT
+==================================================
+
+Use Firestore onSnapshot listeners.
+
+DO NOT reload pages.
+
+Realtime synchronization only.
+
+When Owner creates:
+
+Plan
+Customer
+Agent
+Savings Account
+
+Update instantly:
+
+Owner Dashboard
+Agent Dashboard
+Customer Dashboard
+
+without refresh.
+
+==================================================
+MULTI ORGANIZATION ISOLATION
+==================================================
+
+Every Firestore document must contain:
+
+organizationId
+
+All queries must filter:
+
+where("organizationId","==",organizationId)
+
+Organization 1 can never access Organization 2 data.
+
+Complete tenant isolation.
+
+==================================================
+SECURITY
+==================================================
+
+Owner:
+Full CRUD
+
+Agent:
+Only assigned customers
+
+Customer:
+Only self data
+
+Firestore Rules must enforce this.
+
+==================================================
+FINAL REQUIREMENT
+==================================================
+
+Build a production-grade Pigmy Savings Management System similar to real Indian finance companies.
+
+Keep every existing feature working.
+
+Do not change existing routes.
+
+Do not change existing authentication.
+
+Do not break Loans, EMI, Collections, Reports, or Clerk Organization flows.
+
+Only extend the platform with a complete Owner Savings Management ecosystem fully integrated with Owner, Agent, and Customer dashboards using Firestore realtime synchronization.

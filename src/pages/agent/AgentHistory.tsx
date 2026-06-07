@@ -24,14 +24,15 @@ export default function AgentHistory() {
   const { organization } = useOrganization();
   const agentId = user?.id || "";
 
-  const { data: collections, loading } = useCollectionRealtime<Collection>("collections");
+  const { data: myCollections, loading } = useCollectionRealtime<Collection>(
+    "collections",
+    agentId ? [where("agentId", "==", agentId)] : []
+  );
   const { data: members } = useCollectionRealtime<Membership>("organizationMembers");
 
   const [period, setPeriod] = useState<Period>("ALL");
   const [typeFilter, setTypeFilter] = useState<TypeFilter>("ALL");
   const [search, setSearch] = useState("");
-
-  const myCollections = collections.filter((c) => c.agentId === agentId);
 
   const now = new Date();
   const filtered = myCollections.filter((col) => {

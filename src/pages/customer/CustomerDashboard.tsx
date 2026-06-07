@@ -9,7 +9,7 @@ import { where } from "firebase/firestore";
 import { useCollectionRealtimeRaw, useDocumentRealtime } from "@/lib/firestore-hooks";
 import type {
   Collection, Loan, LoanApplication, LoanInstallment,
-  Membership, SavingsAccount, SavingsTransaction, Notification, SupportTicket,
+  Membership, SavingsAccount, SavingsApplication, SavingsPlan, SavingsTransaction, Notification, SupportTicket,
 } from "@/types";
 
 // Tab components
@@ -102,10 +102,20 @@ export default function CustomerDashboard() {
     : ["dashboard", "savings", "loans", "receipts", "notifications"];
 
   const { data: savingsAccounts } = useCollectionRealtimeRaw<SavingsAccount>(
-    "savingsAccounts",
+    "savings_accounts",
     membershipId ? [where("customerId", "==", membershipId)] : []
   );
   const savingsAccount = savingsAccounts?.[0] ?? null;
+
+  const { data: savingsApplications } = useCollectionRealtimeRaw<SavingsApplication>(
+    "savings_applications",
+    membershipId ? [where("customerId", "==", membershipId)] : []
+  );
+
+  const { data: savingsPlans } = useCollectionRealtimeRaw<SavingsPlan>(
+    "savings_plans",
+    orgId ? [where("organizationId", "==", orgId), where("status", "==", "ACTIVE")] : []
+  );
 
   const { data: savingsTxs } = useCollectionRealtimeRaw<SavingsTransaction>(
     "savings_transactions",
@@ -204,6 +214,13 @@ export default function CustomerDashboard() {
             savingsAccount={savingsAccount}
             savingsTxs={txs}
             orgName={orgName}
+            savingsApplications={savingsApplications ?? []}
+            savingsPlans={savingsPlans ?? []}
+            organizationId={orgId}
+            customerId={membershipId ?? ""}
+            customerName={displayName}
+            customerEmail={user?.primaryEmailAddress?.emailAddress ?? ""}
+            customerPhone={membershipDoc?.phone}
           />
         );
       case "passbook":

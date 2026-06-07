@@ -1,7 +1,7 @@
 import React, { useMemo, useState } from "react";
 import {
-  PiggyBank, Download, TrendingUp, Calendar, Search, Filter,
-  BarChart3, ArrowUpRight,
+  PiggyBank, Download, TrendingUp, Calendar, Search,
+  BarChart3, ArrowUpRight, Clock, XCircle, CheckCircle, ChevronRight, Loader2, AlertCircle,
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
@@ -9,7 +9,9 @@ import {
   ResponsiveContainer, CartesianGrid,
 } from "recharts";
 import { format, subMonths, startOfMonth, endOfMonth } from "date-fns";
-import type { SavingsAccount, SavingsTransaction } from "@/types";
+import { toast } from "sonner";
+import type { SavingsAccount, SavingsApplication, SavingsPlan, SavingsTransaction } from "@/types";
+import { createSavingsApplication } from "@/lib/services";
 
 function toDate(ts: any): Date {
   if (!ts) return new Date(0);
@@ -22,15 +24,72 @@ interface Props {
   savingsAccount: SavingsAccount | null;
   savingsTxs: SavingsTransaction[];
   orgName: string;
+  savingsApplications?: SavingsApplication[];
+  savingsPlans?: SavingsPlan[];
+  organizationId?: string;
+  customerId?: string;
+  customerName?: string;
+  customerEmail?: string;
+  customerPhone?: string;
 }
 
 type SubTab = "history" | "analytics" | "statement";
 
-export default function SavingsTab({ savingsAccount, savingsTxs, orgName }: Props) {
+export default function SavingsTab({
+  savingsAccount, savingsTxs, orgName,
+  savingsApplications = [], savingsPlans = [],
+  organizationId = "", customerId = "", customerName = "", customerEmail = "", customerPhone,
+}: Props) {
   const [subTab, setSubTab] = useState<SubTab>("history");
   const [search, setSearch] = useState("");
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
+
+  // Apply-flow state
+  const [showApplyForm, setShowApplyForm] = useState(false);
+  const [selectedPlanId, setSelectedPlanId] = useState("");
+  const [depositAmount, setDepositAmount] = useState("");
+  const [notes, setNotes] = useState("");
+  const [applying, setApplying] = useState(false);
+
+  // Find latest application for this customer
+  const latestApplication = useMemo(() => {
+    return savingsApplications
+      .sort((a, b) => toDate(b.createdAt).getTime() - toDate(a.createdAt).getTime())[0] ?? null;
+  }, [savingsApplications]);
+
+  const handleApply = async () => {
+    if (!selectedPlanId) { toast.error("Please select a plan."); return; }
+    const plan = savingsPlans.find((p) => p.id === selectedPlanId);
+    if (!plan) { toast.error("Invalid plan selection."); return; }
+    const amount = Number(depositAmount);
+    if (!amount || amount < plan.minDeposit || amount > plan.maxDeposit) {
+      toast.error(`Amount must be between ₹${plan.minDeposit} and ₹${plan.maxDeposit}.`);
+      return;
+    }
+    setApplying(true);
+    try {
+      await createSavingsApplication({
+        organizationId,
+        customerId,
+        customerName,
+        customerEmail,
+        customerPhone,
+        planId: plan.id,
+        planName: plan.planName,
+        planType: plan.planType,
+        depositAmount: amount,
+        notes: notes.trim(),
+      });
+      toast.success("Application submitted! Your organization will review it shortly.");
+      setShowApplyForm(false);
+      setSelectedPlanId("");
+      setDepositAmount("");
+      setNotes("");
+    } catch (e: any) {
+      toast.error(e?.message || "Failed to submit application.");
+    } finally { setApplying(false); }
+  };
 
   const totalBalance = savingsAccount?.totalBalance ?? 0;
   const totalDeposits = savingsTxs.reduce((s, t) => s + t.amount, 0);
@@ -124,6 +183,208 @@ export default function SavingsTab({ savingsAccount, savingsTxs, orgName }: Prop
     }
     return null;
   };
+
+  // ── PRE-ACCOUNT STATES ──────────────────────────────────────────────────────
+  if (!savingsAccount) {
+    // Pending application
+    if (latestApplication?.status === "PENDING") {
+      return (
+        <div className="space-y-4">
+          <div className="bg-gradient-to-br from-amber-500 to-amber-600 rounded-2xl p-6 text-white text-center">
+            <div className="w-14 h-14 bg-white/20 rounded-full flex items-center justify-center mx-auto mb-3">
+              <Clock className="w-8 h-8 text-white" />
+            </div>
+            <p className="text-lg font-bold">Application Under Review</p>
+            <p className="text-amber-100 text-sm mt-1">
+              Your savings account application is being reviewed. We'll notify you once it's approved.
+            </p>
+          </div>
+          <Card>
+            <CardContent className="p-4 space-y-3">
+              <p className="text-sm font-semibold text-slate-900">Application Details</p>
+              {[
+                ["Plan", latestApplication.planName],
+                ["Amount", `₹${latestApplication.depositAmount.toLocaleString()} / collection`],
+                ["Status", "Pending Review"],
+                ["Applied", toDate(latestApplication.createdAt).getTime() > 0
+                  ? format(toDate(latestApplication.createdAt), "MMM d, yyyy")
+                  : "—"],
+              ].map(([k, v]) => (
+                <div key={k} className="flex justify-between text-sm">
+                  <span className="text-slate-500">{k}</span>
+                  <span className="font-semibold text-slate-900">{v}</span>
+                </div>
+              ))}
+              {latestApplication.notes && (
+                <p className="text-xs text-slate-400 italic border-t border-slate-100 pt-2">
+                  "{latestApplication.notes}"
+                </p>
+              )}
+            </CardContent>
+          </Card>
+          <p className="text-xs text-center text-slate-400">
+            Once approved, your account details will appear here automatically.
+          </p>
+        </div>
+      );
+    }
+
+    // Rejected application — allow re-apply
+    if (latestApplication?.status === "REJECTED") {
+      if (!showApplyForm) {
+        return (
+          <div className="space-y-4">
+            <div className="bg-gradient-to-br from-red-500 to-red-600 rounded-2xl p-6 text-white text-center">
+              <div className="w-14 h-14 bg-white/20 rounded-full flex items-center justify-center mx-auto mb-3">
+                <XCircle className="w-8 h-8 text-white" />
+              </div>
+              <p className="text-lg font-bold">Application Not Approved</p>
+              <p className="text-red-100 text-sm mt-1">Your previous application was rejected.</p>
+            </div>
+            <Card className="border-red-100">
+              <CardContent className="p-4 space-y-2">
+                <p className="text-sm font-semibold text-slate-900">Rejection Reason</p>
+                <div className="flex gap-2 p-3 bg-red-50 rounded-xl">
+                  <AlertCircle className="w-4 h-4 text-red-500 shrink-0 mt-0.5" />
+                  <p className="text-sm text-red-800">{latestApplication.rejectionReason || "No reason provided."}</p>
+                </div>
+              </CardContent>
+            </Card>
+            <button
+              onClick={() => setShowApplyForm(true)}
+              className="w-full py-3 rounded-xl bg-emerald-600 text-white font-semibold text-sm hover:bg-emerald-700 transition-colors"
+            >
+              Apply Again
+            </button>
+          </div>
+        );
+      }
+    }
+
+    // No account, no application — or re-applying after rejection
+    if (!showApplyForm) {
+      return (
+        <div className="space-y-4">
+          <div className="bg-gradient-to-br from-emerald-600 to-emerald-700 rounded-2xl p-6 text-white text-center">
+            <div className="w-14 h-14 bg-white/20 rounded-full flex items-center justify-center mx-auto mb-3">
+              <PiggyBank className="w-8 h-8 text-white" />
+            </div>
+            <p className="text-xl font-bold">Start Saving Today</p>
+            <p className="text-emerald-100 text-sm mt-1">
+              Open a savings account and build your financial future with regular deposits.
+            </p>
+          </div>
+          <div className="space-y-3">
+            {savingsPlans.length === 0 ? (
+              <Card>
+                <CardContent className="py-8 text-center text-slate-400">
+                  <PiggyBank className="w-8 h-8 mx-auto mb-2 opacity-30" />
+                  <p className="text-sm">No savings plans are available yet.</p>
+                  <p className="text-xs mt-1">Contact your organization for more information.</p>
+                </CardContent>
+              </Card>
+            ) : (
+              <>
+                <p className="text-sm font-semibold text-slate-900">Available Plans</p>
+                {savingsPlans.map((plan) => (
+                  <div key={plan.id} className="bg-slate-50 rounded-xl p-4 flex items-center justify-between">
+                    <div>
+                      <p className="font-semibold text-slate-900 text-sm">{plan.planName}</p>
+                      <p className="text-xs text-slate-500 mt-0.5">
+                        {plan.planType.replace(/_/g, " ")} · ₹{plan.minDeposit}–₹{plan.maxDeposit} / {plan.collectionFrequency.toLowerCase()}
+                      </p>
+                      <p className="text-xs text-emerald-600 mt-0.5">{plan.interestRate}% p.a. interest</p>
+                    </div>
+                    <ChevronRight className="w-4 h-4 text-slate-300" />
+                  </div>
+                ))}
+                <button
+                  onClick={() => setShowApplyForm(true)}
+                  className="w-full py-3 rounded-xl bg-emerald-600 text-white font-bold text-sm hover:bg-emerald-700 transition-colors flex items-center justify-center gap-2"
+                >
+                  <PiggyBank className="w-4 h-4" /> Open Savings Account
+                </button>
+              </>
+            )}
+          </div>
+        </div>
+      );
+    }
+
+    // Application form
+    const selectedPlan = savingsPlans.find((p) => p.id === selectedPlanId);
+    return (
+      <div className="space-y-4">
+        <div className="flex items-center gap-3">
+          <button onClick={() => { setShowApplyForm(false); setSelectedPlanId(""); setDepositAmount(""); setNotes(""); }}
+            className="p-2 rounded-xl bg-slate-100 hover:bg-slate-200 transition-colors">
+            ←
+          </button>
+          <div>
+            <p className="font-bold text-slate-900">Open Savings Account</p>
+            <p className="text-xs text-slate-500">Choose a plan and set your deposit amount</p>
+          </div>
+        </div>
+
+        <Card>
+          <CardContent className="p-4 space-y-4">
+            <div>
+              <label className="text-xs font-semibold text-slate-700 block mb-1">Select Plan *</label>
+              <div className="space-y-2">
+                {savingsPlans.map((plan) => (
+                  <button key={plan.id} onClick={() => { setSelectedPlanId(plan.id); setDepositAmount(String(plan.minDeposit)); }}
+                    className={`w-full p-3 rounded-xl border text-left transition-colors ${selectedPlanId === plan.id ? "border-emerald-500 bg-emerald-50" : "border-slate-200 bg-white hover:bg-slate-50"}`}>
+                    <p className="font-semibold text-slate-900 text-sm">{plan.planName}</p>
+                    <p className="text-xs text-slate-500 mt-0.5">
+                      {plan.planType.replace(/_/g, " ")} · ₹{plan.minDeposit}–₹{plan.maxDeposit} · {plan.interestRate}% p.a.
+                    </p>
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {selectedPlan && (
+              <div>
+                <label className="text-xs font-semibold text-slate-700 block mb-1">
+                  Deposit Amount (₹ {selectedPlan.minDeposit}–{selectedPlan.maxDeposit}) *
+                </label>
+                <input
+                  type="number"
+                  value={depositAmount}
+                  onChange={(e) => setDepositAmount(e.target.value)}
+                  min={selectedPlan.minDeposit}
+                  max={selectedPlan.maxDeposit}
+                  className="w-full h-11 px-3 rounded-xl border border-slate-200 bg-white text-slate-900 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-400/30"
+                />
+              </div>
+            )}
+
+            <div>
+              <label className="text-xs font-semibold text-slate-700 block mb-1">Notes (optional)</label>
+              <textarea
+                value={notes}
+                onChange={(e) => setNotes(e.target.value)}
+                placeholder="Any additional notes for the organization…"
+                className="w-full h-20 px-3 py-2 rounded-xl border border-slate-200 bg-white text-slate-900 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-emerald-400/30"
+              />
+            </div>
+
+            <button
+              onClick={handleApply}
+              disabled={applying || !selectedPlanId}
+              className="w-full py-3 rounded-xl bg-emerald-600 text-white font-bold text-sm hover:bg-emerald-700 transition-colors disabled:opacity-50 flex items-center justify-center gap-2"
+            >
+              {applying ? <><Loader2 className="w-4 h-4 animate-spin" /> Submitting…</> : "Submit Application"}
+            </button>
+          </CardContent>
+        </Card>
+
+        <p className="text-xs text-center text-slate-400">
+          After review, your organization will open your savings account and assign a collector.
+        </p>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-4">

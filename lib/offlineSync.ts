@@ -74,7 +74,7 @@ class OfflineSyncService {
     for (const col of pending) {
       try {
         await addDoc(collection(db, 'collections'), {
-          orgId: col.orgId,
+          organizationId: col.orgId,
           agentId: col.agentId,
           customerId: col.customerId,
           customerName: col.customerName,
@@ -102,7 +102,7 @@ class OfflineSyncService {
     for (const pay of pending) {
       try {
         await addDoc(collection(db, 'transactions'), {
-          orgId: pay.orgId,
+          organizationId: pay.orgId,
           customerId: pay.customerId,
           customerName: pay.customerName,
           amount: pay.amount,

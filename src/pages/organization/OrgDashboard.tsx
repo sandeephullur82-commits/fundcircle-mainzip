@@ -28,6 +28,7 @@ import OrgNotifications from "./OrgNotifications";
 import OrgSettings from "./OrgSettings";
 import OrgBilling from "./OrgBilling";
 import OrgAuditLogs from "./OrgAuditLogs";
+import OrgSavings from "./OrgSavings";
 import AgentOverview from "../agent/AgentOverview";
 import AgentCustomers from "../agent/AgentCustomers";
 
@@ -90,6 +91,7 @@ export default function OrgDashboard() {
     { id: "customers", label: "Customers", icon: Users },
     { id: "agents", label: "Collectors", icon: Users, badge: pendingSetupCount || undefined },
     { id: "collections", label: "Collections", icon: Wallet },
+    { id: "savings", label: "Savings Management", icon: ArrowUpCircle },
     { id: "loans", label: "Loans & EMI", icon: CreditCard },
     { id: "reports", label: "Reports", icon: FileText },
     { id: "auditLogs", label: "Audit Logs", icon: ClipboardList },
@@ -277,6 +279,7 @@ export default function OrgDashboard() {
           <TabsContent value="customers" className="mt-0"><OrgCustomers /></TabsContent>
           <TabsContent value="agents" className="mt-0"><OrgAgents /></TabsContent>
           <TabsContent value="collections" className="mt-0"><OrgCollections /></TabsContent>
+          <TabsContent value="savings" className="mt-0"><OrgSavings /></TabsContent>
           <TabsContent value="loans" className="mt-0"><OrgLoans /></TabsContent>
           <TabsContent value="reports" className="mt-0"><OrgReports /></TabsContent>
           <TabsContent value="notifications" className="mt-0"><OrgNotifications /></TabsContent>

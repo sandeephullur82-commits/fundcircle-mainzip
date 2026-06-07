@@ -110,16 +110,69 @@ export interface Customer {
   updatedAt?: FSTimestamp;
 }
 
+// ── Savings Plans ─────────────────────────────────────────────────────────────
+export type SavingsPlanType = "DAILY_PIGMY" | "WEEKLY_PIGMY" | "MONTHLY_PIGMY" | "RECURRING_DEPOSIT" | "FIXED_DEPOSIT";
+export type CollectionFrequency = "DAILY" | "WEEKLY" | "MONTHLY";
+
+export interface SavingsPlan {
+  id: string;
+  organizationId: string;
+  planName: string;
+  planType: SavingsPlanType;
+  minDeposit: number;
+  maxDeposit: number;
+  collectionFrequency: CollectionFrequency;
+  interestRate: number;
+  penaltyAmount: number;
+  graceDays: number;
+  status: "ACTIVE" | "DISABLED";
+  createdAt: FSTimestamp;
+  updatedAt?: FSTimestamp;
+}
+
+// ── Savings Applications (customer-initiated account opening) ─────────────────
+export interface SavingsApplication {
+  id: string;
+  organizationId: string;
+  customerId: string;
+  customerName: string;
+  customerEmail: string;
+  customerPhone?: string;
+  planId: string;
+  planName: string;
+  planType: string;
+  depositAmount: number;
+  notes?: string;
+  status: "PENDING" | "APPROVED" | "REJECTED";
+  rejectionReason?: string;
+  reviewedByActorId?: string;
+  reviewedByActorName?: string;
+  reviewedAt?: FSTimestamp;
+  savingsAccountId?: string;
+  assignedAgentId?: string;
+  assignedAgentName?: string;
+  createdAt: FSTimestamp;
+  updatedAt?: FSTimestamp;
+}
+
 // ── Savings Accounts ─────────────────────────────────────────────────────────
 export interface SavingsAccount {
   id: string;
+  accountNumber?: string;
   customerId: string;
+  customerName?: string;
+  customerPhone?: string;
   organizationId: string;
-  planType: "DAILY" | "WEEKLY" | "MONTHLY";
+  planId?: string;
+  planName?: string;
+  planType: "DAILY" | "WEEKLY" | "MONTHLY" | "DAILY_PIGMY" | "WEEKLY_PIGMY" | "MONTHLY_PIGMY" | "RECURRING_DEPOSIT" | "FIXED_DEPOSIT";
   scheduledAmount: number;
   totalBalance: number;
+  interestRate?: number;
   startDate: FSTimestamp;
-  status: "ACTIVE" | "SUSPENDED" | "CLOSED";
+  assignedAgentId?: string;
+  assignedAgentName?: string;
+  status: "ACTIVE" | "FROZEN" | "SUSPENDED" | "CLOSED";
   createdAt: FSTimestamp;
   updatedAt?: FSTimestamp;
 }
@@ -207,6 +260,10 @@ export type AuditAction =
   | "AGENT_CREATED" | "AGENT_DEACTIVATED" | "AGENT_REACTIVATED"
   | "CUSTOMER_CREATED" | "CUSTOMER_STATUS_CHANGED"
   | "SAVINGS_COLLECTION_RECORDED"
+  | "SAVINGS_PLAN_CREATED" | "SAVINGS_PLAN_UPDATED" | "SAVINGS_PLAN_DELETED"
+  | "SAVINGS_ACCOUNT_OPENED" | "SAVINGS_ACCOUNT_FROZEN" | "SAVINGS_ACCOUNT_CLOSED"
+  | "SAVINGS_APPLICATION_APPROVED" | "SAVINGS_APPLICATION_REJECTED"
+  | "SAVINGS_AGENT_TRANSFERRED"
   | "LOAN_CREATED" | "LOAN_APPROVED" | "LOAN_REJECTED" | "LOAN_CLOSED"
   | "EMI_COLLECTION_RECORDED"
   | "CUSTOMER_REASSIGNED"
