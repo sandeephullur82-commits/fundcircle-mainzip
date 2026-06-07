@@ -1,9 +1,11 @@
 import React, { useMemo, useState } from "react";
-import { FileText, Search, Download, Printer, PiggyBank, CreditCard, Eye } from "lucide-react";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { FileText, Search, Download, PiggyBank, CreditCard, Eye, ChevronDown } from "lucide-react";
+import { Card, CardContent } from "@/components/ui/card";
 import { format } from "date-fns";
 import ReceiptModal, { type ReceiptData } from "@/components/ReceiptModal";
 import type { Collection, SavingsTransaction, Loan } from "@/types";
+
+const PAGE_SIZE = 50;
 
 function toDate(ts: any): Date {
   if (!ts) return new Date(0);
@@ -30,6 +32,7 @@ export default function ReceiptsTab({
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
   const [viewReceipt, setViewReceipt] = useState<ReceiptData | null>(null);
+  const [page, setPage] = useState(1);
 
   const sortedCollections = useMemo(() => {
     return [...collections].sort(
@@ -50,6 +53,11 @@ export default function ReceiptsTab({
       return matchType && matchSearch && matchFrom && matchTo;
     });
   }, [sortedCollections, typeFilter, search, dateFrom, dateTo]);
+
+  const paginated = filtered.slice(0, page * PAGE_SIZE);
+  const hasMore = page * PAGE_SIZE < filtered.length;
+
+  const handleFilterChange = (fn: () => void) => { fn(); setPage(1); };
 
   const totalSavingsReceipts = collections.filter((c) => c.collectionType !== "LOAN_EMI").length;
   const totalEMIReceipts = collections.filter((c) => c.collectionType === "LOAN_EMI").length;
@@ -105,17 +113,17 @@ export default function ReceiptsTab({
     <div className="space-y-4">
       {/* Summary */}
       <div className="grid grid-cols-3 gap-2">
-        <button onClick={() => setTypeFilter("ALL")} className={`rounded-xl p-3 text-left border transition-all ${typeFilter === "ALL" ? "border-slate-300 bg-slate-100 dark:bg-slate-800" : "border-transparent bg-slate-50 dark:bg-slate-800/50"}`}>
+        <button onClick={() => handleFilterChange(() => setTypeFilter("ALL"))} className={`rounded-xl p-3 text-left border transition-all ${typeFilter === "ALL" ? "border-slate-300 bg-slate-100 dark:bg-slate-800" : "border-transparent bg-slate-50 dark:bg-slate-800/50"}`}>
           <p className="text-[10px] text-slate-500 font-medium">Total</p>
           <p className="text-xl font-black text-slate-700 dark:text-slate-300">{collections.length}</p>
           <p className="text-[10px] text-slate-400">All receipts</p>
         </button>
-        <button onClick={() => setTypeFilter("SAVINGS")} className={`rounded-xl p-3 text-left border transition-all ${typeFilter === "SAVINGS" ? "border-emerald-300 bg-emerald-50 dark:bg-emerald-950/40" : "border-transparent bg-emerald-50 dark:bg-emerald-950/20"}`}>
+        <button onClick={() => handleFilterChange(() => setTypeFilter("SAVINGS"))} className={`rounded-xl p-3 text-left border transition-all ${typeFilter === "SAVINGS" ? "border-emerald-300 bg-emerald-50 dark:bg-emerald-950/40" : "border-transparent bg-emerald-50 dark:bg-emerald-950/20"}`}>
           <p className="text-[10px] text-emerald-600 font-medium">Savings</p>
           <p className="text-xl font-black text-emerald-700 dark:text-emerald-400">{totalSavingsReceipts}</p>
           <p className="text-[10px] text-emerald-500">Deposits</p>
         </button>
-        <button onClick={() => setTypeFilter("LOAN_EMI")} className={`rounded-xl p-3 text-left border transition-all ${typeFilter === "LOAN_EMI" ? "border-indigo-300 bg-indigo-50 dark:bg-indigo-950/40" : "border-transparent bg-indigo-50 dark:bg-indigo-950/20"}`}>
+        <button onClick={() => handleFilterChange(() => setTypeFilter("LOAN_EMI"))} className={`rounded-xl p-3 text-left border transition-all ${typeFilter === "LOAN_EMI" ? "border-indigo-300 bg-indigo-50 dark:bg-indigo-950/40" : "border-transparent bg-indigo-50 dark:bg-indigo-950/20"}`}>
           <p className="text-[10px] text-indigo-600 font-medium">EMI</p>
           <p className="text-xl font-black text-indigo-700 dark:text-indigo-400">{totalEMIReceipts}</p>
           <p className="text-[10px] text-indigo-500">Payments</p>
@@ -129,7 +137,7 @@ export default function ReceiptsTab({
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400" />
             <input
               value={search}
-              onChange={(e) => setSearch(e.target.value)}
+              onChange={(e) => handleFilterChange(() => setSearch(e.target.value))}
               placeholder="Search receipt, collector…"
               className="w-full h-9 pl-8 pr-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white text-xs focus:outline-none focus:ring-2 focus:ring-emerald-400/30"
             />
@@ -143,12 +151,12 @@ export default function ReceiptsTab({
           </button>
         </div>
         <div className="flex gap-2">
-          <input type="date" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)}
+          <input type="date" value={dateFrom} onChange={(e) => handleFilterChange(() => setDateFrom(e.target.value))}
             className="flex-1 h-9 px-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 text-xs focus:outline-none" />
-          <input type="date" value={dateTo} onChange={(e) => setDateTo(e.target.value)}
+          <input type="date" value={dateTo} onChange={(e) => handleFilterChange(() => setDateTo(e.target.value))}
             className="flex-1 h-9 px-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 text-xs focus:outline-none" />
           {(search || dateFrom || dateTo) && (
-            <button onClick={() => { setSearch(""); setDateFrom(""); setDateTo(""); }}
+            <button onClick={() => handleFilterChange(() => { setSearch(""); setDateFrom(""); setDateTo(""); })}
               className="px-3 h-9 rounded-xl bg-slate-100 dark:bg-slate-700 text-slate-500 text-xs font-semibold">
               Clear
             </button>
@@ -165,69 +173,84 @@ export default function ReceiptsTab({
               <p className="text-sm">No receipts found.</p>
             </div>
           ) : (
-            <div className="divide-y divide-slate-50 dark:divide-slate-800">
-              {filtered.map((col) => {
-                const d = toDate(col.collectedAt ?? col.timestamp);
-                const isSavings = col.collectionType !== "LOAN_EMI";
-                return (
-                  <div key={col.id} className="flex items-center justify-between px-4 py-3">
-                    <div className="flex items-center gap-3 min-w-0">
-                      <div className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 ${
-                        isSavings
-                          ? "bg-emerald-50 dark:bg-emerald-950/30"
-                          : "bg-indigo-50 dark:bg-indigo-950/30"
-                      }`}>
-                        {isSavings
-                          ? <PiggyBank className="w-4.5 h-4.5 text-emerald-600" />
-                          : <CreditCard className="w-4.5 h-4.5 text-indigo-600" />}
-                      </div>
-                      <div className="min-w-0">
-                        <div className="flex items-center gap-1.5 mb-0.5">
-                          <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full ${
-                            isSavings
-                              ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-400"
-                              : "bg-indigo-100 text-indigo-700 dark:bg-indigo-900/40 dark:text-indigo-400"
-                          }`}>
-                            {isSavings ? "SAVINGS" : "EMI"}
-                          </span>
-                          <span className="font-mono text-[10px] text-slate-400 dark:text-slate-500 truncate">
-                            {col.receiptNo || "—"}
-                          </span>
+            <>
+              <div className="divide-y divide-slate-50 dark:divide-slate-800">
+                {paginated.map((col) => {
+                  const d = toDate(col.collectedAt ?? col.timestamp);
+                  const isSavings = col.collectionType !== "LOAN_EMI";
+                  return (
+                    <div key={col.id} className="flex items-center justify-between px-4 py-3">
+                      <div className="flex items-center gap-3 min-w-0">
+                        <div className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 ${
+                          isSavings
+                            ? "bg-emerald-50 dark:bg-emerald-950/30"
+                            : "bg-indigo-50 dark:bg-indigo-950/30"
+                        }`}>
+                          {isSavings
+                            ? <PiggyBank className="w-4 h-4 text-emerald-600" />
+                            : <CreditCard className="w-4 h-4 text-indigo-600" />}
                         </div>
-                        <p className="text-xs text-slate-500 dark:text-slate-400 truncate">
-                          {col.collectedByName || "Agent"} · {d.getTime() > 0 ? format(d, "MMM d, yyyy") : "—"}
-                        </p>
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-1.5 mb-0.5">
+                            <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full ${
+                              isSavings
+                                ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-400"
+                                : "bg-indigo-100 text-indigo-700 dark:bg-indigo-900/40 dark:text-indigo-400"
+                            }`}>
+                              {isSavings ? "SAVINGS" : "EMI"}
+                            </span>
+                            <span className="font-mono text-[10px] text-slate-400 dark:text-slate-500 truncate">
+                              {col.receiptNo || "—"}
+                            </span>
+                          </div>
+                          <p className="text-xs text-slate-500 dark:text-slate-400 truncate">
+                            {col.collectedByName || "Agent"} · {d.getTime() > 0 ? format(d, "MMM d, yyyy") : "—"}
+                          </p>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-3 shrink-0">
+                        <div className="text-right">
+                          <p className="font-bold text-emerald-600 dark:text-emerald-400 text-sm">
+                            ₹{Number(col.amount).toLocaleString()}
+                          </p>
+                          <p className="text-[10px] text-slate-400">
+                            {d.getTime() > 0 ? format(d, "h:mm a") : ""}
+                          </p>
+                        </div>
+                        <button
+                          onClick={() => handleViewReceipt(col)}
+                          className="w-8 h-8 rounded-xl bg-slate-100 dark:bg-slate-800 flex items-center justify-center hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors"
+                          title="View Receipt"
+                        >
+                          <Eye className="w-3.5 h-3.5 text-slate-500" />
+                        </button>
                       </div>
                     </div>
-                    <div className="flex items-center gap-3 shrink-0">
-                      <div className="text-right">
-                        <p className="font-bold text-emerald-600 dark:text-emerald-400 text-sm">
-                          ₹{Number(col.amount).toLocaleString()}
-                        </p>
-                        <p className="text-[10px] text-slate-400">
-                          {d.getTime() > 0 ? format(d, "h:mm a") : ""}
-                        </p>
-                      </div>
-                      <button
-                        onClick={() => handleViewReceipt(col)}
-                        className="w-8 h-8 rounded-xl bg-slate-100 dark:bg-slate-800 flex items-center justify-center hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors"
-                        title="View Receipt"
-                      >
-                        <Eye className="w-3.5 h-3.5 text-slate-500" />
-                      </button>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          )}
-          {filtered.length > 0 && (
-            <div className="border-t border-slate-100 dark:border-slate-800 px-4 py-2.5 flex justify-between">
-              <p className="text-xs text-slate-500">{filtered.length} receipts</p>
-              <p className="text-sm font-black text-emerald-700 dark:text-emerald-400">
-                ₹{filtered.reduce((s, c) => s + Number(c.amount), 0).toLocaleString()}
-              </p>
-            </div>
+                  );
+                })}
+              </div>
+
+              {/* Footer */}
+              <div className="border-t border-slate-100 dark:border-slate-800 px-4 py-2.5 flex items-center justify-between">
+                <p className="text-xs text-slate-500">
+                  Showing {paginated.length} of {filtered.length} receipts
+                </p>
+                {hasMore && (
+                  <button
+                    onClick={() => setPage((p) => p + 1)}
+                    className="flex items-center gap-1.5 text-xs font-semibold text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white transition-colors"
+                  >
+                    <ChevronDown className="w-3.5 h-3.5" />
+                    Load {Math.min(PAGE_SIZE, filtered.length - paginated.length)} more
+                  </button>
+                )}
+                {!hasMore && (
+                  <p className="text-sm font-black text-emerald-700 dark:text-emerald-400">
+                    ₹{filtered.reduce((s, c) => s + Number(c.amount), 0).toLocaleString()}
+                  </p>
+                )}
+              </div>
+            </>
           )}
         </CardContent>
       </Card>

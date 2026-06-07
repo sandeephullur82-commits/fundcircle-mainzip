@@ -2,12 +2,14 @@ import { useState } from "react";
 import { useCollectionRealtime } from "@/lib/firestore-hooks";
 import { useUser, useOrganization } from "@clerk/clerk-react";
 import { Collection, Membership } from "@/types";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { format, startOfDay, startOfWeek, startOfMonth } from "date-fns";
-import { Search, Download, Receipt, PiggyBank, CreditCard } from "lucide-react";
+import { Search, Download, Receipt, PiggyBank, CreditCard, ChevronDown } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { where } from "firebase/firestore";
+
+const PAGE_SIZE = 50;
 
 function toDate(ts: any): Date {
   if (!ts) return new Date(0);
@@ -33,34 +35,34 @@ export default function AgentHistory() {
   const [period, setPeriod] = useState<Period>("ALL");
   const [typeFilter, setTypeFilter] = useState<TypeFilter>("ALL");
   const [search, setSearch] = useState("");
+  const [page, setPage] = useState(1);
 
   const now = new Date();
   const filtered = myCollections.filter((col) => {
     const d = toDate(col.collectedAt || col.timestamp);
-
-    // Period filter
     if (period === "TODAY" && d < startOfDay(now)) return false;
     if (period === "WEEK" && d < startOfWeek(now, { weekStartsOn: 1 })) return false;
     if (period === "MONTH" && d < startOfMonth(now)) return false;
-
-    // Type filter
     if (typeFilter === "SAVINGS" && col.collectionType === "LOAN_EMI") return false;
     if (typeFilter === "LOAN_EMI" && col.collectionType !== "LOAN_EMI") return false;
-
-    // Search
     if (search) {
       const cust = members.find((m) => m.id === col.customerId || m.clerkUserId === col.customerId);
       const custName = (cust as any)?.fullName || (cust as any)?.name || "";
       const receiptNo = col.receiptNo || "";
       if (!custName.toLowerCase().includes(search.toLowerCase()) && !receiptNo.includes(search)) return false;
     }
-
     return true;
   }).sort((a, b) => toDate(b.collectedAt || b.timestamp).valueOf() - toDate(a.collectedAt || a.timestamp).valueOf());
 
   const totalAmount = filtered.reduce((s, c) => s + (Number(c.amount) || 0), 0);
   const savingsTotal = filtered.filter((c) => c.collectionType !== "LOAN_EMI").reduce((s, c) => s + Number(c.amount), 0);
   const emiTotal = filtered.filter((c) => c.collectionType === "LOAN_EMI").reduce((s, c) => s + Number(c.amount), 0);
+
+  const totalPages = Math.ceil(filtered.length / PAGE_SIZE);
+  const paginated = filtered.slice(0, page * PAGE_SIZE);
+  const hasMore = page * PAGE_SIZE < filtered.length;
+
+  const handleFilterChange = (fn: () => void) => { fn(); setPage(1); };
 
   const exportCSV = () => {
     const header = "Receipt No,Customer,Type,Amount,Date\n";
@@ -115,7 +117,7 @@ export default function AgentHistory() {
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
           <Input
             value={search}
-            onChange={(e) => setSearch(e.target.value)}
+            onChange={(e) => handleFilterChange(() => setSearch(e.target.value))}
             placeholder="Search customer or receipt number…"
             className="pl-9 h-9"
           />
@@ -124,7 +126,7 @@ export default function AgentHistory() {
           {(["ALL", "TODAY", "WEEK", "MONTH"] as Period[]).map((p) => (
             <button
               key={p}
-              onClick={() => setPeriod(p)}
+              onClick={() => handleFilterChange(() => setPeriod(p))}
               className={`px-3 py-1.5 rounded-lg text-xs font-semibold border transition-colors ${period === p ? "bg-slate-900 text-white border-slate-900" : "bg-white text-slate-600 border-slate-200 hover:bg-slate-50"}`}
             >
               {p === "ALL" ? "All Time" : p === "TODAY" ? "Today" : p === "WEEK" ? "This Week" : "This Month"}
@@ -134,7 +136,7 @@ export default function AgentHistory() {
           {(["ALL", "SAVINGS", "LOAN_EMI"] as TypeFilter[]).map((t) => (
             <button
               key={t}
-              onClick={() => setTypeFilter(t)}
+              onClick={() => handleFilterChange(() => setTypeFilter(t))}
               className={`px-3 py-1.5 rounded-lg text-xs font-semibold border transition-colors ${typeFilter === t ? "bg-slate-900 text-white border-slate-900" : "bg-white text-slate-600 border-slate-200 hover:bg-slate-50"}`}
             >
               {t === "ALL" ? "All Types" : t === "SAVINGS" ? "Savings" : "EMI"}
@@ -154,37 +156,55 @@ export default function AgentHistory() {
               <p className="text-sm">No collections found.</p>
             </div>
           ) : (
-            <div className="divide-y divide-slate-50">
-              {filtered.map((col) => {
-                const cust = members.find((m) => m.id === col.customerId || m.clerkUserId === col.customerId);
-                const name = (cust as any)?.fullName || (cust as any)?.name || col.customerId?.slice(-8) || "Customer";
-                const d = toDate(col.collectedAt || col.timestamp);
-                const isSavings = col.collectionType !== "LOAN_EMI";
-                return (
-                  <div key={col.id} className="flex items-center justify-between px-4 py-3">
-                    <div className="flex items-start gap-3">
-                      <div className={`w-8 h-8 rounded-xl flex items-center justify-center shrink-0 mt-0.5 ${isSavings ? "bg-emerald-100" : "bg-indigo-100"}`}>
-                        {isSavings ? <PiggyBank className="w-4 h-4 text-emerald-600" /> : <CreditCard className="w-4 h-4 text-indigo-600" />}
-                      </div>
-                      <div>
-                        <p className="font-semibold text-slate-900 text-sm">{name}</p>
-                        <div className="flex items-center gap-2 mt-0.5">
-                          <span className={`text-[10px] font-bold ${isSavings ? "text-emerald-600" : "text-indigo-600"}`}>
-                            {isSavings ? "SAVINGS" : "EMI"}
-                          </span>
-                          <span className="text-xs text-slate-400">{d.getTime() > 0 ? format(d, "MMM d, h:mm a") : "—"}</span>
-                          {col.receiptNo && <span className="text-xs text-slate-300 font-mono hidden sm:block">{col.receiptNo}</span>}
+            <>
+              <div className="divide-y divide-slate-50">
+                {paginated.map((col) => {
+                  const cust = members.find((m) => m.id === col.customerId || m.clerkUserId === col.customerId);
+                  const name = (cust as any)?.fullName || (cust as any)?.name || col.customerId?.slice(-8) || "Customer";
+                  const d = toDate(col.collectedAt || col.timestamp);
+                  const isSavings = col.collectionType !== "LOAN_EMI";
+                  return (
+                    <div key={col.id} className="flex items-center justify-between px-4 py-3">
+                      <div className="flex items-start gap-3">
+                        <div className={`w-8 h-8 rounded-xl flex items-center justify-center shrink-0 mt-0.5 ${isSavings ? "bg-emerald-100" : "bg-indigo-100"}`}>
+                          {isSavings ? <PiggyBank className="w-4 h-4 text-emerald-600" /> : <CreditCard className="w-4 h-4 text-indigo-600" />}
+                        </div>
+                        <div>
+                          <p className="font-semibold text-slate-900 text-sm">{name}</p>
+                          <div className="flex items-center gap-2 mt-0.5">
+                            <span className={`text-[10px] font-bold ${isSavings ? "text-emerald-600" : "text-indigo-600"}`}>
+                              {isSavings ? "SAVINGS" : "EMI"}
+                            </span>
+                            <span className="text-xs text-slate-400">{d.getTime() > 0 ? format(d, "MMM d, h:mm a") : "—"}</span>
+                            {col.receiptNo && <span className="text-xs text-slate-300 font-mono hidden sm:block">{col.receiptNo}</span>}
+                          </div>
                         </div>
                       </div>
+                      <div className="text-right">
+                        <p className="font-bold text-emerald-600 text-sm">₹{Number(col.amount).toLocaleString()}</p>
+                        {col.receiptNo && <p className="font-mono text-[10px] text-slate-300 sm:hidden">{col.receiptNo}</p>}
+                      </div>
                     </div>
-                    <div className="text-right">
-                      <p className="font-bold text-emerald-600 text-sm">₹{Number(col.amount).toLocaleString()}</p>
-                      {col.receiptNo && <p className="font-mono text-[10px] text-slate-300 sm:hidden">{col.receiptNo}</p>}
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
+                  );
+                })}
+              </div>
+
+              {/* Pagination footer */}
+              <div className="border-t border-slate-100 px-4 py-3 flex items-center justify-between">
+                <p className="text-xs text-slate-400">
+                  Showing {paginated.length} of {filtered.length} records
+                </p>
+                {hasMore && (
+                  <button
+                    onClick={() => setPage((p) => p + 1)}
+                    className="flex items-center gap-1.5 text-xs font-semibold text-slate-600 hover:text-slate-900 transition-colors"
+                  >
+                    <ChevronDown className="w-3.5 h-3.5" />
+                    Load {Math.min(PAGE_SIZE, filtered.length - paginated.length)} more
+                  </button>
+                )}
+              </div>
+            </>
           )}
         </CardContent>
       </Card>

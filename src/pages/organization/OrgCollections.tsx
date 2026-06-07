@@ -1,12 +1,14 @@
 import { useState } from "react";
 import { useCollectionRealtime } from "@/lib/firestore-hooks";
 import { Collection, Membership } from "@/types";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Input } from "@/components/ui/input";
-import { format, startOfDay, subDays, isAfter, isBefore } from "date-fns";
-import { Search, Download, IndianRupee, Filter } from "lucide-react";
+import { format, startOfDay, subDays, isAfter } from "date-fns";
+import { Search, Download, IndianRupee, ChevronDown } from "lucide-react";
 import { Button } from "@/components/ui/button";
+
+const PAGE_SIZE = 50;
 
 function toDate(ts: any): Date {
   if (!ts) return new Date(0);
@@ -26,6 +28,9 @@ export default function OrgCollections() {
   const [typeFilter, setTypeFilter] = useState<CollectionTypeFilter>("ALL");
   const [dateFilter, setDateFilter] = useState<DateRangeFilter>("ALL");
   const [agentFilter, setAgentFilter] = useState("");
+  const [page, setPage] = useState(1);
+
+  const handleFilterChange = (fn: () => void) => { fn(); setPage(1); };
 
   const agents = members.filter((m) => ["AGENT", "PIGMY_COLLECTOR", "agent"].includes(m.role as string));
 
@@ -60,6 +65,9 @@ export default function OrgCollections() {
   const totalAmount = filtered.reduce((s, c) => s + (Number(c.amount) || 0), 0);
   const savingsTotal = filtered.filter((c) => c.collectionType !== "LOAN_EMI").reduce((s, c) => s + (Number(c.amount) || 0), 0);
   const emiTotal = filtered.filter((c) => c.collectionType === "LOAN_EMI").reduce((s, c) => s + (Number(c.amount) || 0), 0);
+
+  const paginated = filtered.slice(0, page * PAGE_SIZE);
+  const hasMore = page * PAGE_SIZE < filtered.length;
 
   const exportCSV = () => {
     const header = "Receipt No,Customer,Type,Agent,Amount,Date\n";
@@ -99,7 +107,7 @@ export default function OrgCollections() {
         <Card className="bg-slate-50 border-slate-200">
           <CardContent className="p-4">
             <p className="text-2xl font-black text-slate-900">₹{totalAmount.toLocaleString()}</p>
-            <p className="text-xs text-slate-500">Total ({filtered.length} transactions)</p>
+            <p className="text-xs text-slate-500">Total ({filtered.length} transaction{filtered.length !== 1 ? "s" : ""})</p>
           </CardContent>
         </Card>
         <Card className="bg-emerald-50 border-emerald-100">
@@ -120,7 +128,7 @@ export default function OrgCollections() {
       <div className="flex flex-wrap gap-2 items-center">
         <div className="relative flex-1 min-w-[160px]">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
-          <Input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search customer or receipt…" className="pl-9 h-9" />
+          <Input value={search} onChange={(e) => handleFilterChange(() => setSearch(e.target.value))} placeholder="Search customer or receipt…" className="pl-9 h-9" />
         </div>
 
         {/* Type filter */}
@@ -128,7 +136,7 @@ export default function OrgCollections() {
           {(["ALL", "SAVINGS", "LOAN_EMI"] as CollectionTypeFilter[]).map((t) => (
             <button
               key={t}
-              onClick={() => setTypeFilter(t)}
+              onClick={() => handleFilterChange(() => setTypeFilter(t))}
               className={`px-3 py-1.5 rounded-lg text-xs font-semibold border transition-colors ${typeFilter === t ? "bg-slate-900 text-white border-slate-900" : "bg-white text-slate-600 border-slate-200 hover:bg-slate-50"}`}
             >
               {t === "ALL" ? "All Types" : t === "SAVINGS" ? "Savings" : "EMI"}
@@ -141,7 +149,7 @@ export default function OrgCollections() {
           {(["ALL", "TODAY", "WEEK", "MONTH"] as DateRangeFilter[]).map((d) => (
             <button
               key={d}
-              onClick={() => setDateFilter(d)}
+              onClick={() => handleFilterChange(() => setDateFilter(d))}
               className={`px-3 py-1.5 rounded-lg text-xs font-semibold border transition-colors ${dateFilter === d ? "bg-slate-900 text-white border-slate-900" : "bg-white text-slate-600 border-slate-200 hover:bg-slate-50"}`}
             >
               {d === "ALL" ? "All Time" : d === "TODAY" ? "Today" : d === "WEEK" ? "This Week" : "This Month"}
@@ -154,7 +162,7 @@ export default function OrgCollections() {
           <select
             className="border border-slate-200 rounded-lg h-9 px-3 text-sm bg-white text-slate-700"
             value={agentFilter}
-            onChange={(e) => setAgentFilter(e.target.value)}
+            onChange={(e) => handleFilterChange(() => setAgentFilter(e.target.value))}
           >
             <option value="">All Agents</option>
             {agents.map((a) => (
@@ -190,7 +198,7 @@ export default function OrgCollections() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {filtered.map((col) => {
+                  {paginated.map((col) => {
                     const cust = members.find((m) => m.id === col.customerId || m.clerkUserId === col.customerId);
                     const agent = members.find((m) => m.id === col.agentId || m.clerkUserId === col.agentId);
                     const d = toDate(col.collectedAt || col.timestamp);
@@ -220,6 +228,24 @@ export default function OrgCollections() {
                   })}
                 </TableBody>
               </Table>
+            </div>
+          )}
+
+          {/* Pagination footer */}
+          {filtered.length > 0 && (
+            <div className="border-t border-slate-100 px-4 py-3 flex items-center justify-between">
+              <p className="text-xs text-slate-400">
+                Showing {paginated.length} of {filtered.length} records
+              </p>
+              {hasMore && (
+                <button
+                  onClick={() => setPage((p) => p + 1)}
+                  className="flex items-center gap-1.5 text-xs font-semibold text-slate-600 hover:text-slate-900 transition-colors"
+                >
+                  <ChevronDown className="w-3.5 h-3.5" />
+                  Load {Math.min(PAGE_SIZE, filtered.length - paginated.length)} more
+                </button>
+              )}
             </div>
           )}
         </CardContent>

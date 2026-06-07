@@ -443,8 +443,11 @@ export async function recordEMICollection(params: {
   const loanSnap = await getDoc(loanRef);
   if (!loanSnap.exists()) throw new Error("Loan not found.");
   const loan = loanSnap.data() as Loan;
-  const newOutstanding = Math.max(0, (loan.outstandingBalance ?? loan.balanceRemaining ?? 0) - params.amount);
-  const loanClosed = newOutstanding === 0;
+  const rawOutstanding = (loan.outstandingBalance ?? loan.balanceRemaining ?? 0) - params.amount;
+  // Use a 5-paise (₹0.05) rounding tolerance so sub-cent floating-point residue
+  // never prevents a fully-paid loan from closing automatically.
+  const loanClosed = rawOutstanding <= 0.05;
+  const newOutstanding = loanClosed ? 0 : Math.round(rawOutstanding * 100) / 100;
 
   await updateDoc(loanRef, {
     outstandingBalance: newOutstanding,
