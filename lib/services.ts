@@ -529,22 +529,57 @@ export async function createDirectMember(params: {
   const emailKey = params.email.trim().toLowerCase();
   const endpoint = params.role === "AGENT" ? "/api/create-agent" : "/api/create-customer";
 
+  const payload = {
+    firstName: params.firstName.trim(),
+    lastName: params.lastName.trim(),
+    email: emailKey,
+    phone: params.phone?.trim() || "",
+    organizationId: params.organizationId,
+    createdBy: params.createdBy,
+  };
+
+  console.log("[FC createDirectMember] ▶ Starting member creation");
+  console.log("[FC createDirectMember]   Org ID  :", params.organizationId);
+  console.log("[FC createDirectMember]   User ID :", params.createdBy);
+  console.log("[FC createDirectMember]   Role    :", params.role);
+  console.log("[FC createDirectMember]   Endpoint:", endpoint);
+  console.log("[FC createDirectMember]   Payload :", JSON.stringify(payload));
+
+  if (!params.organizationId) {
+    throw new Error("No active organization selected. Please refresh and try again.");
+  }
+  if (!params.createdBy) {
+    throw new Error("User identity not found. Please sign in again.");
+  }
+
   const res = await fetch(endpoint, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      firstName: params.firstName.trim(),
-      lastName: params.lastName.trim(),
-      email: emailKey,
-      phone: params.phone?.trim() || "",
-      organizationId: params.organizationId,
-      createdBy: params.createdBy,
-    }),
+    body: JSON.stringify(payload),
   });
 
+  console.log("[FC createDirectMember]   HTTP status:", res.status, res.statusText);
+
   if (!res.ok) {
-    const body = await res.json().catch(() => ({}));
-    throw new Error(body.error || `Failed to create ${params.role.toLowerCase()} (HTTP ${res.status})`);
+    const contentType = res.headers.get("content-type") || "";
+    let errorMsg: string;
+    if (contentType.includes("application/json")) {
+      const body = await res.json().catch(() => ({}));
+      errorMsg = body.error || `Failed to create ${params.role.toLowerCase()} (HTTP ${res.status})`;
+    } else {
+      // Non-JSON response (HTML error page from proxy/server crash)
+      const text = await res.text().catch(() => "");
+      console.error("[FC createDirectMember] Non-JSON response body:", text.slice(0, 200));
+      if (res.status === 404) {
+        errorMsg = "API server unreachable. Please wait a moment and try again.";
+      } else if (res.status === 502 || res.status === 503) {
+        errorMsg = "Service temporarily unavailable. Please try again.";
+      } else {
+        errorMsg = `Failed to create ${params.role.toLowerCase()} (HTTP ${res.status})`;
+      }
+    }
+    console.error("[FC createDirectMember] ✗ Error:", errorMsg);
+    throw new Error(errorMsg);
   }
 
   const { userId: clerkUserId, generatedPassword } = await res.json();

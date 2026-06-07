@@ -169,6 +169,12 @@ export default function OrgCustomers() {
 
   const handleAddCustomer = async (e: React.FormEvent) => {
     e.preventDefault();
+
+    console.log("[FC OrgCustomers] ▶ Add Customer clicked");
+    console.log("[FC OrgCustomers]   Org ID :", organization?.id ?? "MISSING");
+    console.log("[FC OrgCustomers]   User ID:", user?.id ?? "MISSING");
+    console.log("[FC OrgCustomers]   Role   : OWNER (org dashboard)");
+
     if (!organization?.id) { toast.error("No active organization selected."); return; }
     if (!user?.id) { toast.error("Missing authenticated owner identity."); return; }
     if (!firstName.trim()) { toast.error("First name is required."); return; }

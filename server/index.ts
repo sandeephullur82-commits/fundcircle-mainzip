@@ -2,6 +2,14 @@ import express, { Request, Response, NextFunction } from "express";
 import cors from "cors";
 import { createClerkClient } from "@clerk/backend";
 
+// ─── Process-level crash guards ───────────────────────────────────────────────
+process.on("uncaughtException", (err) => {
+  console.error("[FC API] uncaughtException — server staying alive:", err?.message ?? err);
+});
+process.on("unhandledRejection", (reason) => {
+  console.error("[FC API] unhandledRejection — server staying alive:", reason);
+});
+
 const app = express();
 app.use(cors({ origin: true, credentials: true }));
 app.use(express.json({ limit: "50kb" }));
@@ -66,7 +74,13 @@ app.post("/api/create-agent", async (req, res) => {
     phone?: string; organizationId: string; createdBy?: string;
   };
 
+  console.log("[FC CreateAgent] ▶ Request received");
+  console.log("[FC CreateAgent]   Org ID   :", organizationId ?? "MISSING");
+  console.log("[FC CreateAgent]   createdBy:", createdBy ?? "MISSING");
+  console.log("[FC CreateAgent]   email    :", email ?? "MISSING");
+
   if (!firstName || !email || !organizationId) {
+    console.warn("[FC CreateAgent] ✗ Missing required fields");
     return res.status(400).json({ error: "firstName, email, and organizationId are required." });
   }
 
@@ -127,7 +141,13 @@ app.post("/api/create-customer", async (req, res) => {
     phone?: string; organizationId: string; createdBy?: string;
   };
 
+  console.log("[FC CreateCustomer] ▶ Request received");
+  console.log("[FC CreateCustomer]   Org ID   :", organizationId ?? "MISSING");
+  console.log("[FC CreateCustomer]   createdBy:", createdBy ?? "MISSING");
+  console.log("[FC CreateCustomer]   email    :", email ?? "MISSING");
+
   if (!firstName || !email || !organizationId) {
+    console.warn("[FC CreateCustomer] ✗ Missing required fields");
     return res.status(400).json({ error: "firstName, email, and organizationId are required." });
   }
 
@@ -331,6 +351,18 @@ app.get("/health", (_req, res) => {
     status: "ok", service: "fundcircle",
     timestamp: new Date().toISOString(),
   });
+});
+
+// ─── 404 catch-all ────────────────────────────────────────────────────────────
+app.use((req: Request, res: Response) => {
+  console.warn(`[FC API] 404 — unmatched route: ${req.method} ${req.path}`);
+  res.status(404).json({ error: `Route not found: ${req.method} ${req.path}` });
+});
+
+// ─── Global error handler ─────────────────────────────────────────────────────
+app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
+  console.error("[FC API] Unhandled error:", err?.message ?? err);
+  res.status(500).json({ error: err?.message || "Internal server error" });
 });
 
 const PORT = process.env.API_PORT ? parseInt(process.env.API_PORT) : 3001;

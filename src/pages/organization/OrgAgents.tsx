@@ -125,6 +125,12 @@ export default function OrgAgents() {
 
   const handleAddAgent = async (e: React.FormEvent) => {
     e.preventDefault();
+
+    console.log("[FC OrgAgents] ▶ Add Agent clicked");
+    console.log("[FC OrgAgents]   Org ID :", organization?.id ?? "MISSING");
+    console.log("[FC OrgAgents]   User ID:", user?.id ?? "MISSING");
+    console.log("[FC OrgAgents]   Role   : OWNER (org dashboard)");
+
     if (!organization?.id) { toast.error("No active organization selected."); return; }
     if (!user?.id) { toast.error("No authenticated owner."); return; }
     if (!firstName.trim()) { toast.error("First name is required."); return; }
