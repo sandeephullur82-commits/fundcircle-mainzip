@@ -80,8 +80,48 @@ service cloud.firestore {
     }
 
     // ── Legacy memberships ───────────────────────────────────────────────────
+    // SECURITY FIX: scoped to org members only (was open to all signed-in users)
     match /memberships/{docId} {
-      allow read, write: if isSignedIn();
+      allow read: if isSignedIn() && (
+        resource.data.clerkUserId == uid() ||
+        isOrgMember(resource.data.organizationId)
+      );
+      allow create: if isSignedIn() && (
+        request.resource.data.clerkUserId == uid() ||
+        isOwnerOrAgent(request.resource.data.organizationId)
+      );
+      allow update: if isSignedIn() && (
+        resource.data.clerkUserId == uid() ||
+        isOwner(resource.data.organizationId)
+      );
+      allow delete: if false;
+    }
+
+    // ── Customers (profile mirror) ────────────────────────────────────────────
+    match /customers/{docId} {
+      allow read: if isSignedIn() && isOrgMember(resource.data.organizationId);
+      allow create: if isSignedIn() && isOwnerOrAgent(incomingOrgId());
+      allow update: if isSignedIn() && (
+        resource.data.clerkUserId == uid() ||
+        isOwnerOrAgent(resource.data.organizationId)
+      );
+      allow delete: if false;
+    }
+
+    // ── Savings Plans ─────────────────────────────────────────────────────────
+    match /savings_plans/{docId} {
+      allow read: if isSignedIn() && isOrgMember(resource.data.organizationId);
+      allow create: if isSignedIn() && isOwner(incomingOrgId());
+      allow update: if isSignedIn() && isOwner(resource.data.organizationId);
+      allow delete: if isSignedIn() && isOwner(resource.data.organizationId);
+    }
+
+    // ── Savings Applications ─────────────────────────────────────────────────
+    match /savings_applications/{docId} {
+      allow read: if isSignedIn() && isOrgMember(resource.data.organizationId);
+      allow create: if isSignedIn() && isOrgMember(incomingOrgId());
+      allow update: if isSignedIn() && isOwnerOrAgent(resource.data.organizationId);
+      allow delete: if false;
     }
 
     // ── Savings Accounts ─────────────────────────────────────────────────────
@@ -107,8 +147,18 @@ service cloud.firestore {
     }
 
     // ── Receipt Counters ─────────────────────────────────────────────────────
+    // SECURITY FIX: scoped to org members only (was open to all signed-in users)
     match /receiptCounters/{docId} {
-      allow read, write: if isSignedIn();
+      allow read, write: if isSignedIn() && isOrgMember(resource.data.organizationId);
+      allow create: if isSignedIn() && isOwnerOrAgent(incomingOrgId());
+    }
+
+    // ── Loan Applications ─────────────────────────────────────────────────────
+    match /loanApplications/{docId} {
+      allow read: if isSignedIn() && isOrgMember(resource.data.organizationId);
+      allow create: if isSignedIn() && isOrgMember(incomingOrgId());
+      allow update: if isSignedIn() && isOwnerOrAgent(resource.data.organizationId);
+      allow delete: if false;
     }
 
     // ── Loans ────────────────────────────────────────────────────────────────
@@ -157,6 +207,7 @@ service cloud.firestore {
     }
 
     // ── Users (global) ────────────────────────────────────────────────────────
+    // NOTE: globally readable by signed-in users intentionally (display names, etc.)
     match /users/{docId} {
       allow read: if isSignedIn();
       allow create, update: if isSignedIn() && docId == uid();

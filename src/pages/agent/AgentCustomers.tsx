@@ -1,15 +1,15 @@
 import React, { useState } from "react";
 import { useCollectionRealtime, useDocumentRealtime } from "@/lib/firestore-hooks";
-import { User } from "@/types";
+import { Membership } from "@/types";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
-import { Search, IndianRupee, UserPlus, Copy, CheckCheck, Loader2 } from "lucide-react";
+import { Search, IndianRupee, UserPlus, Loader2 } from "lucide-react";
 import { useUser, useOrganization } from "@clerk/clerk-react";
-import { recordCollection, provisionUser, validateCustomerEmail, requestPlanUpgrade } from "@/lib/services";
+import { createDirectMember, validateCustomerEmail, requestPlanUpgrade, recordSavingsCollection } from "@/lib/services";
 import { where } from "firebase/firestore";
 import PlanLimitModal from "@/components/PlanLimitModal";
 
@@ -24,11 +24,10 @@ export default function AgentCustomers({ collectorRole = "AGENT", collectorName 
   const { organization } = useOrganization();
 
   const { data: orgDoc } = useDocumentRealtime<any>("organizations", organization?.id ?? null);
-  const { data: allCustomers } = useCollectionRealtime<any>("organizationMembers", [where("role", "==", "CUSTOMER")]);
-  const { data: users, loading } = useCollectionRealtime<User>("users");
+  const { data: allCustomers, loading } = useCollectionRealtime<Membership>("organizationMembers", [where("role", "==", "CUSTOMER")]);
 
   const [searchTerm, setSearchTerm] = useState("");
-  const [selectedCustomer, setSelectedCustomer] = useState<User | null>(null);
+  const [selectedCustomer, setSelectedCustomer] = useState<Membership | null>(null);
   const [amount, setAmount] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -36,10 +35,10 @@ export default function AgentCustomers({ collectorRole = "AGENT", collectorName 
   const [firstName, setFirstName] = useState("");
   const [lastName, setLastName] = useState("");
   const [addEmail, setAddEmail] = useState("");
+  const [addPhone, setAddPhone] = useState("");
   const [isValidating, setIsValidating] = useState(false);
   const [isAdding, setIsAdding] = useState(false);
-  const [setupLink, setSetupLink] = useState<string | null>(null);
-  const [copied, setCopied] = useState(false);
+  const [createdPassword, setCreatedPassword] = useState<string | null>(null);
 
   const [showLimitModal, setShowLimitModal] = useState(false);
   const [isRequestingUpgrade, setIsRequestingUpgrade] = useState(false);
@@ -53,14 +52,19 @@ export default function AgentCustomers({ collectorRole = "AGENT", collectorName 
   const currentPlan = orgDoc?.plan ?? "free";
   const PLAN_CUSTOMER_DEFAULTS: Record<string, number> = { free: 10, starter: 100, growth: 500, enterprise: 5000 };
   const maxCustomers: number = Math.max(orgDoc?.limits?.maxCustomers || PLAN_CUSTOMER_DEFAULTS[currentPlan] || 10, 1);
-  const activeCustomerCount = Math.max(allCustomers.filter((c: any) => c.status === "ACTIVE").length, 0);
-  const pendingCustomerCount = Math.max(allCustomers.filter((c: any) => c.status === "PENDING_SETUP").length, 0);
+  const activeCustomerCount = allCustomers.filter((c: any) => c.status === "ACTIVE").length;
+  const pendingCustomerCount = allCustomers.filter((c: any) => c.status === "PENDING_SETUP").length;
   const atLimit = activeCustomerCount >= maxCustomers;
 
-  const myCustomers = users.filter(u => u.role === "customer" && u.agentId === agentId &&
-    (u.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-     u.phone?.includes(searchTerm))
-  );
+  // Show customers assigned to this agent from organizationMembers (correct source)
+  const myCustomers = allCustomers.filter((c: any) => {
+    const assignedToMe = c.assignedAgentId === agentId || c.assigned_to_user_id === agentId;
+    const nameMatch = !searchTerm ||
+      ((c.fullName || c.name || "").toLowerCase().includes(searchTerm.toLowerCase())) ||
+      (c.phone || "").includes(searchTerm) ||
+      (c.email || "").toLowerCase().includes(searchTerm.toLowerCase());
+    return assignedToMe && nameMatch;
+  });
 
   const handleAddCustomerClick = () => {
     if (atLimit) {
@@ -93,16 +97,8 @@ export default function AgentCustomers({ collectorRole = "AGENT", collectorName 
     setFirstName("");
     setLastName("");
     setAddEmail("");
-    setSetupLink(null);
-    setCopied(false);
-  };
-
-  const handleCopy = () => {
-    if (!setupLink) return;
-    navigator.clipboard.writeText(setupLink).then(() => {
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2500);
-    });
+    setAddPhone("");
+    setCreatedPassword(null);
   };
 
   const handleAddCustomerSubmit = async (e: React.FormEvent) => {
@@ -120,7 +116,7 @@ export default function AgentCustomers({ collectorRole = "AGENT", collectorName 
 
     setIsValidating(true);
     try {
-      await validateCustomerEmail(organization.id, emailKey, "");
+      await validateCustomerEmail(organization.id, emailKey, addPhone.trim());
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Validation failed");
       setIsValidating(false);
@@ -131,19 +127,21 @@ export default function AgentCustomers({ collectorRole = "AGENT", collectorName 
 
     setIsAdding(true);
     try {
-      const { setupUrl } = await provisionUser({
+      const { generatedPassword } = await createDirectMember({
         firstName: firstName.trim(),
         lastName: lastName.trim(),
         email: emailKey,
+        phone: addPhone.trim(),
         role: "CUSTOMER",
         organizationId: organization.id,
         organizationName: organization.name || "",
         assignedAgentId: agentId,
         assignedAgentName: activeCollectorName,
         createdBy: user.id,
+        actorName: activeCollectorName,
       });
-      setSetupLink(setupUrl);
-      toast.success("Customer account created! Share the setup link.");
+      setCreatedPassword(generatedPassword);
+      toast.success("Customer account created successfully!");
     } catch (err: any) {
       toast.error(err?.message || "Failed to create customer account.");
     } finally {
@@ -154,33 +152,29 @@ export default function AgentCustomers({ collectorRole = "AGENT", collectorName 
   const handleCollect = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!organization?.id || !selectedCustomer) return;
-    if (Number(amount) <= 0) return toast.error("Enter a valid amount");
+    const collectAmount = Number(amount);
+    if (collectAmount <= 0) return toast.error("Enter a valid amount");
 
-    const memberRecord = allCustomers.find((c: any) =>
-      c.clerkUserId === selectedCustomer.id ||
-      c.userId === selectedCustomer.id ||
-      c.id === `${organization.id}_${selectedCustomer.id}`
-    );
-    if (!memberRecord || memberRecord.status !== "ACTIVE") {
+    const memberRecord = selectedCustomer as any;
+    if (memberRecord.status !== "ACTIVE") {
       return toast.error("This customer has not activated their account yet.");
     }
 
     setIsSubmitting(true);
     try {
-      await recordCollection(organization.id, {
-        customerId: selectedCustomer.id,
-        agentId: agentId,
-        amount: Number(amount),
-        status: "completed",
-        collectedByRole: activeCollectorRole,
-        collectedByUserId: activeCollectorId,
-        collectedByName: activeCollectorName,
+      await recordSavingsCollection({
+        organizationId: organization.id,
+        organizationName: organization.name || "FundCircle",
+        customerId: memberRecord.id,
+        agentId: activeCollectorId,
+        agentName: activeCollectorName,
+        amount: collectAmount,
       });
-      toast.success("Collection recorded successfully");
+      toast.success(`₹${collectAmount.toLocaleString()} collected successfully`);
       setSelectedCustomer(null);
       setAmount("");
-    } catch {
-      toast.error("Failed to record collection");
+    } catch (err: any) {
+      toast.error(err?.message || "Failed to record collection");
     } finally {
       setIsSubmitting(false);
     }
@@ -240,19 +234,16 @@ export default function AgentCustomers({ collectorRole = "AGENT", collectorName 
           </div>
         ) : (
           myCustomers.map(customer => {
-            const memberRecord = allCustomers.find((c: any) =>
-              c.clerkUserId === customer.id ||
-              c.userId === customer.id ||
-              c.id === `${organization?.id}_${customer.id}`
-            );
-            const isActive = memberRecord?.status === "ACTIVE";
+            const c = customer as any;
+            const isActive = c.status === "ACTIVE";
+            const displayName = c.fullName || c.name || c.email || "Customer";
             return (
               <Card key={customer.id} className="hover:shadow-md transition-shadow">
                 <CardContent className="p-6">
                   <div className="flex justify-between items-start mb-4">
                     <div>
                       <div className="flex items-center gap-2 mb-0.5">
-                        <h3 className="font-bold text-lg text-slate-900">{customer.name}</h3>
+                        <h3 className="font-bold text-lg text-slate-900">{displayName}</h3>
                         <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full border ${
                           isActive
                             ? "bg-emerald-50 text-emerald-700 border-emerald-100"
@@ -261,11 +252,7 @@ export default function AgentCustomers({ collectorRole = "AGENT", collectorName 
                           {isActive ? "Active" : "Pending"}
                         </span>
                       </div>
-                      <p className="text-sm text-slate-500">{customer.phone}</p>
-                    </div>
-                    <div className="text-right">
-                      <p className="text-xs text-slate-500 mb-1">Balance</p>
-                      <p className="font-bold text-emerald-600">₹{(customer.balance || 0).toLocaleString()}</p>
+                      <p className="text-sm text-slate-500">{c.phone || c.email}</p>
                     </div>
                   </div>
                   <Button
@@ -294,7 +281,7 @@ export default function AgentCustomers({ collectorRole = "AGENT", collectorName 
             <form onSubmit={handleCollect} className="space-y-4">
               <div className="p-4 bg-slate-50 rounded-lg mb-4">
                 <p className="text-sm text-slate-500">Customer</p>
-                <p className="font-bold text-lg">{selectedCustomer.name}</p>
+                <p className="font-bold text-lg">{(selectedCustomer as any).fullName || (selectedCustomer as any).name || selectedCustomer.email}</p>
               </div>
               <div className="space-y-2">
                 <Label htmlFor="amount">Amount (₹)</Label>
@@ -307,6 +294,7 @@ export default function AgentCustomers({ collectorRole = "AGENT", collectorName 
                   required
                   className="text-lg"
                   autoFocus
+                  min="1"
                 />
               </div>
               <Button type="submit" className="w-full h-12 text-lg bg-emerald-600 hover:bg-emerald-700" disabled={isSubmitting}>
@@ -321,32 +309,25 @@ export default function AgentCustomers({ collectorRole = "AGENT", collectorName 
       <Dialog open={showAddCustomer} onOpenChange={(open) => { if (!open) { setShowAddCustomer(false); resetAddForm(); } }}>
         <DialogContent className="max-w-sm">
           <DialogHeader>
-            <DialogTitle>{setupLink ? "Share Setup Link" : "Add New Customer"}</DialogTitle>
+            <DialogTitle>{createdPassword ? "Customer Created" : "Add New Customer"}</DialogTitle>
           </DialogHeader>
 
-          {setupLink ? (
+          {createdPassword ? (
             <div className="space-y-4 mt-2">
               <div className="rounded-xl bg-emerald-50 border border-emerald-200 p-4 text-center space-y-1">
-                <p className="text-sm font-semibold text-emerald-800">Customer account created!</p>
-                <p className="text-xs text-emerald-600">Share this link so they can set their password and sign in.</p>
+                <p className="text-sm font-semibold text-emerald-800">Account created successfully!</p>
+                <p className="text-xs text-emerald-600">Share these credentials with the customer to sign in.</p>
               </div>
               <div className="space-y-1.5">
-                <Label className="text-xs font-semibold text-slate-600 uppercase tracking-wide">Setup Link</Label>
+                <Label className="text-xs font-semibold text-slate-600 uppercase tracking-wide">Email</Label>
+                <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700 font-mono">{addEmail}</div>
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-xs font-semibold text-slate-600 uppercase tracking-wide">Temporary Password</Label>
                 <div className="flex gap-2">
-                  <input
-                    readOnly
-                    value={setupLink}
-                    className="flex-1 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-700 font-mono overflow-hidden text-ellipsis"
-                  />
-                  <button
-                    onClick={handleCopy}
-                    className="shrink-0 inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 px-3 py-2 text-xs font-semibold text-slate-700 transition-colors"
-                  >
-                    {copied ? <CheckCheck className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5" />}
-                    {copied ? "Copied!" : "Copy"}
-                  </button>
+                  <div className="flex-1 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700 font-mono">{createdPassword}</div>
                 </div>
-                <p className="text-xs text-slate-400">This link expires in 7 days.</p>
+                <p className="text-xs text-slate-400">Ask the customer to change this after first login.</p>
               </div>
               <Button className="w-full" onClick={() => { setShowAddCustomer(false); resetAddForm(); }}>Done</Button>
             </div>
@@ -387,6 +368,17 @@ export default function AgentCustomers({ collectorRole = "AGENT", collectorName 
                   value={addEmail}
                   onChange={e => setAddEmail(e.target.value)}
                   required
+                  autoComplete="off"
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="add-phone">Phone</Label>
+                <Input
+                  id="add-phone"
+                  type="tel"
+                  placeholder="9876543210"
+                  value={addPhone}
+                  onChange={e => setAddPhone(e.target.value)}
                   autoComplete="off"
                 />
               </div>
