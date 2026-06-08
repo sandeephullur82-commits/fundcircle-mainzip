@@ -34,7 +34,14 @@ service cloud.firestore {
 
     function isAgent(orgId) {
       return hasMembership(orgId) &&
-        (memberRole(orgId) == "AGENT" || memberRole(orgId) == "PIGMY_COLLECTOR" || memberRole(orgId) == "pigmy_collector");
+        (memberRole(orgId) == "AGENT" || memberRole(orgId) == "PIGMY_COLLECTOR" || memberRole(orgId) == "pigmy_collector" ||
+         memberRole(orgId) == "agent" || memberRole(orgId) == "collector" || memberRole(orgId) == "COLLECTOR");
+    }
+
+    function isManager(orgId) {
+      return hasMembership(orgId) &&
+        (memberRole(orgId) == "MANAGER" || memberRole(orgId) == "manager" ||
+         memberRole(orgId) == "organization_manager" || memberRole(orgId) == "ORGANIZATION_MANAGER");
     }
 
     function isCustomer(orgId) {
@@ -42,23 +49,30 @@ service cloud.firestore {
         (memberRole(orgId) == "CUSTOMER" || memberRole(orgId) == "customer");
     }
 
+    // Any authenticated org participant (owner, manager, agent, or customer)
     function isOrgMember(orgId) {
-      return isOwner(orgId) || isAgent(orgId) || isCustomer(orgId);
+      return isOwner(orgId) || isManager(orgId) || isAgent(orgId) || isCustomer(orgId);
     }
 
     function incomingOrgId() {
       return request.resource.data.organizationId;
     }
 
+    // Owners and managers have admin-level write permissions; agents have field-collection permissions
     function isOwnerOrAgent(orgId) {
-      return isOwner(orgId) || isAgent(orgId);
+      return isOwner(orgId) || isManager(orgId) || isAgent(orgId);
+    }
+
+    // Owner/manager only (no agents) — for sensitive admin-only operations
+    function isAdminOnly(orgId) {
+      return isOwner(orgId) || isManager(orgId);
     }
 
     // ── Organizations ────────────────────────────────────────────────────────
     match /organizations/{orgId} {
       allow read: if isOrgMember(orgId);
       allow create: if isSignedIn();
-      allow update: if isOwner(orgId);
+      allow update: if isAdminOnly(orgId);
       allow delete: if false;
     }
 
@@ -177,9 +191,9 @@ service cloud.firestore {
       allow delete: if false;
     }
 
-    // ── Audit Logs (owner-read, immutable) ───────────────────────────────────
+    // ── Audit Logs (owner+manager read, immutable) ───────────────────────────
     match /audit_logs/{docId} {
-      allow read: if isSignedIn() && isOwner(resource.data.organizationId);
+      allow read: if isSignedIn() && isAdminOnly(resource.data.organizationId);
       allow create: if isSignedIn() && isOrgMember(incomingOrgId());
       allow update, delete: if false;
     }

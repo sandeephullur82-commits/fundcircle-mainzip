@@ -49,7 +49,7 @@ const BOTTOM_NAV_COLLECTOR = [
 
 export default function OrgDashboard() {
   const { isLoaded: isUserLoaded, user, isSignedIn } = useUser();
-  const { isLoaded: isOrgLoaded, organization } = useOrganization();
+  const { isLoaded: isOrgLoaded, organization, membership: clerkOrgMembership } = useOrganization();
   const [activeTab, setActiveTab] = useState("overview");
   const [mode, setMode] = useState<"admin" | "collector">("admin");
 
@@ -129,9 +129,13 @@ export default function OrgDashboard() {
     prevSavingsAppIds.current = currentIds;
   }, [pendingSavingsApps]);
 
-  const clerkRole = normalizeClerkRole((user?.publicMetadata as any)?.role as string | undefined);
-  const membershipRoleNormalized = normalizeClerkRole(membershipDoc?.role?.toString() || null);
-  const effectiveRole = membershipRoleNormalized || clerkRole || null;
+  // Role is always resolved from org membership — never from global user metadata.
+  // Priority: Firestore membershipDoc → Clerk org membership → null
+  const membershipRoleNormalized = normalizeClerkRole(
+    membershipDoc?.clerkRole || membershipDoc?.role || null
+  );
+  const clerkOrgRole = normalizeClerkRole(clerkOrgMembership?.role ?? null);
+  const effectiveRole = membershipRoleNormalized || clerkOrgRole || null;
   const isOwner = isOwnerRole(effectiveRole);
 
   const visibleRequests = isOwner

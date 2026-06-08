@@ -4,7 +4,7 @@ import { useState } from "react";
 import { Building2, ChevronRight, LogOut, Loader2 } from "lucide-react";
 import { motion } from "motion/react";
 import { BrandMark } from "@/components/BrandLogo";
-import { normalizeClerkRole, getDashboardPath } from "@/lib/auth/get-user-role";
+import { normalizeClerkRole, getDashboardPath, getRoleLabel } from "@/lib/auth/get-user-role";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { doc, getDoc } from "firebase/firestore";
@@ -90,12 +90,7 @@ export default function OrgSelectorPage() {
                 const orgId = m.organization?.id;
                 const orgName = m.organization?.name || orgId;
                 const isSelecting = selecting === orgId;
-                const roleLabel =
-                  m.role === "org:admin"
-                    ? "Owner"
-                    : m.role === "org:pigmy_collector"
-                    ? "Collector"
-                    : "Customer";
+                const roleLabel = getRoleLabel(m.role);
 
                 return (
                   <button
