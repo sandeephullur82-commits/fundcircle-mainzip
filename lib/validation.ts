@@ -193,6 +193,90 @@ export function isDuplicate<T extends Record<string, any>>(
   );
 }
 
+// ── Specialised field validators ─────────────────────────────────────────────
+
+/**
+ * First-name validator: letters, spaces, hyphens, apostrophes, dots only.
+ * 2–50 characters. Used for First Name fields.
+ */
+export function validateLettersOnlyName(
+  name: string,
+  options?: { label?: string; minLength?: number; maxLength?: number }
+): ValidationResult {
+  const label = options?.label ?? "Name";
+  const trimmed = (name ?? "").trim();
+  if (!trimmed) return { valid: false, error: `${label} is required` };
+  const min = options?.minLength ?? 2;
+  const max = options?.maxLength ?? 50;
+  if (trimmed.length < min) return { valid: false, error: `${label} must be at least ${min} characters` };
+  if (trimmed.length > max) return { valid: false, error: `${label} cannot exceed ${max} characters` };
+  if (!/^[a-zA-Z\s.'\-]+$/.test(trimmed))
+    return { valid: false, error: `${label} must contain letters only (no numbers or special characters)` };
+  return { valid: true };
+}
+
+/**
+ * Validate an exactly-10-digit Indian phone number.
+ * Required by default; set required=false to allow empty.
+ */
+export function validatePhone10(
+  phone: string,
+  options?: { required?: boolean }
+): ValidationResult {
+  const required = options?.required ?? true;
+  const digits = (phone ?? "").replace(/\D/g, "");
+  if (!digits) {
+    return required
+      ? { valid: false, error: "Phone number is required" }
+      : { valid: true };
+  }
+  if (digits.length !== 10) return { valid: false, error: "Phone number must be exactly 10 digits" };
+  if (!/^[6-9]/.test(digits)) return { valid: false, error: "Phone number must start with 6, 7, 8, or 9" };
+  return { valid: true };
+}
+
+/**
+ * Validate an address field.
+ */
+export function validateAddress(
+  address: string,
+  options?: { required?: boolean; maxLength?: number }
+): ValidationResult {
+  const required = options?.required ?? true;
+  const maxLen = options?.maxLength ?? 500;
+  const trimmed = (address ?? "").trim();
+  if (!trimmed) return required ? { valid: false, error: "Address is required" } : { valid: true };
+  if (trimmed.length > maxLen) return { valid: false, error: `Address cannot exceed ${maxLen} characters` };
+  return { valid: true };
+}
+
+/**
+ * Validate a notes / description field (optional, max length).
+ */
+export function validateNotes(notes: string, maxLength = 500): ValidationResult {
+  if (!(notes ?? "").trim()) return { valid: true };
+  if (notes.trim().length > maxLength)
+    return { valid: false, error: `Notes cannot exceed ${maxLength} characters` };
+  return { valid: true };
+}
+
+/**
+ * Validate an employee / reference code (optional or required).
+ */
+export function validateCode(
+  code: string,
+  options?: { label?: string; maxLength?: number; required?: boolean }
+): ValidationResult {
+  const label = options?.label ?? "Code";
+  const maxLen = options?.maxLength ?? 20;
+  const required = options?.required ?? false;
+  const trimmed = (code ?? "").trim();
+  if (!trimmed) return required ? { valid: false, error: `${label} is required` } : { valid: true };
+  if (trimmed.length > maxLen) return { valid: false, error: `${label} cannot exceed ${maxLen} characters` };
+  if (/[<>"'\/\\;{}()\[\]]/.test(trimmed)) return { valid: false, error: `${label} contains invalid characters` };
+  return { valid: true };
+}
+
 // ── Composite form validators ─────────────────────────────────────────────────
 
 export interface AgentFormData {

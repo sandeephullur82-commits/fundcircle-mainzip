@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import FieldError from "@/components/ui/FieldError";
 import { useCollectionRealtime } from "@/lib/firestore-hooks";
 import { Loan, LoanInstallment, Membership } from "@/types";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";

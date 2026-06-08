@@ -15,6 +15,7 @@ import { useUser, useOrganization } from "@clerk/clerk-react";
 import { recordSavingsCollection, getSavingsAccountByCustomer } from "@/lib/services";
 import { where } from "firebase/firestore";
 import ReceiptModal, { ReceiptData } from "@/components/ReceiptModal";
+import FieldError from "@/components/ui/FieldError";
 
 function toDate(ts: any): Date {
   if (!ts) return new Date(0);
@@ -62,6 +63,7 @@ export default function AgentOverview() {
   const [amount, setAmount] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [receipt, setReceipt] = useState<ReceiptData | null>(null);
+  const [amountError, setAmountError] = useState("");
 
   const filteredCustomers = activeCustomers.filter((c) => {
     const name = (c as any).fullName || (c as any).name || c.email || "";
@@ -71,6 +73,7 @@ export default function AgentOverview() {
   const handleSelectCustomer = async (customer: Membership) => {
     setSelectedCustomer(customer);
     setAmount("");
+    setAmountError("");
     setSavingsAccount(null);
     try {
       const acc = await getSavingsAccountByCustomer(customer.id, orgId);
@@ -84,7 +87,10 @@ export default function AgentOverview() {
     e.preventDefault();
     if (!selectedCustomer || !orgId || !user?.id) return;
     const numAmount = Number(amount);
-    if (!numAmount || numAmount <= 0) return toast.error("Enter a valid amount.");
+    if (!amount.trim()) { setAmountError("Collection amount is required"); return; }
+    if (isNaN(numAmount) || numAmount <= 0) { setAmountError("Amount must be greater than 0"); return; }
+    if (numAmount > 1_000_000) { setAmountError("Amount cannot exceed ₹10,00,000"); return; }
+    setAmountError("");
     setSubmitting(true);
     try {
       const result = await recordSavingsCollection({
@@ -296,11 +302,11 @@ export default function AgentOverview() {
                   min="1"
                   placeholder="e.g. 100"
                   value={amount}
-                  onChange={(e) => setAmount(e.target.value)}
-                  className="text-xl h-12 font-bold"
+                  onChange={(e) => { setAmount(e.target.value); setAmountError(""); }}
+                  className={`text-xl h-12 font-bold ${amountError ? "border-red-400 focus-visible:ring-red-300" : ""}`}
                   autoFocus
-                  required
                 />
+                <FieldError error={amountError} />
               </div>
 
               <div className="flex gap-3">

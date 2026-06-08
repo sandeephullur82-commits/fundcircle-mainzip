@@ -17,6 +17,11 @@ import {
   MapPin, FileText, UserCheck,
 } from "lucide-react";
 import { toast } from "sonner";
+import FieldError from "@/components/ui/FieldError";
+import {
+  sanitizeName, sanitizeEmail, sanitizeMultiline,
+  validateEmail, validatePhone10, validateLettersOnlyName,
+} from "@/lib/validation";
 
 type CreatedCredentials = {
   name: string;
@@ -144,17 +149,36 @@ export default function OrgCustomers() {
     return status || "Pending";
   };
 
+  const [formErrors, setFormErrors] = useState<Record<string, string>>({});
+
   const resetForm = () => {
-    setFirstName("");
-    setLastName("");
-    setEmail("");
-    setPhone("");
-    setAddress("");
-    setNotes("");
-    setCustomerType("SAVINGS_LOAN");
-    setSelectedCollectorId("");
-    setCredentials(null);
-    setCopiedField(null);
+    setFirstName(""); setLastName(""); setEmail(""); setPhone("");
+    setAddress(""); setNotes(""); setCustomerType("SAVINGS_LOAN");
+    setSelectedCollectorId(""); setCredentials(null); setCopiedField(null);
+    setFormErrors({});
+  };
+
+  const validateCustomerField = (field: string, value: string) => {
+    let error = "";
+    if (field === "firstName") {
+      const r = validateLettersOnlyName(value, { label: "First name" });
+      error = r.valid ? "" : (r.error ?? "");
+    } else if (field === "lastName") {
+      if (!value.trim()) error = "Last name is required";
+      else if (value.trim().length < 2) error = "Minimum 2 characters";
+      else if (value.trim().length > 50) error = "Maximum 50 characters";
+    } else if (field === "email") {
+      const r = validateEmail(value);
+      error = r.valid ? "" : (r.error ?? "");
+    } else if (field === "phone") {
+      if (value.trim()) {
+        const r = validatePhone10(value);
+        error = r.valid ? "" : (r.error ?? "");
+      }
+    } else if (field === "address") {
+      if (value.trim().length > 500) error = "Maximum 500 characters";
+    }
+    setFormErrors((prev) => ({ ...prev, [field]: error }));
   };
 
   const copyToClipboard = async (text: string, field: "email" | "password") => {
@@ -177,9 +201,27 @@ export default function OrgCustomers() {
 
     if (!organization?.id) { toast.error("No active organization selected."); return; }
     if (!user?.id) { toast.error("Missing authenticated owner identity."); return; }
-    if (!firstName.trim()) { toast.error("First name is required."); return; }
-    if (!email.trim()) { toast.error("Email address is required."); return; }
     if (atLimit) { toast.error(`Customer limit of ${maxCustomers} reached.`); return; }
+
+    const submitErrors: Record<string, string> = {};
+    const fnRes = validateLettersOnlyName(firstName, { label: "First name" });
+    if (!fnRes.valid) submitErrors.firstName = fnRes.error!;
+    if (!lastName.trim()) submitErrors.lastName = "Last name is required";
+    else if (lastName.trim().length < 2) submitErrors.lastName = "Minimum 2 characters";
+    else if (lastName.trim().length > 50) submitErrors.lastName = "Maximum 50 characters";
+    const emailRes = validateEmail(email);
+    if (!emailRes.valid) submitErrors.email = emailRes.error!;
+    if (phone.trim()) {
+      const phoneRes = validatePhone10(phone);
+      if (!phoneRes.valid) submitErrors.phone = phoneRes.error!;
+    }
+    if (address.trim().length > 500) submitErrors.address = "Maximum 500 characters";
+    if (Object.values(submitErrors).some(Boolean)) {
+      setFormErrors(submitErrors);
+      toast.error("Please fix the highlighted errors before continuing.");
+      return;
+    }
+    setFormErrors({});
 
     const collectorToAssign =
       collectorsForAssignment.length === 1
@@ -207,12 +249,12 @@ export default function OrgCustomers() {
     setIsSubmitting(true);
     try {
       const { generatedPassword } = await createDirectMember({
-        firstName: firstName.trim(),
-        lastName: lastName.trim(),
+        firstName: sanitizeName(firstName),
+        lastName: sanitizeName(lastName),
         email: emailKey,
-        phone: phone.trim(),
-        address: address.trim(),
-        notes: notes.trim(),
+        phone: phone.replace(/\D/g, "").slice(0, 10),
+        address: sanitizeMultiline(address, 500),
+        notes: sanitizeMultiline(notes, 500),
         role: "CUSTOMER",
         organizationId: organization.id,
         organizationName: organization.name || "",
@@ -248,15 +290,28 @@ export default function OrgCustomers() {
 
   const handleSaveEdit = async () => {
     if (!editCustomer) return;
+    if (editPhone.trim()) {
+      const phoneRes = validatePhone10(editPhone);
+      if (!phoneRes.valid) { toast.error(phoneRes.error); return; }
+    }
+    if (editAddress.trim().length > 500) { toast.error("Address cannot exceed 500 characters."); return; }
+    const cleanPhone = editPhone ? editPhone.replace(/\D/g, "").slice(0, 10) : "";
+    const cleanAddress = sanitizeMultiline(editAddress, 500);
+    const cleanNominee = {
+      name: sanitizeName(editNominee.name),
+      relation: (editNominee.relation || "").trim(),
+      phone: editNominee.phone ? editNominee.phone.replace(/\D/g, "").slice(0, 10) : "",
+    };
+    const cleanNotes = sanitizeMultiline(editNotes, 500);
     setSavingEdit(true);
     const newCollector = collectorsForAssignment.find((c) => c.id === editCollectorId);
     try {
       await updateDoc(doc(db, "organizationMembers", editCustomer.id), {
-        phone: editPhone,
-        address: editAddress,
-        nominee: editNominee,
+        phone: cleanPhone || editPhone,
+        address: cleanAddress,
+        nominee: cleanNominee,
         customerType: editCustomerType,
-        notes: editNotes,
+        notes: cleanNotes,
         ...(newCollector ? {
           assignedAgentId: newCollector.id,
           assignedAgentName: newCollector.fullName || (newCollector as any).name || "",
@@ -420,25 +475,26 @@ export default function OrgCustomers() {
                         type="text"
                         placeholder="Jane"
                         value={firstName}
-                        onChange={(e) => setFirstName(e.target.value)}
-                        required
+                        onChange={(e) => { setFirstName(e.target.value); validateCustomerField("firstName", e.target.value); }}
                         autoComplete="off"
-                        className="h-11"
+                        className={`h-11 ${formErrors.firstName ? "border-red-400 focus-visible:ring-red-300" : ""}`}
                       />
+                      <FieldError error={formErrors.firstName} />
                     </div>
                     <div className="space-y-1.5">
                       <Label htmlFor="cust-lastname" className="text-sm font-semibold text-slate-700">
-                        Last Name
+                        Last Name <span className="text-red-500">*</span>
                       </Label>
                       <Input
                         id="cust-lastname"
                         type="text"
                         placeholder="Doe"
                         value={lastName}
-                        onChange={(e) => setLastName(e.target.value)}
+                        onChange={(e) => { setLastName(e.target.value); validateCustomerField("lastName", e.target.value); }}
                         autoComplete="off"
-                        className="h-11"
+                        className={`h-11 ${formErrors.lastName ? "border-red-400 focus-visible:ring-red-300" : ""}`}
                       />
+                      <FieldError error={formErrors.lastName} />
                     </div>
                   </div>
 
@@ -451,11 +507,11 @@ export default function OrgCustomers() {
                       type="email"
                       placeholder="customer@example.com"
                       value={email}
-                      onChange={(e) => setEmail(e.target.value)}
-                      required
+                      onChange={(e) => { setEmail(e.target.value); validateCustomerField("email", e.target.value); }}
                       autoComplete="off"
-                      className="h-11"
+                      className={`h-11 ${formErrors.email ? "border-red-400 focus-visible:ring-red-300" : ""}`}
                     />
+                    <FieldError error={formErrors.email} />
                   </div>
 
                   <div className="space-y-1.5">
@@ -465,12 +521,14 @@ export default function OrgCustomers() {
                     <Input
                       id="cust-phone"
                       type="tel"
-                      placeholder="+91 98765 43210"
+                      placeholder="10-digit mobile number"
                       value={phone}
-                      onChange={(e) => setPhone(e.target.value)}
+                      onChange={(e) => { setPhone(e.target.value); validateCustomerField("phone", e.target.value); }}
                       autoComplete="off"
-                      className="h-11"
+                      maxLength={10}
+                      className={`h-11 ${formErrors.phone ? "border-red-400 focus-visible:ring-red-300" : ""}`}
                     />
+                    <FieldError error={formErrors.phone} />
                   </div>
 
                   <div className="space-y-1.5">
@@ -482,10 +540,11 @@ export default function OrgCustomers() {
                       type="text"
                       placeholder="House no, street, city…"
                       value={address}
-                      onChange={(e) => setAddress(e.target.value)}
+                      onChange={(e) => { setAddress(e.target.value); validateCustomerField("address", e.target.value); }}
                       autoComplete="off"
-                      className="h-11"
+                      className={`h-11 ${formErrors.address ? "border-red-400 focus-visible:ring-red-300" : ""}`}
                     />
+                    <FieldError error={formErrors.address} />
                   </div>
 
                   <div className="space-y-1.5">
@@ -572,7 +631,7 @@ export default function OrgCustomers() {
                   <Button
                     type="submit"
                     className="w-full h-11 font-semibold"
-                    disabled={isValidating || isSubmitting || collectorsLoading || collectorsForAssignment.length === 0 || !firstName.trim() || !email.trim()}
+                    disabled={isValidating || isSubmitting || collectorsLoading || collectorsForAssignment.length === 0 || !firstName.trim() || !email.trim() || Object.values(formErrors).some(Boolean)}
                   >
                     {isValidating ? (
                       <><Loader2 className="w-4 h-4 mr-2 animate-spin" />Validating…</>

@@ -1,4 +1,6 @@
 import { useState, useMemo } from "react";
+import FieldError from "@/components/ui/FieldError";
+import { sanitizeName, sanitizeMultiline, validateAmount, validateRate } from "@/lib/validation";
 import { useOrganization, useUser } from "@clerk/clerk-react";
 import { useCollectionRealtime } from "@/lib/firestore-hooks";
 import { where } from "firebase/firestore";
@@ -140,6 +142,7 @@ export default function OrgSavings() {
   const [planModal, setPlanModal] = useState<"create" | "edit" | null>(null);
   const [editingPlan, setEditingPlan] = useState<SavingsPlan | null>(null);
   const [planForm, setPlanForm] = useState(emptyPlanForm());
+  const [planErrors, setPlanErrors] = useState<Record<string, string>>({});
   const [planSaving, setPlanSaving] = useState(false);
   const [deleteConfirmPlan, setDeleteConfirmPlan] = useState<SavingsPlan | null>(null);
 
@@ -180,15 +183,30 @@ export default function OrgSavings() {
     setPlanModal("edit");
   };
   const handleSavePlan = async () => {
-    if (!planForm.planName.trim()) { toast.error("Plan name is required."); return; }
+    const errors: Record<string, string> = {};
+    if (!planForm.planName.trim()) errors.planName = "Plan name is required";
+    else if (planForm.planName.trim().length > 100) errors.planName = "Cannot exceed 100 characters";
+    if (!planForm.minDeposit || Number(planForm.minDeposit) <= 0) errors.minDeposit = "Must be greater than 0";
+    if (!planForm.maxDeposit || Number(planForm.maxDeposit) <= 0) errors.maxDeposit = "Must be greater than 0";
+    else if (Number(planForm.maxDeposit) < Number(planForm.minDeposit)) errors.maxDeposit = "Must be ≥ min deposit";
+    if (Number(planForm.interestRate) < 0 || Number(planForm.interestRate) > 100) errors.interestRate = "Must be 0–100";
+    if (Number(planForm.penaltyAmount) < 0) errors.penaltyAmount = "Cannot be negative";
+    if (Number(planForm.graceDays) < 0) errors.graceDays = "Cannot be negative";
+    if (Object.values(errors).some(Boolean)) {
+      setPlanErrors(errors);
+      toast.error("Please fix the highlighted errors.");
+      return;
+    }
+    setPlanErrors({});
     if (!orgId) return;
+    const cleanPlanForm = { ...planForm, planName: sanitizeName(planForm.planName) };
     setPlanSaving(true);
     try {
       if (planModal === "create") {
-        await createSavingsPlan({ ...planForm, organizationId: orgId, createdByActorId: actorId, createdByActorName: actorName });
+        await createSavingsPlan({ ...cleanPlanForm, organizationId: orgId, createdByActorId: actorId, createdByActorName: actorName });
         toast.success("Savings plan created.");
       } else if (editingPlan) {
-        await updateSavingsPlan(editingPlan.id, { ...planForm, organizationId: orgId, actorId, actorName });
+        await updateSavingsPlan(editingPlan.id, { ...cleanPlanForm, organizationId: orgId, actorId, actorName });
         toast.success("Savings plan updated.");
       }
       setPlanModal(null);
@@ -808,8 +826,11 @@ export default function OrgSavings() {
           <div className="space-y-4 mt-2">
             <div>
               <Label className="text-xs">Plan Name *</Label>
-              <Input value={planForm.planName} onChange={(e) => setPlanForm((p) => ({ ...p, planName: e.target.value }))}
-                placeholder="e.g. Daily Pigmy Gold" className="mt-1 h-10" />
+              <Input value={planForm.planName}
+                onChange={(e) => { setPlanForm((p) => ({ ...p, planName: e.target.value })); setPlanErrors((p) => ({ ...p, planName: "" })); }}
+                placeholder="e.g. Daily Pigmy Gold"
+                className={`mt-1 h-10 ${planErrors.planName ? "border-red-400" : ""}`} />
+              <FieldError error={planErrors.planName} />
             </div>
             <div className="grid grid-cols-2 gap-3">
               <div>
@@ -830,30 +851,40 @@ export default function OrgSavings() {
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <Label className="text-xs">Min Deposit (₹)</Label>
-                <Input type="number" value={planForm.minDeposit} onChange={(e) => setPlanForm((p) => ({ ...p, minDeposit: Number(e.target.value) }))}
-                  className="mt-1 h-10" min={1} />
+                <Input type="number" value={planForm.minDeposit}
+                  onChange={(e) => { setPlanForm((p) => ({ ...p, minDeposit: Number(e.target.value) })); setPlanErrors((p) => ({ ...p, minDeposit: "" })); }}
+                  className={`mt-1 h-10 ${planErrors.minDeposit ? "border-red-400" : ""}`} min={1} />
+                <FieldError error={planErrors.minDeposit} />
               </div>
               <div>
                 <Label className="text-xs">Max Deposit (₹)</Label>
-                <Input type="number" value={planForm.maxDeposit} onChange={(e) => setPlanForm((p) => ({ ...p, maxDeposit: Number(e.target.value) }))}
-                  className="mt-1 h-10" min={1} />
+                <Input type="number" value={planForm.maxDeposit}
+                  onChange={(e) => { setPlanForm((p) => ({ ...p, maxDeposit: Number(e.target.value) })); setPlanErrors((p) => ({ ...p, maxDeposit: "" })); }}
+                  className={`mt-1 h-10 ${planErrors.maxDeposit ? "border-red-400" : ""}`} min={1} />
+                <FieldError error={planErrors.maxDeposit} />
               </div>
             </div>
             <div className="grid grid-cols-3 gap-3">
               <div>
                 <Label className="text-xs">Interest Rate (%)</Label>
-                <Input type="number" value={planForm.interestRate} onChange={(e) => setPlanForm((p) => ({ ...p, interestRate: Number(e.target.value) }))}
-                  className="mt-1 h-10" min={0} step={0.1} />
+                <Input type="number" value={planForm.interestRate}
+                  onChange={(e) => { setPlanForm((p) => ({ ...p, interestRate: Number(e.target.value) })); setPlanErrors((p) => ({ ...p, interestRate: "" })); }}
+                  className={`mt-1 h-10 ${planErrors.interestRate ? "border-red-400" : ""}`} min={0} step={0.1} />
+                <FieldError error={planErrors.interestRate} />
               </div>
               <div>
                 <Label className="text-xs">Penalty (₹)</Label>
-                <Input type="number" value={planForm.penaltyAmount} onChange={(e) => setPlanForm((p) => ({ ...p, penaltyAmount: Number(e.target.value) }))}
-                  className="mt-1 h-10" min={0} />
+                <Input type="number" value={planForm.penaltyAmount}
+                  onChange={(e) => { setPlanForm((p) => ({ ...p, penaltyAmount: Number(e.target.value) })); setPlanErrors((p) => ({ ...p, penaltyAmount: "" })); }}
+                  className={`mt-1 h-10 ${planErrors.penaltyAmount ? "border-red-400" : ""}`} min={0} />
+                <FieldError error={planErrors.penaltyAmount} />
               </div>
               <div>
                 <Label className="text-xs">Grace Days</Label>
-                <Input type="number" value={planForm.graceDays} onChange={(e) => setPlanForm((p) => ({ ...p, graceDays: Number(e.target.value) }))}
-                  className="mt-1 h-10" min={0} />
+                <Input type="number" value={planForm.graceDays}
+                  onChange={(e) => { setPlanForm((p) => ({ ...p, graceDays: Number(e.target.value) })); setPlanErrors((p) => ({ ...p, graceDays: "" })); }}
+                  className={`mt-1 h-10 ${planErrors.graceDays ? "border-red-400" : ""}`} min={0} />
+                <FieldError error={planErrors.graceDays} />
               </div>
             </div>
             <div className="flex gap-3 pt-2">

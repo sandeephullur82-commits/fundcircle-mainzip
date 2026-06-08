@@ -12,6 +12,8 @@ import { format, isBefore, startOfDay } from "date-fns";
 import { Search, Plus, CheckCircle, XCircle, Eye, Loader2, AlertTriangle, CreditCard, Inbox, ChevronDown, Crown, ShieldCheck, TrendingUp, Banknote } from "lucide-react";
 import { useUser, useOrganization } from "@clerk/clerk-react";
 import { createLoan, approveLoan, rejectLoan, calculateEMI } from "@/lib/services";
+import FieldError from "@/components/ui/FieldError";
+import { validateAmount, validateRate, validateTenure } from "@/lib/validation";
 import { where, onSnapshot, query, collection, doc, updateDoc, serverTimestamp } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 
@@ -67,6 +69,7 @@ export default function OrgLoans() {
   const [tenureMonths, setTenureMonths] = useState("12");
   const [createCollectorId, setCreateCollectorId] = useState("");
   const [creating, setCreating] = useState(false);
+  const [loanErrors, setLoanErrors] = useState<Record<string, string>>({});
 
   // ── Approve PENDING loan dialog ──────────────────────────────────────────────
   const [approveDialogLoan, setApproveDialogLoan] = useState<Loan | null>(null);
@@ -174,8 +177,23 @@ export default function OrgLoans() {
   // ── Handlers ─────────────────────────────────────────────────────────────────
   const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!orgId || !user?.id || !customerId) return;
-    if (Number(principal) <= 0) return toast.error("Principal must be > 0");
+    if (!orgId || !user?.id) return;
+
+    const errors: Record<string, string> = {};
+    if (!customerId) errors.customerId = "Please select a customer";
+    const principalNum = Number(principal);
+    if (!principal || principalNum <= 0) errors.principal = "Principal must be greater than 0";
+    else if (principalNum > 10_000_000) errors.principal = "Cannot exceed ₹1,00,00,000";
+    const rateNum = Number(interestRate);
+    if (isNaN(rateNum) || rateNum < 0 || rateNum > 100) errors.interestRate = "Rate must be 0–100";
+    const tenureNum = Number(tenureMonths);
+    if (!tenureMonths || tenureNum <= 0 || tenureNum > 360) errors.tenureMonths = "Tenure must be 1–360 months";
+    if (Object.values(errors).some(Boolean)) {
+      setLoanErrors(errors);
+      toast.error("Please fix the highlighted errors.");
+      return;
+    }
+    setLoanErrors({});
     const collector = getCollectorById(createCollectorId);
     setCreating(true);
     try {
@@ -666,30 +684,40 @@ export default function OrgLoans() {
             <div className="space-y-1.5">
               <Label>Customer <span className="text-red-500">*</span></Label>
               <select
-                className="w-full border border-slate-200 rounded-lg h-10 px-3 text-sm bg-white"
+                className={`w-full border rounded-lg h-10 px-3 text-sm bg-white ${loanErrors.customerId ? "border-red-400" : "border-slate-200"}`}
                 value={customerId}
-                onChange={(e) => setCustomerId(e.target.value)}
-                required
+                onChange={(e) => { setCustomerId(e.target.value); if (e.target.value) setLoanErrors((p) => ({ ...p, customerId: "" })); }}
               >
                 <option value="">Select a customer…</option>
                 {customers.map((c) => (
                   <option key={c.id} value={c.id}>{(c as any).fullName || (c as any).name || c.email}</option>
                 ))}
               </select>
+              <FieldError error={loanErrors.customerId} />
             </div>
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1.5">
                 <Label>Principal Amount (₹) <span className="text-red-500">*</span></Label>
-                <Input type="number" min="1" value={principal} onChange={(e) => setPrincipal(e.target.value)} placeholder="50000" required />
+                <Input type="number" min="1" value={principal}
+                  onChange={(e) => { setPrincipal(e.target.value); setLoanErrors((p) => ({ ...p, principal: "" })); }}
+                  placeholder="50000"
+                  className={loanErrors.principal ? "border-red-400 focus-visible:ring-red-300" : ""} />
+                <FieldError error={loanErrors.principal} />
               </div>
               <div className="space-y-1.5">
                 <Label>Interest Rate (% p.a.)</Label>
-                <Input type="number" min="0" step="0.1" value={interestRate} onChange={(e) => setInterestRate(e.target.value)} />
+                <Input type="number" min="0" max="100" step="0.1" value={interestRate}
+                  onChange={(e) => { setInterestRate(e.target.value); setLoanErrors((p) => ({ ...p, interestRate: "" })); }}
+                  className={loanErrors.interestRate ? "border-red-400 focus-visible:ring-red-300" : ""} />
+                <FieldError error={loanErrors.interestRate} />
               </div>
             </div>
             <div className="space-y-1.5">
               <Label>Tenure (months)</Label>
-              <Input type="number" min="1" max="360" value={tenureMonths} onChange={(e) => setTenureMonths(e.target.value)} />
+              <Input type="number" min="1" max="360" value={tenureMonths}
+                onChange={(e) => { setTenureMonths(e.target.value); setLoanErrors((p) => ({ ...p, tenureMonths: "" })); }}
+                className={loanErrors.tenureMonths ? "border-red-400 focus-visible:ring-red-300" : ""} />
+              <FieldError error={loanErrors.tenureMonths} />
             </div>
             {previewEMI && (
               <div className="bg-blue-50 border border-blue-100 rounded-xl p-4">

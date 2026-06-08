@@ -10,6 +10,8 @@ import { toast } from "sonner";
 import { Search, IndianRupee, UserPlus, Loader2 } from "lucide-react";
 import { useUser, useOrganization } from "@clerk/clerk-react";
 import { createDirectMember, validateCustomerEmail, requestPlanUpgrade, recordSavingsCollection } from "@/lib/services";
+import FieldError from "@/components/ui/FieldError";
+import { sanitizeName, sanitizeEmail, validateEmail, validatePhone10, validateLettersOnlyName } from "@/lib/validation";
 import { where } from "firebase/firestore";
 import PlanLimitModal from "@/components/PlanLimitModal";
 
@@ -32,6 +34,7 @@ export default function AgentCustomers({ collectorRole = "AGENT", collectorName 
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   const [showAddCustomer, setShowAddCustomer] = useState(false);
+  const [addErrors, setAddErrors] = useState<Record<string, string>>({});
   const [firstName, setFirstName] = useState("");
   const [lastName, setLastName] = useState("");
   const [addEmail, setAddEmail] = useState("");
@@ -94,11 +97,8 @@ export default function AgentCustomers({ collectorRole = "AGENT", collectorName 
   };
 
   const resetAddForm = () => {
-    setFirstName("");
-    setLastName("");
-    setAddEmail("");
-    setAddPhone("");
-    setCreatedPassword(null);
+    setFirstName(""); setLastName(""); setAddEmail(""); setAddPhone("");
+    setCreatedPassword(null); setAddErrors({});
   };
 
   const handleAddCustomerSubmit = async (e: React.FormEvent) => {
@@ -109,8 +109,21 @@ export default function AgentCustomers({ collectorRole = "AGENT", collectorName 
       setShowLimitModal(true);
       return;
     }
-    if (!firstName.trim()) { toast.error("First name is required."); return; }
-    if (!addEmail.trim()) { toast.error("Email address is required."); return; }
+    const errors: Record<string, string> = {};
+    const fnRes = validateLettersOnlyName(firstName, { label: "First name" });
+    if (!fnRes.valid) errors.firstName = fnRes.error!;
+    const emailRes = validateEmail(addEmail);
+    if (!emailRes.valid) errors.email = emailRes.error!;
+    if (addPhone.trim()) {
+      const phoneRes = validatePhone10(addPhone);
+      if (!phoneRes.valid) errors.phone = phoneRes.error!;
+    }
+    if (Object.values(errors).some(Boolean)) {
+      setAddErrors(errors);
+      toast.error("Please fix the highlighted errors.");
+      return;
+    }
+    setAddErrors({});
 
     const emailKey = addEmail.trim().toLowerCase();
 
@@ -128,10 +141,10 @@ export default function AgentCustomers({ collectorRole = "AGENT", collectorName 
     setIsAdding(true);
     try {
       const { generatedPassword } = await createDirectMember({
-        firstName: firstName.trim(),
-        lastName: lastName.trim(),
+        firstName: sanitizeName(firstName),
+        lastName: sanitizeName(lastName),
         email: emailKey,
-        phone: addPhone.trim(),
+        phone: addPhone.replace(/\D/g, "").slice(0, 10),
         role: "CUSTOMER",
         organizationId: organization.id,
         organizationName: organization.name || "",
@@ -343,10 +356,11 @@ export default function AgentCustomers({ collectorRole = "AGENT", collectorName 
                     id="add-fname"
                     placeholder="Jane"
                     value={firstName}
-                    onChange={e => setFirstName(e.target.value)}
-                    required
+                    onChange={(e) => { setFirstName(e.target.value); if (addErrors.firstName) setAddErrors((p) => ({ ...p, firstName: "" })); }}
                     autoComplete="off"
+                    className={addErrors.firstName ? "border-red-400 focus-visible:ring-red-300" : ""}
                   />
+                  <FieldError error={addErrors.firstName} />
                 </div>
                 <div className="space-y-1.5">
                   <Label htmlFor="add-lname">Last Name</Label>
@@ -366,10 +380,11 @@ export default function AgentCustomers({ collectorRole = "AGENT", collectorName 
                   type="email"
                   placeholder="customer@email.com"
                   value={addEmail}
-                  onChange={e => setAddEmail(e.target.value)}
-                  required
+                  onChange={(e) => { setAddEmail(e.target.value); if (addErrors.email) setAddErrors((p) => ({ ...p, email: "" })); }}
                   autoComplete="off"
+                  className={addErrors.email ? "border-red-400 focus-visible:ring-red-300" : ""}
                 />
+                <FieldError error={addErrors.email} />
               </div>
               <div className="space-y-1.5">
                 <Label htmlFor="add-phone">Phone</Label>
@@ -378,15 +393,18 @@ export default function AgentCustomers({ collectorRole = "AGENT", collectorName 
                   type="tel"
                   placeholder="9876543210"
                   value={addPhone}
-                  onChange={e => setAddPhone(e.target.value)}
+                  onChange={(e) => { setAddPhone(e.target.value); if (addErrors.phone) setAddErrors((p) => ({ ...p, phone: "" })); }}
                   autoComplete="off"
+                  maxLength={10}
+                  className={addErrors.phone ? "border-red-400 focus-visible:ring-red-300" : ""}
                 />
+                <FieldError error={addErrors.phone} />
               </div>
               <div className="flex gap-3 pt-2">
                 <Button type="button" variant="outline" className="flex-1" onClick={() => { setShowAddCustomer(false); resetAddForm(); }}>
                   Cancel
                 </Button>
-                <Button type="submit" className="flex-1 bg-emerald-600 hover:bg-emerald-700" disabled={isValidating || isAdding || !firstName.trim() || !addEmail.trim()}>
+                <Button type="submit" className="flex-1 bg-emerald-600 hover:bg-emerald-700" disabled={isValidating || isAdding || !firstName.trim() || !addEmail.trim() || Object.values(addErrors).some(Boolean)}>
                   {isValidating || isAdding ? (
                     <><Loader2 className="w-4 h-4 mr-2 animate-spin" />{isValidating ? "Validating…" : "Creating…"}</>
                   ) : "Create Account"}

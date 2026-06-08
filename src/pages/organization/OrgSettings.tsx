@@ -22,6 +22,8 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import FieldError from "@/components/ui/FieldError";
+import { sanitizeName, validatePhone10, validateLettersOnlyName } from "@/lib/validation";
 
 export default function OrgSettings() {
   const { user } = useUser();
@@ -32,6 +34,8 @@ export default function OrgSettings() {
 
   const [activeSection, setActiveSection] = useState<"organization" | "profile" | "notifications" | "security">("organization");
   const [isSaving, setIsSaving] = useState(false);
+  const [profileErrors, setProfileErrors] = useState<Record<string, string>>({});
+  const [orgErrors, setOrgErrors] = useState<Record<string, string>>({});
 
   // Organization form state
   const [orgName, setOrgName] = useState(organization?.name || "");
@@ -47,10 +51,19 @@ export default function OrgSettings() {
 
   const saveOrgSettings = async () => {
     if (!organization?.id) return;
+    if (orgName.trim() && orgName.trim().length < 3) {
+      setOrgErrors({ orgName: "Name must be at least 3 characters." });
+      return;
+    }
+    if (orgName.trim().length > 100) {
+      setOrgErrors({ orgName: "Name cannot exceed 100 characters." });
+      return;
+    }
+    setOrgErrors({});
     setIsSaving(true);
     try {
       await setDoc(doc(db, "organizations", organization.id), {
-        name: orgName.trim() || organization.name,
+        name: sanitizeName(orgName) || organization.name,
         settings: {
           notifNewCollection,
           notifNewMember,
@@ -68,21 +81,29 @@ export default function OrgSettings() {
 
   const saveProfile = async () => {
     if (!user || !membershipId) return;
-    const cleanedPhone = phone.replace(/\D/g, "");
-    if (cleanedPhone.length !== 10) {
-      toast.error("Enter a valid 10-digit mobile number.");
+    const errors: Record<string, string> = {};
+    if (fullName.trim() && fullName.trim().length < 2) errors.fullName = "Name must be at least 2 characters.";
+    if (fullName.trim().length > 100) errors.fullName = "Name cannot exceed 100 characters.";
+    if (phone.trim()) {
+      const phoneRes = validatePhone10(phone);
+      if (!phoneRes.valid) errors.phone = phoneRes.error!;
+    }
+    if (Object.values(errors).some(Boolean)) {
+      setProfileErrors(errors);
       return;
     }
+    setProfileErrors({});
+    const cleanPhone = phone.replace(/\D/g, "").slice(0, 10);
     setIsSaving(true);
     try {
       await setDoc(doc(db, "organizationMembers", membershipId), {
-        fullName: fullName.trim(),
-        phone: phone.trim(),
+        fullName: sanitizeName(fullName),
+        phone: cleanPhone,
         updatedAt: serverTimestamp(),
       }, { merge: true });
       await setDoc(doc(db, "users", user.id), {
-        name: fullName.trim(),
-        phone: phone.trim(),
+        name: sanitizeName(fullName),
+        phone: cleanPhone,
         updatedAt: serverTimestamp(),
       }, { merge: true });
       toast.success("Profile updated successfully.");
@@ -148,10 +169,18 @@ export default function OrgSettings() {
                   <Label>Organization Name</Label>
                   <Input
                     value={orgName}
-                    onChange={(e) => setOrgName(e.target.value)}
+                    onChange={(e) => {
+                      setOrgName(e.target.value);
+                      const v = e.target.value.trim();
+                      if (v && v.length < 3) setOrgErrors({ orgName: "Minimum 3 characters." });
+                      else if (v.length > 100) setOrgErrors({ orgName: "Maximum 100 characters." });
+                      else setOrgErrors({});
+                    }}
                     placeholder={organization?.name}
-                    className="rounded-xl"
+                    maxLength={100}
+                    className={`rounded-xl ${orgErrors.orgName ? "border-red-400 focus-visible:ring-red-300" : ""}`}
                   />
+                  <FieldError error={orgErrors.orgName} />
                 </div>
                 <div className="grid gap-2">
                   <Label>Organization ID</Label>
@@ -187,10 +216,18 @@ export default function OrgSettings() {
                   <Label>Full Name</Label>
                   <Input
                     value={fullName}
-                    onChange={(e) => setFullName(e.target.value)}
+                    onChange={(e) => {
+                      setFullName(e.target.value);
+                      const v = e.target.value.trim();
+                      if (v && v.length < 2) setProfileErrors((p) => ({ ...p, fullName: "Minimum 2 characters." }));
+                      else if (v.length > 100) setProfileErrors((p) => ({ ...p, fullName: "Maximum 100 characters." }));
+                      else setProfileErrors((p) => ({ ...p, fullName: "" }));
+                    }}
                     placeholder="Your full name"
-                    className="rounded-xl"
+                    maxLength={100}
+                    className={`rounded-xl ${profileErrors.fullName ? "border-red-400 focus-visible:ring-red-300" : ""}`}
                   />
+                  <FieldError error={profileErrors.fullName} />
                 </div>
                 <div className="grid gap-2">
                   <Label>Phone Number</Label>
@@ -199,11 +236,16 @@ export default function OrgSettings() {
                     inputMode="numeric"
                     maxLength={10}
                     value={phone}
-                    onChange={(e) => setPhone(e.target.value.replace(/\D/g, "").substring(0, 10))}
+                    onChange={(e) => {
+                      const v = e.target.value.replace(/\D/g, "").substring(0, 10);
+                      setPhone(v);
+                      if (v && v.length !== 10) setProfileErrors((p) => ({ ...p, phone: "Must be exactly 10 digits." }));
+                      else setProfileErrors((p) => ({ ...p, phone: "" }));
+                    }}
                     placeholder="9876543210"
-                    className="rounded-xl"
+                    className={`rounded-xl ${profileErrors.phone ? "border-red-400 focus-visible:ring-red-300" : ""}`}
                   />
-                  <p className="text-xs text-slate-400">Enter 10-digit Indian mobile number</p>
+                  <FieldError error={profileErrors.phone} />
                 </div>
                 <div className="grid gap-2">
                   <Label>Email Address</Label>

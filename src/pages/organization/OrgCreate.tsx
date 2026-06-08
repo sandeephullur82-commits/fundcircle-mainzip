@@ -6,6 +6,8 @@ import { toast } from "sonner";
 import { Building2, ArrowRight, RefreshCw, Sparkles, Shield, AlertTriangle } from "lucide-react";
 import BackToHomeButton from "@/components/BackToHomeButton";
 import { useLanguage } from "@/lib/languageContext";
+import FieldError from "@/components/ui/FieldError";
+import { sanitizeName } from "@/lib/validation";
 import { doc, setDoc, serverTimestamp, collection, query, where, getDocs } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import { membershipIdFor } from "@/lib/services";
@@ -19,6 +21,7 @@ export default function OrgCreate() {
 
   const [orgName, setOrgName] = useState("");
   const [isLoading, setIsLoading] = useState(false);
+  const [orgNameError, setOrgNameError] = useState("");
 
   const [existingOrgName, setExistingOrgName] = useState<string | null>(null);
   const [ownershipChecked, setOwnershipChecked] = useState(false);
@@ -49,7 +52,11 @@ export default function OrgCreate() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (existingOrgName) return;
-    if (!orgName.trim()) return toast.error("Please enter an organization name.");
+    const trimmedName = orgName.trim();
+    if (!trimmedName) { setOrgNameError("Organization name is required."); return; }
+    if (trimmedName.length < 3) { setOrgNameError("Name must be at least 3 characters."); return; }
+    if (trimmedName.length > 100) { setOrgNameError("Name cannot exceed 100 characters."); return; }
+    setOrgNameError("");
 
     setIsLoading(true);
     try {
@@ -57,12 +64,13 @@ export default function OrgCreate() {
         return toast.error("You do not have administrative permission to establish organizations.");
       }
 
-      const org = await createOrganization({ name: orgName.trim() });
+      const cleanName = sanitizeName(orgName);
+      const org = await createOrganization({ name: cleanName });
 
       await setDoc(doc(db, "organizations", org.id), {
         id: org.id,
         organizationId: org.id,
-        name: orgName.trim(),
+        name: cleanName,
         ownerClerkUserId: user?.id || "",
         ownerEmail: user?.primaryEmailAddress?.emailAddress || "",
         createdAt: serverTimestamp(),
@@ -82,7 +90,7 @@ export default function OrgCreate() {
           clerkUserId: user.id,
           clerkRole: "org:owner",
           role: "OWNER",
-          organizationName: orgName.trim(),
+          organizationName: cleanName,
           fullName: user.fullName || "Owner",
           name: user.fullName || "Owner",
           email: user.primaryEmailAddress?.emailAddress || "",
@@ -197,18 +205,26 @@ export default function OrgCreate() {
                   <label htmlFor="org-name-input" className="text-xs font-bold text-slate-500 uppercase tracking-wider">
                     Organization / Bank Name
                   </label>
-                  <div className="relative">
+                  <div className="relative" style={{ marginBottom: 0 }}>
                     <Building2 className="w-5 h-5 absolute left-3.5 top-3.5 text-slate-400" />
                     <input
                       id="org-name-input"
                       type="text"
-                      required
                       placeholder="e.g. Mandya Pigmy Co-operative Bank"
                       value={orgName}
-                      onChange={(e) => setOrgName(e.target.value)}
-                      className="h-12 w-full pl-11 pr-4 rounded-xl border border-slate-200 bg-slate-50/50 text-slate-900 placeholder-slate-400 focus:bg-white text-sm transition-all focus:outline-none focus:ring-4 focus:ring-blue-500/10 focus:border-blue-500"
+                      onChange={(e) => {
+                        setOrgName(e.target.value);
+                        const v = e.target.value.trim();
+                        if (!v) setOrgNameError("Organization name is required.");
+                        else if (v.length < 3) setOrgNameError("Minimum 3 characters.");
+                        else if (v.length > 100) setOrgNameError("Maximum 100 characters.");
+                        else setOrgNameError("");
+                      }}
+                      maxLength={100}
+                      className={`h-12 w-full pl-11 pr-4 rounded-xl border ${orgNameError ? "border-red-400 focus:border-red-500 focus:ring-red-500/10" : "border-slate-200 focus:border-blue-500 focus:ring-blue-500/10"} bg-slate-50/50 text-slate-900 placeholder-slate-400 focus:bg-white text-sm transition-all focus:outline-none focus:ring-4`}
                     />
                   </div>
+                  <FieldError error={orgNameError} />
                 </div>
 
                 <button

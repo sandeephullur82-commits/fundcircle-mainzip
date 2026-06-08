@@ -18,6 +18,11 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { format } from "date-fns";
+import FieldError from "@/components/ui/FieldError";
+import {
+  sanitizeName, sanitizeEmail, sanitizeMultiline,
+  validateEmail, validatePhone10, validateLettersOnlyName,
+} from "@/lib/validation";
 
 type CreatedCredentials = { name: string; email: string; password: string };
 type AgentStatus = "ACTIVE" | "INACTIVE" | "ARCHIVED";
@@ -109,10 +114,37 @@ export default function OrgAgents() {
     return statusConfig[key] || { label: key, className: "bg-slate-50 text-slate-600 border-slate-100" };
   };
 
+  const [formErrors, setFormErrors] = useState<Record<string, string>>({});
+
   const resetForm = () => {
     setFirstName(""); setLastName(""); setEmail(""); setPhone("");
     setEmployeeCode(""); setAddress(""); setCreateNotes("");
-    setCredentials(null); setCopiedField(null);
+    setCredentials(null); setCopiedField(null); setFormErrors({});
+  };
+
+  const validateAgentField = (field: string, value: string) => {
+    let error = "";
+    if (field === "firstName") {
+      const r = validateLettersOnlyName(value, { label: "First name" });
+      error = r.valid ? "" : (r.error ?? "");
+    } else if (field === "lastName") {
+      if (value.trim() && value.trim().length < 2) error = "Minimum 2 characters";
+      else if (value.trim().length > 50) error = "Maximum 50 characters";
+    } else if (field === "email") {
+      const r = validateEmail(value);
+      error = r.valid ? "" : (r.error ?? "");
+    } else if (field === "phone") {
+      if (value.trim()) {
+        const r = validatePhone10(value);
+        error = r.valid ? "" : (r.error ?? "");
+      }
+    } else if (field === "address") {
+      if (value.trim().length > 500) error = "Maximum 500 characters";
+    } else if (field === "employeeCode") {
+      if (value.trim().length > 20) error = "Maximum 20 characters";
+      else if (value.trim() && /[<>"'\/\\;{}()\[\]]/.test(value)) error = "Contains invalid characters";
+    }
+    setFormErrors((prev) => ({ ...prev, [field]: error }));
   };
 
   const copyToClipboard = async (text: string, field: "email" | "password") => {
@@ -133,9 +165,25 @@ export default function OrgAgents() {
 
     if (!organization?.id) { toast.error("No active organization selected."); return; }
     if (!user?.id) { toast.error("No authenticated owner."); return; }
-    if (!firstName.trim()) { toast.error("First name is required."); return; }
-    if (!email.trim()) { toast.error("Email address is required."); return; }
     if (atLimit) { toast.error(`Collector limit of ${maxCollectors} reached.`); return; }
+
+    const submitErrors: Record<string, string> = {};
+    const fnRes = validateLettersOnlyName(firstName, { label: "First name" });
+    if (!fnRes.valid) submitErrors.firstName = fnRes.error!;
+    const emailRes = validateEmail(email);
+    if (!emailRes.valid) submitErrors.email = emailRes.error!;
+    if (phone.trim()) {
+      const phoneRes = validatePhone10(phone);
+      if (!phoneRes.valid) submitErrors.phone = phoneRes.error!;
+    }
+    if (employeeCode.trim().length > 20) submitErrors.employeeCode = "Maximum 20 characters";
+    if (address.trim().length > 500) submitErrors.address = "Maximum 500 characters";
+    if (Object.values(submitErrors).some(Boolean)) {
+      setFormErrors(submitErrors);
+      toast.error("Please fix the highlighted errors before continuing.");
+      return;
+    }
+    setFormErrors({});
 
     const emailKey = email.trim().toLowerCase();
     setIsValidating(true);
@@ -149,13 +197,13 @@ export default function OrgAgents() {
     setIsSubmitting(true);
     try {
       const { generatedPassword } = await createDirectMember({
-        firstName: firstName.trim(), lastName: lastName.trim(),
-        email: emailKey, phone: phone.trim(),
+        firstName: sanitizeName(firstName), lastName: sanitizeName(lastName),
+        email: emailKey, phone: phone.replace(/\D/g, "").slice(0, 10),
         role: "AGENT",
         organizationId: organization.id, organizationName: organization.name || "",
         createdBy: user.id, actorName: user.fullName || user.firstName || "",
-        address: address.trim(), notes: createNotes.trim(),
-        employeeCode: employeeCode.trim() || undefined,
+        address: sanitizeMultiline(address, 500), notes: sanitizeMultiline(createNotes, 500),
+        employeeCode: employeeCode.trim().slice(0, 20) || undefined,
       });
       setCredentials({ name: `${firstName.trim()} ${lastName.trim()}`.trim(), email: emailKey, password: generatedPassword });
       toast.success("Agent account created successfully.");
@@ -203,11 +251,19 @@ export default function OrgAgents() {
 
   const handleSaveEdit = async () => {
     if (!editAgent) return;
+    if (editPhone.trim()) {
+      const phoneRes = validatePhone10(editPhone);
+      if (!phoneRes.valid) { toast.error(phoneRes.error); return; }
+    }
+    if (editAddress.trim().length > 500) { toast.error("Address cannot exceed 500 characters."); return; }
+    const cleanPhone = editPhone ? editPhone.replace(/\D/g, "").slice(0, 10) : "";
+    const cleanAddress = sanitizeMultiline(editAddress, 500);
+    const cleanNotes = sanitizeMultiline(editNotes, 500);
     setSaving(true);
     try {
       await updateDoc(doc(db, "organizationMembers", editAgent.id), {
-        phone: editPhone, address: editAddress,
-        status: editStatus, notes: editNotes, updatedAt: serverTimestamp(),
+        phone: cleanPhone || editPhone, address: cleanAddress,
+        status: editStatus, notes: cleanNotes, updatedAt: serverTimestamp(),
       });
       toast.success("Agent updated successfully.");
       setEditAgent(null);
@@ -298,30 +354,53 @@ export default function OrgAgents() {
                   <div className="grid grid-cols-2 gap-3">
                     <div className="space-y-1.5">
                       <Label>First Name <span className="text-red-500">*</span></Label>
-                      <Input placeholder="John" value={firstName} onChange={(e) => setFirstName(e.target.value)} required autoComplete="off" />
+                      <Input placeholder="John" value={firstName}
+                        onChange={(e) => { setFirstName(e.target.value); validateAgentField("firstName", e.target.value); }}
+                        autoComplete="off"
+                        className={formErrors.firstName ? "border-red-400 focus-visible:ring-red-300" : ""} />
+                      <FieldError error={formErrors.firstName} />
                     </div>
                     <div className="space-y-1.5">
                       <Label>Last Name</Label>
-                      <Input placeholder="Doe" value={lastName} onChange={(e) => setLastName(e.target.value)} autoComplete="off" />
+                      <Input placeholder="Doe" value={lastName}
+                        onChange={(e) => { setLastName(e.target.value); validateAgentField("lastName", e.target.value); }}
+                        autoComplete="off"
+                        className={formErrors.lastName ? "border-red-400 focus-visible:ring-red-300" : ""} />
+                      <FieldError error={formErrors.lastName} />
                     </div>
                   </div>
                   <div className="space-y-1.5">
                     <Label>Email Address <span className="text-red-500">*</span></Label>
-                    <Input type="email" placeholder="agent@example.com" value={email} onChange={(e) => setEmail(e.target.value)} required autoComplete="off" />
+                    <Input type="email" placeholder="agent@example.com" value={email}
+                      onChange={(e) => { setEmail(e.target.value); validateAgentField("email", e.target.value); }}
+                      autoComplete="off"
+                      className={formErrors.email ? "border-red-400 focus-visible:ring-red-300" : ""} />
+                    <FieldError error={formErrors.email} />
                   </div>
                   <div className="grid grid-cols-2 gap-3">
                     <div className="space-y-1.5">
                       <Label>Phone Number</Label>
-                      <Input type="tel" placeholder="+91 98765 43210" value={phone} onChange={(e) => setPhone(e.target.value)} />
+                      <Input type="tel" placeholder="10-digit mobile" value={phone}
+                        onChange={(e) => { setPhone(e.target.value); validateAgentField("phone", e.target.value); }}
+                        maxLength={10}
+                        className={formErrors.phone ? "border-red-400 focus-visible:ring-red-300" : ""} />
+                      <FieldError error={formErrors.phone} />
                     </div>
                     <div className="space-y-1.5">
                       <Label>Employee Code</Label>
-                      <Input placeholder="EMP001" value={employeeCode} onChange={(e) => setEmployeeCode(e.target.value)} />
+                      <Input placeholder="EMP001" value={employeeCode}
+                        onChange={(e) => { setEmployeeCode(e.target.value); validateAgentField("employeeCode", e.target.value); }}
+                        maxLength={20}
+                        className={formErrors.employeeCode ? "border-red-400 focus-visible:ring-red-300" : ""} />
+                      <FieldError error={formErrors.employeeCode} />
                     </div>
                   </div>
                   <div className="space-y-1.5">
                     <Label>Address</Label>
-                    <Input placeholder="Street, City, State" value={address} onChange={(e) => setAddress(e.target.value)} />
+                    <Input placeholder="Street, City, State" value={address}
+                      onChange={(e) => { setAddress(e.target.value); validateAgentField("address", e.target.value); }}
+                      className={formErrors.address ? "border-red-400 focus-visible:ring-red-300" : ""} />
+                    <FieldError error={formErrors.address} />
                   </div>
                   <div className="space-y-1.5">
                     <Label>Notes</Label>
@@ -330,7 +409,7 @@ export default function OrgAgents() {
                       className="w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 placeholder:text-slate-400 focus:border-slate-400 focus:outline-none resize-none" />
                   </div>
                   <Button type="submit" className="w-full h-11 font-semibold"
-                    disabled={isValidating || isSubmitting || !firstName.trim() || !email.trim()}>
+                    disabled={isValidating || isSubmitting || !firstName.trim() || !email.trim() || Object.values(formErrors).some(Boolean)}>
                     {isValidating ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" />Validating…</>
                       : isSubmitting ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" />Creating agent…</>
                       : "Create Agent"}

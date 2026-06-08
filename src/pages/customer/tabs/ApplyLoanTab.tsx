@@ -1,5 +1,7 @@
 import React, { useState } from "react";
 import { Send, TrendingUp, Clock, CheckCircle, XCircle, FileText } from "lucide-react";
+import FieldError from "@/components/ui/FieldError";
+import { sanitizeMultiline } from "@/lib/validation";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { addDoc, collection as fsCol, serverTimestamp } from "firebase/firestore";
 import { db } from "@/lib/firebase";
@@ -41,6 +43,7 @@ export default function ApplyLoanTab({ orgId, membershipId, user, loanApplicatio
   const [notes, setNotes] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [showForm, setShowForm] = useState(false);
+  const [formErrors, setFormErrors] = useState<Record<string, string>>({});
 
   const sortedApps = [...loanApplications].sort(
     (a, b) => toDate(b.createdAt).getTime() - toDate(a.createdAt).getTime()
@@ -51,10 +54,23 @@ export default function ApplyLoanTab({ orgId, membershipId, user, loanApplicatio
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!orgId || !membershipId || !user) return toast.error("Organization not loaded.");
-    if (Number(loanAmount) <= 0) return toast.error("Loan amount must be greater than 0.");
-    if (!loanPurpose) return toast.error("Please select a loan purpose.");
-    if (!employmentType) return toast.error("Please select your employment type.");
-    if (Number(monthlyIncome) <= 0) return toast.error("Please enter your monthly income.");
+
+    const errors: Record<string, string> = {};
+    const amountNum = Number(loanAmount);
+    if (!loanAmount || amountNum <= 0) errors.loanAmount = "Loan amount must be greater than 0";
+    else if (amountNum > 10_000_000) errors.loanAmount = "Cannot exceed ₹1,00,00,000";
+    if (!loanPurpose) errors.loanPurpose = "Please select a loan purpose";
+    if (!employmentType) errors.employmentType = "Please select your employment type";
+    const incomeNum = Number(monthlyIncome);
+    if (!monthlyIncome || incomeNum <= 0) errors.monthlyIncome = "Please enter your monthly income";
+    if (loanAddress.trim().length > 500) errors.loanAddress = "Address cannot exceed 500 characters";
+    if (notes.trim().length > 500) errors.notes = "Notes cannot exceed 500 characters";
+    if (Object.values(errors).some(Boolean)) {
+      setFormErrors(errors);
+      toast.error("Please fix the highlighted errors.");
+      return;
+    }
+    setFormErrors({});
 
     setSubmitting(true);
     try {
@@ -68,8 +84,8 @@ export default function ApplyLoanTab({ orgId, membershipId, user, loanApplicatio
         tenureMonths: Number(tenureMonths),
         monthlyIncome: Number(monthlyIncome),
         employmentType,
-        address: loanAddress,
-        notes,
+        address: sanitizeMultiline(loanAddress, 500),
+        notes: sanitizeMultiline(notes, 500),
         status: "PENDING",
         createdAt: serverTimestamp(),
         updatedAt: serverTimestamp(),
@@ -209,18 +225,22 @@ export default function ApplyLoanTab({ orgId, membershipId, user, loanApplicatio
               <div className="grid grid-cols-1 gap-4">
                 <Field label="Loan Amount (₹) *">
                   <input
-                    type="number" min="1000" step="100" required value={loanAmount}
-                    onChange={(e) => setLoanAmount(e.target.value)}
+                    type="number" min="1000" step="100" value={loanAmount}
+                    onChange={(e) => { setLoanAmount(e.target.value); setFormErrors((p) => ({ ...p, loanAmount: "" })); }}
                     placeholder="e.g. 50,000"
-                    className="fc-input"
+                    className={`fc-input ${formErrors.loanAmount ? "border-red-400" : ""}`}
                   />
+                  <FieldError error={formErrors.loanAmount} />
                 </Field>
 
                 <Field label="Loan Purpose *">
-                  <select required value={loanPurpose} onChange={(e) => setLoanPurpose(e.target.value)} className="fc-input">
+                  <select value={loanPurpose}
+                    onChange={(e) => { setLoanPurpose(e.target.value); setFormErrors((p) => ({ ...p, loanPurpose: "" })); }}
+                    className={`fc-input ${formErrors.loanPurpose ? "border-red-400" : ""}`}>
                     <option value="">Select purpose…</option>
                     {LOAN_PURPOSES.map((p) => <option key={p} value={p}>{p}</option>)}
                   </select>
+                  <FieldError error={formErrors.loanPurpose} />
                 </Field>
 
                 <div className="grid grid-cols-2 gap-3">
