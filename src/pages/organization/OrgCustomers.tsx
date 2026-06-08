@@ -306,7 +306,7 @@ export default function OrgCustomers() {
     setSavingEdit(true);
     const newCollector = collectorsForAssignment.find((c) => c.id === editCollectorId);
     try {
-      await updateDoc(doc(db, "organizationMembers", editCustomer.id), {
+      const memberUpdate = {
         phone: cleanPhone || editPhone,
         address: cleanAddress,
         nominee: cleanNominee,
@@ -317,7 +317,11 @@ export default function OrgCustomers() {
           assignedAgentName: newCollector.fullName || (newCollector as any).name || "",
         } : {}),
         updatedAt: serverTimestamp(),
-      });
+      };
+      await updateDoc(doc(db, "organizationMembers", editCustomer.id), memberUpdate);
+      try {
+        await updateDoc(doc(db, "customers", editCustomer.id), memberUpdate);
+      } catch (_) {}
       toast.success("Customer updated successfully.");
       setEditCustomer(null);
     } catch (err) {
@@ -337,10 +341,11 @@ export default function OrgCustomers() {
     setDeactivating(true);
     try {
       const isActive = (deactivateCustomer.status as string || "ACTIVE") === "ACTIVE";
-      await updateDoc(doc(db, "organizationMembers", deactivateCustomer.id), {
-        status: isActive ? "INACTIVE" : "ACTIVE",
-        updatedAt: serverTimestamp(),
-      });
+      const statusUpdate = { status: isActive ? "INACTIVE" : "ACTIVE", updatedAt: serverTimestamp() };
+      await updateDoc(doc(db, "organizationMembers", deactivateCustomer.id), statusUpdate);
+      try {
+        await updateDoc(doc(db, "customers", deactivateCustomer.id), statusUpdate);
+      } catch (_) {}
       toast.success(isActive ? "Customer deactivated." : "Customer reactivated.");
       setDeactivateCustomer(null);
     } catch { toast.error("Failed to update customer status."); }

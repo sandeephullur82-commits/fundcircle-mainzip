@@ -172,6 +172,9 @@ export async function recordSavingsCollection(params: {
     receiptNo,
     collectedByName: params.agentName,
     collectedAt: serverTimestamp(),
+    createdAt: serverTimestamp(),
+    createdBy: params.agentId,
+    status: "COMPLETED",
   });
 
   // Update savings account balance
@@ -349,6 +352,9 @@ export async function approveLoan(params: {
         receiptNo: null,
         collectedByAgentId: null,
         collectedByAgentName: null,
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+        createdBy: params.actorId,
       })
     );
   }
@@ -528,6 +534,7 @@ export async function createDirectMember(params: {
   customerType?: "SAVINGS" | "LOAN" | "SAVINGS_LOAN";
   createdBy: string;
   actorName?: string;
+  authToken?: string;
 }): Promise<{ clerkUserId: string; generatedPassword: string }> {
   const emailKey = params.email.trim().toLowerCase();
   const endpoint = params.role === "AGENT" ? "/api/create-agent" : "/api/create-customer";
@@ -554,10 +561,16 @@ export async function createDirectMember(params: {
   if (!params.createdBy) {
     throw new Error("User identity not found. Please sign in again.");
   }
+  if (!params.authToken) {
+    throw new Error("Authentication token missing. Please sign in again.");
+  }
 
   const res = await fetch(endpoint, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: {
+      "Content-Type": "application/json",
+      "Authorization": `Bearer ${params.authToken}`,
+    },
     body: JSON.stringify(payload),
   });
 
@@ -622,7 +635,6 @@ export async function createDirectMember(params: {
   };
 
   await setDoc(doc(db, "organizationMembers", membershipDocId), membershipData, { merge: true });
-  await setDoc(doc(db, "memberships", membershipDocId), membershipData, { merge: true });
 
   if (params.role === "CUSTOMER") {
     const accountNumber = generateAccountNumber();
@@ -728,7 +740,6 @@ export async function provisionUser(params: {
   };
 
   await setDoc(doc(db, "organizationMembers", membershipDocId), membershipData);
-  await setDoc(doc(db, "memberships", membershipDocId), membershipData);
 
   if (params.role === "CUSTOMER") {
     // Create customer doc

@@ -174,7 +174,11 @@ export default function OrgDashboard() {
       setDoc(doc(db, "organizations", organization.id), {
         id: organization.id,
         name: organization.name,
+        slug: organization.slug || "",
+        createdBy: user.id,
+        status: "ACTIVE",
         updatedAt: serverTimestamp(),
+        createdAt: serverTimestamp(),
       }, { merge: true }).catch(() => {});
     }
   }, [user?.id, organization?.id]);

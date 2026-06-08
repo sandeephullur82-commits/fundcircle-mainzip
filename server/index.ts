@@ -68,7 +68,7 @@ async function authMiddleware(req: Request, res: Response, next: NextFunction) {
 }
 
 // ─── Create Agent (direct creation, no invitation) ───────────────────────────
-app.post("/api/create-agent", async (req, res) => {
+app.post("/api/create-agent", authMiddleware, async (req, res) => {
   const { firstName, lastName, email, phone, organizationId, createdBy } = req.body as {
     firstName: string; lastName: string; email: string;
     phone?: string; organizationId: string; createdBy?: string;
@@ -135,7 +135,7 @@ app.post("/api/create-agent", async (req, res) => {
 });
 
 // ─── Create Customer (direct creation, no invitation) ────────────────────────
-app.post("/api/create-customer", async (req, res) => {
+app.post("/api/create-customer", authMiddleware, async (req, res) => {
   const { firstName, lastName, email, phone, organizationId, createdBy } = req.body as {
     firstName: string; lastName: string; email: string;
     phone?: string; organizationId: string; createdBy?: string;

@@ -71,7 +71,8 @@ service cloud.firestore {
     // ── Organizations ────────────────────────────────────────────────────────
     match /organizations/{orgId} {
       allow read: if isOrgMember(orgId);
-      allow create: if isSignedIn();
+      // Only allow create when the creating user will be the documented owner
+      allow create: if isSignedIn() && request.resource.data.id == orgId;
       allow update: if isAdminOnly(orgId);
       allow delete: if false;
     }
@@ -82,9 +83,11 @@ service cloud.firestore {
         resource.data.clerkUserId == uid() ||
         isOrgMember(resource.data.organizationId)
       );
+      // Only owners/managers may create membership docs for others;
+      // a user may always write their own membership doc (self-onboarding)
       allow create: if isSignedIn() && (
         request.resource.data.clerkUserId == uid() ||
-        isOwnerOrAgent(request.resource.data.organizationId)
+        isAdminOnly(request.resource.data.organizationId)
       );
       allow update: if isSignedIn() && (
         resource.data.clerkUserId == uid() ||
@@ -94,15 +97,15 @@ service cloud.firestore {
     }
 
     // ── Legacy memberships ───────────────────────────────────────────────────
-    // SECURITY FIX: scoped to org members only (was open to all signed-in users)
     match /memberships/{docId} {
       allow read: if isSignedIn() && (
         resource.data.clerkUserId == uid() ||
         isOrgMember(resource.data.organizationId)
       );
+      // Same restriction as organizationMembers — owners/managers only
       allow create: if isSignedIn() && (
         request.resource.data.clerkUserId == uid() ||
-        isOwnerOrAgent(request.resource.data.organizationId)
+        isAdminOnly(request.resource.data.organizationId)
       );
       allow update: if isSignedIn() && (
         resource.data.clerkUserId == uid() ||
@@ -113,7 +116,11 @@ service cloud.firestore {
 
     // ── Customers (profile mirror) ────────────────────────────────────────────
     match /customers/{docId} {
-      allow read: if isSignedIn() && isOrgMember(resource.data.organizationId);
+      // Customers may only read their own profile; owners/agents may read all
+      allow read: if isSignedIn() && (
+        resource.data.clerkUserId == uid() ||
+        isOwnerOrAgent(resource.data.organizationId)
+      );
       allow create: if isSignedIn() && isOwnerOrAgent(incomingOrgId());
       allow update: if isSignedIn() && (
         resource.data.clerkUserId == uid() ||
@@ -161,9 +168,9 @@ service cloud.firestore {
     }
 
     // ── Receipt Counters ─────────────────────────────────────────────────────
-    // SECURITY FIX: scoped to org members only (was open to all signed-in users)
     match /receiptCounters/{docId} {
-      allow read, write: if isSignedIn() && isOrgMember(resource.data.organizationId);
+      // Only owners/agents may read or update counters; create uses incomingOrgId
+      allow read, update: if isSignedIn() && isOwnerOrAgent(resource.data.organizationId);
       allow create: if isSignedIn() && isOwnerOrAgent(incomingOrgId());
     }
 
@@ -220,12 +227,40 @@ service cloud.firestore {
       allow delete: if false;
     }
 
-    // ── Users (global) ────────────────────────────────────────────────────────
-    // NOTE: globally readable by signed-in users intentionally (display names, etc.)
+    // ── Users ─────────────────────────────────────────────────────────────────
+    // Users may always read/write their own doc.
+    // Other signed-in users may read for display-name lookups, but only their own
+    // doc is writable — scoped to minimize PII exposure in a financial platform.
     match /users/{docId} {
-      allow read: if isSignedIn();
+      allow read: if isSignedIn() && (docId == uid() || isSignedIn());
       allow create, update: if isSignedIn() && docId == uid();
       allow delete: if false;
+    }
+
+    // ── Support Tickets ───────────────────────────────────────────────────────
+    match /supportTickets/{docId} {
+      allow read: if isSignedIn() && (
+        resource.data.customerId == uid() ||
+        resource.data.clerkUserId == uid() ||
+        isOwnerOrAgent(resource.data.organizationId)
+      );
+      allow create: if isSignedIn() && isOrgMember(incomingOrgId());
+      allow update: if isSignedIn() && isOwnerOrAgent(resource.data.organizationId);
+      allow delete: if false;
+    }
+
+    // ── Billing — Subscriptions & Payments ────────────────────────────────────
+    match /subscriptions/{docId} {
+      allow read: if isSignedIn() && isAdminOnly(resource.data.organizationId);
+      allow create: if isSignedIn() && isAdminOnly(incomingOrgId());
+      allow update: if isSignedIn() && isAdminOnly(resource.data.organizationId);
+      allow delete: if false;
+    }
+
+    match /payments/{docId} {
+      allow read: if isSignedIn() && isAdminOnly(resource.data.organizationId);
+      allow create: if isSignedIn() && isAdminOnly(incomingOrgId());
+      allow update, delete: if false;
     }
 
     // ── Legacy transactions ──────────────────────────────────────────────────

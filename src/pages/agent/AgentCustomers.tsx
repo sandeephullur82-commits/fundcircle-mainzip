@@ -8,7 +8,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
 import { Search, IndianRupee, UserPlus, Loader2 } from "lucide-react";
-import { useUser, useOrganization } from "@clerk/clerk-react";
+import { useUser, useOrganization, useAuth } from "@clerk/clerk-react";
 import { createDirectMember, validateCustomerEmail, requestPlanUpgrade, recordSavingsCollection } from "@/lib/services";
 import FieldError from "@/components/ui/FieldError";
 import { sanitizeName, sanitizeEmail, validateEmail, validatePhone10, validateLettersOnlyName } from "@/lib/validation";
@@ -24,6 +24,7 @@ type AgentCustomersProps = {
 export default function AgentCustomers({ collectorRole = "AGENT", collectorName = "", collectorId = "" }: AgentCustomersProps) {
   const { user } = useUser();
   const { organization } = useOrganization();
+  const { getToken } = useAuth();
 
   const { data: orgDoc } = useDocumentRealtime<any>("organizations", organization?.id ?? null);
   const { data: allCustomers, loading } = useCollectionRealtime<Membership>("organizationMembers", [where("role", "==", "CUSTOMER")]);
@@ -140,6 +141,7 @@ export default function AgentCustomers({ collectorRole = "AGENT", collectorName 
 
     setIsAdding(true);
     try {
+      const authToken = await getToken();
       const { generatedPassword } = await createDirectMember({
         firstName: sanitizeName(firstName),
         lastName: sanitizeName(lastName),
@@ -152,6 +154,7 @@ export default function AgentCustomers({ collectorRole = "AGENT", collectorName 
         assignedAgentName: activeCollectorName,
         createdBy: user.id,
         actorName: activeCollectorName,
+        authToken: authToken || undefined,
       });
       setCreatedPassword(generatedPassword);
       toast.success("Customer account created successfully!");

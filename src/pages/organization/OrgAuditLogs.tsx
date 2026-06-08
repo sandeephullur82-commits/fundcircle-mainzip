@@ -31,13 +31,13 @@ function toDate(ts: any): Date {
 }
 
 export default function OrgAuditLogs() {
-  const { data: logs, loading } = useCollectionRealtime<AuditLog>("audit_logs");
+  const { data: logs, loading } = useCollectionRealtime<AuditLog>("audit_logs", [
+    orderBy("createdAt", "desc"),
+  ]);
   const [search, setSearch] = useState("");
   const [expandedId, setExpandedId] = useState<string | null>(null);
 
-  const sorted = [...logs].sort((a, b) =>
-    toDate(b.createdAt).valueOf() - toDate(a.createdAt).valueOf()
-  );
+  const sorted = logs;
 
   const filtered = sorted.filter((log) => {
     const term = search.toLowerCase();

@@ -101,15 +101,18 @@ class OfflineSyncService {
 
     for (const pay of pending) {
       try {
-        await addDoc(collection(db, 'transactions'), {
+        await addDoc(collection(db, 'collections'), {
           organizationId: pay.orgId,
           customerId: pay.customerId,
           customerName: pay.customerName,
           amount: pay.amount,
-          type: pay.type,
+          collectionType: pay.type === 'EMI' ? 'LOAN_EMI' : 'SAVINGS',
+          collectedAt: serverTimestamp(),
+          timestamp: serverTimestamp(),
           date: pay.date,
           notes: pay.notes ?? '',
           syncedFromOffline: true,
+          status: 'completed',
           createdAt: serverTimestamp(),
         });
         await offlineDb.pendingPayments

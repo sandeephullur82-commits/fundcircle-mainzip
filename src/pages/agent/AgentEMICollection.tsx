@@ -35,8 +35,12 @@ export default function AgentEMICollection() {
   const agentName = user?.fullName || user?.primaryEmailAddress?.emailAddress || "Agent";
   const orgId = organization?.id || "";
 
-  const { data: allMembers } = useCollectionRealtime<Membership>("organizationMembers");
-  const { data: loans } = useCollectionRealtime<Loan>("loans");
+  const { data: allMembers } = useCollectionRealtime<Membership>("organizationMembers", [
+    where("role", "==", "CUSTOMER"),
+  ]);
+  const { data: loans } = useCollectionRealtime<Loan>("loans", [
+    where("status", "==", "ACTIVE"),
+  ]);
 
   const [search, setSearch] = useState("");
   const [selectedCustomer, setSelectedCustomer] = useState<Membership | null>(null);

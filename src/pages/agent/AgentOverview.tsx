@@ -32,22 +32,26 @@ export default function AgentOverview() {
   const agentName = user?.fullName || user?.primaryEmailAddress?.emailAddress || "Agent";
   const orgId = organization?.id || "";
 
-  // Fetch agent's customers
+  // Fetch only this agent's assigned customers (Firestore-scoped, not full org dump)
   const { data: allMembers } = useCollectionRealtime<Membership>("organizationMembers", [
     where("role", "in", ["CUSTOMER", "customer"]),
+    where("assignedAgentId", "==", agentId || "NONE"),
   ]);
-  const { data: collections } = useCollectionRealtime<Collection>("collections");
+  // Fetch only this agent's collections (Firestore-scoped)
+  const { data: collections } = useCollectionRealtime<Collection>("collections", [
+    where("agentId", "==", agentId || "NONE"),
+  ]);
   const { data: orgDoc } = useDocumentRealtime<any>("organizations", orgId || null);
 
-  // Collections by this agent
-  const myCollections = collections.filter((c) => c.agentId === agentId);
+  // Collections are already scoped to this agent
+  const myCollections = collections;
   const today = startOfDay(new Date());
   const todayCollections = myCollections.filter((c) => toDate(c.collectedAt || c.timestamp) >= today);
   const todayTotal = todayCollections.reduce((s, c) => s + (Number(c.amount) || 0), 0);
 
-  // My assigned customers
+  // Members already filtered to this agent's assignments by Firestore
   const myCustomers = allMembers.filter((m) =>
-    m.assignedAgentId === agentId || m.assigned_to_user_id === agentId
+    m.assignedAgentId === agentId || (m as any).assigned_to_user_id === agentId
   );
   const activeCustomers = myCustomers.filter((m) => (m as any).status === "ACTIVE");
 

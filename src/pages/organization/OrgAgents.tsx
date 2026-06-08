@@ -8,7 +8,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { createDirectMember, validateAgentEmail } from "@/lib/services";
-import { useOrganization, useUser } from "@clerk/clerk-react";
+import { useOrganization, useUser, useAuth } from "@clerk/clerk-react";
 import { where, doc, updateDoc, serverTimestamp, onSnapshot, query, collection } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import {
@@ -37,6 +37,7 @@ function toDate(ts: any): Date {
 export default function OrgAgents() {
   const { user } = useUser();
   const { organization } = useOrganization();
+  const { getToken } = useAuth();
 
   const { data: members, loading } = useCollectionRealtime<Membership>("organizationMembers", [
     where("role", "==", "AGENT"),
@@ -196,6 +197,7 @@ export default function OrgAgents() {
 
     setIsSubmitting(true);
     try {
+      const authToken = await getToken();
       const { generatedPassword } = await createDirectMember({
         firstName: sanitizeName(firstName), lastName: sanitizeName(lastName),
         email: emailKey, phone: phone.replace(/\D/g, "").slice(0, 10),
@@ -204,6 +206,7 @@ export default function OrgAgents() {
         createdBy: user.id, actorName: user.fullName || user.firstName || "",
         address: sanitizeMultiline(address, 500), notes: sanitizeMultiline(createNotes, 500),
         employeeCode: employeeCode.trim().slice(0, 20) || undefined,
+        authToken: authToken || undefined,
       });
       setCredentials({ name: `${firstName.trim()} ${lastName.trim()}`.trim(), email: emailKey, password: generatedPassword });
       toast.success("Agent account created successfully.");
