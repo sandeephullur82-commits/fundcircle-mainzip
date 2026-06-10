@@ -1,9 +1,9 @@
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useOrganization, useUser } from "@clerk/clerk-react";
 import { doc, setDoc, serverTimestamp, updateDoc, deleteField } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import { useDocumentRealtime } from "@/lib/firestore-hooks";
-import { membershipIdFor } from "@/lib/services";
+import { membershipIdFor, createAuditLog } from "@/lib/services";
 import { toast } from "sonner";
 
 import {
@@ -14,75 +14,308 @@ import {
   Bell,
   Save,
   Loader2,
-  Eye,
-  EyeOff,
   ChevronRight,
   Sliders,
   RotateCcw,
+  CheckCircle,
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import FieldError from "@/components/ui/FieldError";
-import { sanitizeName, validatePhone10, validateLettersOnlyName } from "@/lib/validation";
+import { sanitizeName, validatePhone10 } from "@/lib/validation";
 
+type SectionId = "organization" | "profile" | "notifications" | "ui" | "security";
+
+// ── Skeleton row ─────────────────────────────────────────────────────────────
+function SkeletonField() {
+  return (
+    <div className="grid gap-2">
+      <div className="h-4 w-28 bg-slate-100 rounded animate-pulse" />
+      <div className="h-10 w-full bg-slate-100 rounded-xl animate-pulse" />
+    </div>
+  );
+}
+
+// ── Toggle switch ─────────────────────────────────────────────────────────────
+function Toggle({ value, onChange }: { value: boolean; onChange: (v: boolean) => void }) {
+  return (
+    <button
+      type="button"
+      onClick={() => onChange(!value)}
+      className={`relative shrink-0 h-6 w-11 rounded-full transition-colors ${
+        value ? "bg-sky-500" : "bg-slate-200"
+      }`}
+    >
+      <span
+        className={`absolute top-0.5 h-5 w-5 rounded-full bg-white shadow transition-transform ${
+          value ? "translate-x-5" : "translate-x-0.5"
+        }`}
+      />
+    </button>
+  );
+}
+
+// ── Save button with spinner + success state ──────────────────────────────────
+function SaveButton({
+  onClick, saving, saved, label = "Save Changes",
+}: {
+  onClick: () => void;
+  saving: boolean;
+  saved: boolean;
+  label?: string;
+}) {
+  return (
+    <Button
+      onClick={onClick}
+      disabled={saving}
+      className={`flex items-center gap-2 transition-colors ${
+        saved ? "bg-emerald-600 hover:bg-emerald-700" : ""
+      }`}
+    >
+      {saving ? (
+        <><Loader2 className="h-4 w-4 animate-spin" />{label}</>
+      ) : saved ? (
+        <><CheckCircle className="h-4 w-4" />Saved</>
+      ) : (
+        <><Save className="h-4 w-4" />{label}</>
+      )}
+    </Button>
+  );
+}
+
+// ── Main component ────────────────────────────────────────────────────────────
 export default function OrgSettings() {
   const { user } = useUser();
   const { organization } = useOrganization();
   const membershipId = user && organization ? membershipIdFor(organization.id, user.id) : null;
-  const { data: membershipDoc } = useDocumentRealtime<any>("organizationMembers", membershipId);
-  const { data: orgDoc } = useDocumentRealtime<any>("organizations", organization?.id || null);
 
-  const [activeSection, setActiveSection] = useState<"organization" | "profile" | "notifications" | "security">("organization");
-  const [isSaving, setIsSaving] = useState(false);
-  const [profileErrors, setProfileErrors] = useState<Record<string, string>>({});
+  const { data: membershipDoc, loading: membershipLoading } = useDocumentRealtime<any>(
+    "organizationMembers", membershipId
+  );
+  const { data: orgDoc, loading: orgLoading } = useDocumentRealtime<any>(
+    "organizations", organization?.id || null
+  );
+
+  const [activeSection, setActiveSection] = useState<SectionId>("organization");
+
+  // ── Organization form ──────────────────────────────────────────────────────
+  const [orgName, setOrgName] = useState("");
   const [orgErrors, setOrgErrors] = useState<Record<string, string>>({});
+  const [isSavingOrg, setIsSavingOrg] = useState(false);
+  const [orgSaved, setOrgSaved] = useState(false);
 
-  // Organization form state
-  const [orgName, setOrgName] = useState(organization?.name || "");
+  // ── Profile form ───────────────────────────────────────────────────────────
+  const [fullName, setFullName] = useState("");
+  const [phone, setPhone] = useState("");
+  const [profileErrors, setProfileErrors] = useState<Record<string, string>>({});
+  const [isSavingProfile, setIsSavingProfile] = useState(false);
+  const [profileSaved, setProfileSaved] = useState(false);
 
-  // Profile form state
-  const [fullName, setFullName] = useState(membershipDoc?.fullName || user?.fullName || "");
-  const [phone, setPhone] = useState(membershipDoc?.phone || "");
+  // ── Notification prefs ─────────────────────────────────────────────────────
+  const [notifNewCollection, setNotifNewCollection] = useState(true);
+  const [notifNewMember, setNotifNewMember] = useState(true);
+  const [notifLoanApproval, setNotifLoanApproval] = useState(true);
+  const [isSavingNotif, setIsSavingNotif] = useState(false);
+  const [notifSaved, setNotifSaved] = useState(false);
 
-  // Notification prefs
-  const [notifNewCollection, setNotifNewCollection] = useState(orgDoc?.settings?.notifNewCollection ?? true);
-  const [notifNewMember, setNotifNewMember] = useState(orgDoc?.settings?.notifNewMember ?? true);
-  const [notifLoanApproval, setNotifLoanApproval] = useState(orgDoc?.settings?.notifLoanApproval ?? true);
+  // ── FAB reset ──────────────────────────────────────────────────────────────
+  const [isResettingFab, setIsResettingFab] = useState(false);
 
+  // Track whether fields have been loaded (so we only sync once, not on every
+  // real-time push which would overwrite user's in-progress edits).
+  const orgLoaded  = useRef(false);
+  const profLoaded = useRef(false);
+
+  // ── Sync org settings from Firestore on first load ────────────────────────
+  useEffect(() => {
+    if (orgLoading || !orgDoc) return;
+    if (orgLoaded.current) return; // already loaded — don't overwrite edits
+    setOrgName(orgDoc.name || organization?.name || "");
+    setNotifNewCollection(orgDoc.settings?.notifNewCollection ?? true);
+    setNotifNewMember(orgDoc.settings?.notifNewMember ?? true);
+    setNotifLoanApproval(orgDoc.settings?.notifLoanApproval ?? true);
+    orgLoaded.current = true;
+  }, [orgDoc, orgLoading, organization?.name]);
+
+  // ── Sync profile from Firestore on first load ─────────────────────────────
+  useEffect(() => {
+    if (membershipLoading || !membershipDoc) return;
+    if (profLoaded.current) return;
+    setFullName(membershipDoc.fullName || user?.fullName || "");
+    setPhone(membershipDoc.phone || "");
+    profLoaded.current = true;
+  }, [membershipDoc, membershipLoading, user?.fullName]);
+
+  // ── Reset loaded refs when org changes ────────────────────────────────────
+  useEffect(() => {
+    orgLoaded.current  = false;
+    profLoaded.current = false;
+  }, [organization?.id]);
+
+  // ── Helpers ────────────────────────────────────────────────────────────────
+  const actorInfo = {
+    id:   user?.id || "",
+    role: "OWNER" as const,
+    name: user?.fullName || user?.primaryEmailAddress?.emailAddress || "Owner",
+  };
+
+  const flashSaved = (setter: (v: boolean) => void) => {
+    setter(true);
+    setTimeout(() => setter(false), 2500);
+  };
+
+  // ── Save organization settings ─────────────────────────────────────────────
   const saveOrgSettings = async () => {
     if (!organization?.id) return;
-    if (orgName.trim() && orgName.trim().length < 3) {
-      setOrgErrors({ orgName: "Name must be at least 3 characters." });
-      return;
-    }
-    if (orgName.trim().length > 100) {
-      setOrgErrors({ orgName: "Name cannot exceed 100 characters." });
-      return;
-    }
+    const trimmed = orgName.trim();
+    const errors: Record<string, string> = {};
+    if (!trimmed) errors.orgName = "Organization name is required.";
+    else if (trimmed.length < 3) errors.orgName = "Name must be at least 3 characters.";
+    else if (trimmed.length > 100) errors.orgName = "Name cannot exceed 100 characters.";
+    if (Object.keys(errors).length) { setOrgErrors(errors); return; }
     setOrgErrors({});
-    setIsSaving(true);
+
+    // Snapshot previous values for rollback
+    const prevName = orgDoc?.name || "";
+
+    setIsSavingOrg(true);
     try {
+      const sanitized = sanitizeName(trimmed) || trimmed;
       await setDoc(doc(db, "organizations", organization.id), {
-        name: sanitizeName(orgName) || organization.name,
-        settings: {
-          notifNewCollection,
-          notifNewMember,
-          notifLoanApproval,
-        },
+        name: sanitized,
         updatedAt: serverTimestamp(),
       }, { merge: true });
-      toast.success("Organization settings saved.");
+      setOrgName(sanitized);
+      flashSaved(setOrgSaved);
+      try {
+        await createAuditLog({
+          organizationId: organization.id,
+          actorId:   actorInfo.id,
+          actorRole: actorInfo.role,
+          actorName: actorInfo.name,
+          action:    "SETTINGS_UPDATED",
+          entityType: "Organization",
+          entityId:   organization.id,
+          metadata: { field: "name", previousValue: prevName, newValue: sanitized },
+        });
+      } catch (_) {}
     } catch {
-      toast.error("Failed to save settings.");
+      toast.error("Failed to save organization settings.");
+      setOrgName(prevName); // rollback
     } finally {
-      setIsSaving(false);
+      setIsSavingOrg(false);
     }
   };
 
-  const [isResettingFab, setIsResettingFab] = useState(false);
+  // ── Save notification preferences ──────────────────────────────────────────
+  const saveNotifications = async () => {
+    if (!organization?.id) return;
 
+    // Snapshot for rollback
+    const prevNotif = {
+      notifNewCollection:  orgDoc?.settings?.notifNewCollection ?? true,
+      notifNewMember:      orgDoc?.settings?.notifNewMember     ?? true,
+      notifLoanApproval:   orgDoc?.settings?.notifLoanApproval  ?? true,
+    };
+
+    setIsSavingNotif(true);
+    try {
+      await setDoc(doc(db, "organizations", organization.id), {
+        settings: { notifNewCollection, notifNewMember, notifLoanApproval },
+        updatedAt: serverTimestamp(),
+      }, { merge: true });
+      flashSaved(setNotifSaved);
+      try {
+        await createAuditLog({
+          organizationId: organization.id,
+          actorId:   actorInfo.id,
+          actorRole: actorInfo.role,
+          actorName: actorInfo.name,
+          action:    "SETTINGS_UPDATED",
+          entityType: "Organization",
+          entityId:   organization.id,
+          metadata: {
+            field: "notifications",
+            previousValue: prevNotif,
+            newValue: { notifNewCollection, notifNewMember, notifLoanApproval },
+          },
+        });
+      } catch (_) {}
+    } catch {
+      toast.error("Failed to save notification preferences.");
+      // rollback
+      setNotifNewCollection(prevNotif.notifNewCollection);
+      setNotifNewMember(prevNotif.notifNewMember);
+      setNotifLoanApproval(prevNotif.notifLoanApproval);
+    } finally {
+      setIsSavingNotif(false);
+    }
+  };
+
+  // ── Save profile ───────────────────────────────────────────────────────────
+  const saveProfile = async () => {
+    if (!user || !membershipId) return;
+    const errors: Record<string, string> = {};
+    const trimmedName = fullName.trim();
+    if (!trimmedName) errors.fullName = "Full name is required.";
+    else if (trimmedName.length < 2) errors.fullName = "Name must be at least 2 characters.";
+    else if (trimmedName.length > 100) errors.fullName = "Name cannot exceed 100 characters.";
+    if (phone.trim()) {
+      const phoneRes = validatePhone10(phone);
+      if (!phoneRes.valid) errors.phone = phoneRes.error!;
+    }
+    if (Object.keys(errors).length) { setProfileErrors(errors); return; }
+    setProfileErrors({});
+
+    // Snapshot for rollback
+    const prevName  = membershipDoc?.fullName || user?.fullName || "";
+    const prevPhone = membershipDoc?.phone || "";
+    const cleanPhone = phone.replace(/\D/g, "").slice(0, 10);
+    const sanitizedName = sanitizeName(trimmedName) || trimmedName;
+
+    setIsSavingProfile(true);
+    try {
+      await setDoc(doc(db, "organizationMembers", membershipId), {
+        fullName: sanitizedName,
+        phone:    cleanPhone,
+        updatedAt: serverTimestamp(),
+      }, { merge: true });
+      await setDoc(doc(db, "users", user.id), {
+        name:     sanitizedName,
+        phone:    cleanPhone,
+        updatedAt: serverTimestamp(),
+      }, { merge: true });
+      setFullName(sanitizedName);
+      setPhone(cleanPhone);
+      flashSaved(setProfileSaved);
+      try {
+        await createAuditLog({
+          organizationId: organization?.id || "",
+          actorId:   actorInfo.id,
+          actorRole: actorInfo.role,
+          actorName: actorInfo.name,
+          action:    "SETTINGS_UPDATED",
+          entityType: "OrganizationMember",
+          entityId:   membershipId,
+          metadata: {
+            field: "profile",
+            previousValue: { fullName: prevName, phone: prevPhone },
+            newValue:      { fullName: sanitizedName, phone: cleanPhone },
+          },
+        });
+      } catch (_) {}
+    } catch {
+      toast.error("Failed to update profile.");
+      setFullName(prevName);  // rollback
+      setPhone(prevPhone);
+    } finally {
+      setIsSavingProfile(false);
+    }
+  };
+
+  // ── Reset FAB position ─────────────────────────────────────────────────────
   const resetFabPosition = async () => {
     if (!organization?.id) return;
     setIsResettingFab(true);
@@ -93,56 +326,22 @@ export default function OrgSettings() {
       );
       toast.success("FAB position reset to default.");
     } catch {
-      // Document might not exist yet — that's fine, default position is already applied
       toast.success("FAB position reset to default.");
     } finally {
       setIsResettingFab(false);
     }
   };
 
-  const saveProfile = async () => {
-    if (!user || !membershipId) return;
-    const errors: Record<string, string> = {};
-    if (fullName.trim() && fullName.trim().length < 2) errors.fullName = "Name must be at least 2 characters.";
-    if (fullName.trim().length > 100) errors.fullName = "Name cannot exceed 100 characters.";
-    if (phone.trim()) {
-      const phoneRes = validatePhone10(phone);
-      if (!phoneRes.valid) errors.phone = phoneRes.error!;
-    }
-    if (Object.values(errors).some(Boolean)) {
-      setProfileErrors(errors);
-      return;
-    }
-    setProfileErrors({});
-    const cleanPhone = phone.replace(/\D/g, "").slice(0, 10);
-    setIsSaving(true);
-    try {
-      await setDoc(doc(db, "organizationMembers", membershipId), {
-        fullName: sanitizeName(fullName),
-        phone: cleanPhone,
-        updatedAt: serverTimestamp(),
-      }, { merge: true });
-      await setDoc(doc(db, "users", user.id), {
-        name: sanitizeName(fullName),
-        phone: cleanPhone,
-        updatedAt: serverTimestamp(),
-      }, { merge: true });
-      toast.success("Profile updated successfully.");
-    } catch {
-      toast.error("Failed to update profile.");
-    } finally {
-      setIsSaving(false);
-    }
-  };
+  // ── Sections nav ───────────────────────────────────────────────────────────
+  const sections: { id: SectionId; label: string; icon: any }[] = [
+    { id: "organization",  label: "Organization",     icon: Building2 },
+    { id: "profile",       label: "Profile",          icon: User      },
+    { id: "notifications", label: "Notifications",    icon: Bell      },
+    { id: "ui",            label: "UI Preferences",   icon: Sliders   },
+    { id: "security",      label: "Security",         icon: Shield    },
+  ];
 
-
-  const sections = [
-    { id: "organization", label: "Organization", icon: Building2 },
-    { id: "profile", label: "Profile", icon: User },
-    { id: "notifications", label: "Notifications", icon: Bell },
-    { id: "security", label: "Security", icon: Shield },
-    { id: "ui", label: "UI Preferences", icon: Sliders },
-  ] as const;
+  const isLoading = orgLoading || membershipLoading;
 
   return (
     <div className="space-y-6">
@@ -155,7 +354,8 @@ export default function OrgSettings() {
       </div>
 
       <div className="grid gap-6 md:grid-cols-[220px_1fr]">
-        {/* Sidebar nav */}
+
+        {/* ── Sidebar nav ─────────────────────────────────────────────────── */}
         <div className="rounded-2xl border border-slate-200 bg-white p-2 shadow-sm h-fit">
           {sections.map((s) => (
             <button
@@ -176,8 +376,10 @@ export default function OrgSettings() {
           ))}
         </div>
 
-        {/* Content */}
+        {/* ── Content panels ──────────────────────────────────────────────── */}
         <div className="space-y-5">
+
+          {/* ── Organization ─────────────────────────────────────────────── */}
           {activeSection === "organization" && (
             <Card className="border-slate-200 shadow-sm">
               <CardHeader>
@@ -188,43 +390,57 @@ export default function OrgSettings() {
                 <CardDescription>Update your organization's basic information.</CardDescription>
               </CardHeader>
               <CardContent className="space-y-5">
-                <div className="grid gap-2">
-                  <Label>Organization Name</Label>
-                  <Input
-                    value={orgName}
-                    onChange={(e) => {
-                      setOrgName(e.target.value);
-                      const v = e.target.value.trim();
-                      if (v && v.length < 3) setOrgErrors({ orgName: "Minimum 3 characters." });
-                      else if (v.length > 100) setOrgErrors({ orgName: "Maximum 100 characters." });
-                      else setOrgErrors({});
-                    }}
-                    placeholder={organization?.name}
-                    maxLength={100}
-                    className={`rounded-xl ${orgErrors.orgName ? "border-red-400 focus-visible:ring-red-300" : ""}`}
-                  />
-                  <FieldError error={orgErrors.orgName} />
-                </div>
-                <div className="grid gap-2">
-                  <Label>Organization ID</Label>
-                  <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm text-slate-500 font-mono select-all">
-                    {organization?.id || "—"}
-                  </div>
-                </div>
-                <div className="grid gap-2">
-                  <Label>Owner Email</Label>
-                  <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm text-slate-500">
-                    {user?.primaryEmailAddress?.emailAddress || "—"}
-                  </div>
-                </div>
-                <Button onClick={saveOrgSettings} disabled={isSaving} className="flex items-center gap-2">
-                  {isSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
-                  Save Changes
-                </Button>
+                {isLoading ? (
+                  <><SkeletonField /><SkeletonField /><SkeletonField /></>
+                ) : (
+                  <>
+                    <div className="grid gap-2">
+                      <Label>Organization Name</Label>
+                      <Input
+                        value={orgName}
+                        onChange={(e) => {
+                          setOrgName(e.target.value);
+                          const v = e.target.value.trim();
+                          if (!v) setOrgErrors({ orgName: "Required." });
+                          else if (v.length < 3) setOrgErrors({ orgName: "Minimum 3 characters." });
+                          else if (v.length > 100) setOrgErrors({ orgName: "Maximum 100 characters." });
+                          else setOrgErrors({});
+                        }}
+                        placeholder="Organization name"
+                        maxLength={100}
+                        className={`rounded-xl ${orgErrors.orgName ? "border-red-400 focus-visible:ring-red-300" : ""}`}
+                      />
+                      <FieldError error={orgErrors.orgName} />
+                    </div>
+
+                    <div className="grid gap-2">
+                      <Label>Organization ID</Label>
+                      <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm text-slate-500 font-mono select-all">
+                        {organization?.id || "—"}
+                      </div>
+                      <p className="text-xs text-slate-400">Read-only — used for Firestore scoping.</p>
+                    </div>
+
+                    <div className="grid gap-2">
+                      <Label>Owner Email</Label>
+                      <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm text-slate-500">
+                        {user?.primaryEmailAddress?.emailAddress || "—"}
+                      </div>
+                    </div>
+
+                    <SaveButton
+                      onClick={saveOrgSettings}
+                      saving={isSavingOrg}
+                      saved={orgSaved}
+                      label="Save Changes"
+                    />
+                  </>
+                )}
               </CardContent>
             </Card>
           )}
 
+          {/* ── Profile ──────────────────────────────────────────────────── */}
           {activeSection === "profile" && (
             <Card className="border-slate-200 shadow-sm">
               <CardHeader>
@@ -235,56 +451,69 @@ export default function OrgSettings() {
                 <CardDescription>Update your personal information and contact details.</CardDescription>
               </CardHeader>
               <CardContent className="space-y-5">
-                <div className="grid gap-2">
-                  <Label>Full Name</Label>
-                  <Input
-                    value={fullName}
-                    onChange={(e) => {
-                      setFullName(e.target.value);
-                      const v = e.target.value.trim();
-                      if (v && v.length < 2) setProfileErrors((p) => ({ ...p, fullName: "Minimum 2 characters." }));
-                      else if (v.length > 100) setProfileErrors((p) => ({ ...p, fullName: "Maximum 100 characters." }));
-                      else setProfileErrors((p) => ({ ...p, fullName: "" }));
-                    }}
-                    placeholder="Your full name"
-                    maxLength={100}
-                    className={`rounded-xl ${profileErrors.fullName ? "border-red-400 focus-visible:ring-red-300" : ""}`}
-                  />
-                  <FieldError error={profileErrors.fullName} />
-                </div>
-                <div className="grid gap-2">
-                  <Label>Phone Number</Label>
-                  <Input
-                    type="tel"
-                    inputMode="numeric"
-                    maxLength={10}
-                    value={phone}
-                    onChange={(e) => {
-                      const v = e.target.value.replace(/\D/g, "").substring(0, 10);
-                      setPhone(v);
-                      if (v && v.length !== 10) setProfileErrors((p) => ({ ...p, phone: "Must be exactly 10 digits." }));
-                      else setProfileErrors((p) => ({ ...p, phone: "" }));
-                    }}
-                    placeholder="9876543210"
-                    className={`rounded-xl ${profileErrors.phone ? "border-red-400 focus-visible:ring-red-300" : ""}`}
-                  />
-                  <FieldError error={profileErrors.phone} />
-                </div>
-                <div className="grid gap-2">
-                  <Label>Email Address</Label>
-                  <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm text-slate-500">
-                    {user?.primaryEmailAddress?.emailAddress || "—"}
-                  </div>
-                  <p className="text-xs text-slate-400">Email is managed by Clerk and cannot be changed here.</p>
-                </div>
-                <Button onClick={saveProfile} disabled={isSaving} className="flex items-center gap-2">
-                  {isSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
-                  Save Profile
-                </Button>
+                {membershipLoading ? (
+                  <><SkeletonField /><SkeletonField /><SkeletonField /></>
+                ) : (
+                  <>
+                    <div className="grid gap-2">
+                      <Label>Full Name</Label>
+                      <Input
+                        value={fullName}
+                        onChange={(e) => {
+                          setFullName(e.target.value);
+                          const v = e.target.value.trim();
+                          if (!v) setProfileErrors((p) => ({ ...p, fullName: "Required." }));
+                          else if (v.length < 2) setProfileErrors((p) => ({ ...p, fullName: "Minimum 2 characters." }));
+                          else if (v.length > 100) setProfileErrors((p) => ({ ...p, fullName: "Maximum 100 characters." }));
+                          else setProfileErrors((p) => ({ ...p, fullName: "" }));
+                        }}
+                        placeholder="Your full name"
+                        maxLength={100}
+                        className={`rounded-xl ${profileErrors.fullName ? "border-red-400 focus-visible:ring-red-300" : ""}`}
+                      />
+                      <FieldError error={profileErrors.fullName} />
+                    </div>
+
+                    <div className="grid gap-2">
+                      <Label>Phone Number</Label>
+                      <Input
+                        type="tel"
+                        inputMode="numeric"
+                        maxLength={10}
+                        value={phone}
+                        onChange={(e) => {
+                          const v = e.target.value.replace(/\D/g, "").substring(0, 10);
+                          setPhone(v);
+                          if (v && v.length !== 10) setProfileErrors((p) => ({ ...p, phone: "Must be exactly 10 digits." }));
+                          else setProfileErrors((p) => ({ ...p, phone: "" }));
+                        }}
+                        placeholder="9876543210"
+                        className={`rounded-xl ${profileErrors.phone ? "border-red-400 focus-visible:ring-red-300" : ""}`}
+                      />
+                      <FieldError error={profileErrors.phone} />
+                    </div>
+
+                    <div className="grid gap-2">
+                      <Label>Email Address</Label>
+                      <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm text-slate-500">
+                        {user?.primaryEmailAddress?.emailAddress || "—"}
+                      </div>
+                      <p className="text-xs text-slate-400">Email is managed by Clerk and cannot be changed here.</p>
+                    </div>
+
+                    <SaveButton
+                      onClick={saveProfile}
+                      saving={isSavingProfile}
+                      saved={profileSaved}
+                      label="Save Profile"
+                    />
+                  </>
+                )}
               </CardContent>
             </Card>
           )}
 
+          {/* ── Notifications ────────────────────────────────────────────── */}
           {activeSection === "notifications" && (
             <Card className="border-slate-200 shadow-sm">
               <CardHeader>
@@ -295,53 +524,55 @@ export default function OrgSettings() {
                 <CardDescription>Control which events trigger dashboard notifications.</CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
-                {[
-                  {
-                    label: "New Collection Recorded",
-                    desc: "Notify when any agent records a collection.",
-                    value: notifNewCollection,
-                    onChange: setNotifNewCollection,
-                  },
-                  {
-                    label: "New Member Joined",
-                    desc: "Notify when an invited agent or customer accepts the invitation.",
-                    value: notifNewMember,
-                    onChange: setNotifNewMember,
-                  },
-                  {
-                    label: "Loan Approval Requests",
-                    desc: "Notify when a customer submits a new loan application.",
-                    value: notifLoanApproval,
-                    onChange: setNotifLoanApproval,
-                  },
-                ].map((item) => (
-                  <div key={item.label} className="flex items-start justify-between gap-4 rounded-xl border border-slate-100 bg-slate-50 p-4">
-                    <div>
-                      <p className="text-sm font-semibold text-slate-800">{item.label}</p>
-                      <p className="text-xs text-slate-500 mt-0.5">{item.desc}</p>
-                    </div>
-                    <button
-                      onClick={() => item.onChange(!item.value)}
-                      className={`relative shrink-0 h-6 w-11 rounded-full transition-colors ${
-                        item.value ? "bg-sky-500" : "bg-slate-200"
-                      }`}
-                    >
-                      <span
-                        className={`absolute top-0.5 h-5 w-5 rounded-full bg-white shadow transition-transform ${
-                          item.value ? "translate-x-5.5" : "translate-x-0.5"
-                        }`}
-                      />
-                    </button>
-                  </div>
-                ))}
-                <Button onClick={saveOrgSettings} disabled={isSaving} className="flex items-center gap-2">
-                  {isSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
-                  Save Preferences
-                </Button>
+                {orgLoading ? (
+                  <><SkeletonField /><SkeletonField /><SkeletonField /></>
+                ) : (
+                  <>
+                    {[
+                      {
+                        label: "New Collection Recorded",
+                        desc:  "Notify when any agent records a collection.",
+                        value: notifNewCollection,
+                        onChange: setNotifNewCollection,
+                      },
+                      {
+                        label: "New Member Joined",
+                        desc:  "Notify when an invited agent or customer accepts the invitation.",
+                        value: notifNewMember,
+                        onChange: setNotifNewMember,
+                      },
+                      {
+                        label: "Loan Approval Requests",
+                        desc:  "Notify when a customer submits a new loan application.",
+                        value: notifLoanApproval,
+                        onChange: setNotifLoanApproval,
+                      },
+                    ].map((item) => (
+                      <div
+                        key={item.label}
+                        className="flex items-start justify-between gap-4 rounded-xl border border-slate-100 bg-slate-50 p-4"
+                      >
+                        <div>
+                          <p className="text-sm font-semibold text-slate-800">{item.label}</p>
+                          <p className="text-xs text-slate-500 mt-0.5">{item.desc}</p>
+                        </div>
+                        <Toggle value={item.value} onChange={item.onChange} />
+                      </div>
+                    ))}
+
+                    <SaveButton
+                      onClick={saveNotifications}
+                      saving={isSavingNotif}
+                      saved={notifSaved}
+                      label="Save Preferences"
+                    />
+                  </>
+                )}
               </CardContent>
             </Card>
           )}
 
+          {/* ── UI Preferences ───────────────────────────────────────────── */}
           {activeSection === "ui" && (
             <Card className="border-slate-200 shadow-sm">
               <CardHeader>
@@ -352,12 +583,11 @@ export default function OrgSettings() {
                 <CardDescription>Customize the dashboard layout and interface elements.</CardDescription>
               </CardHeader>
               <CardContent className="space-y-5">
-                {/* FAB Position */}
                 <div className="rounded-xl border border-slate-200 bg-slate-50 p-4 space-y-3">
                   <div>
                     <p className="text-sm font-semibold text-slate-800">Quick Actions Button Position</p>
                     <p className="text-xs text-slate-500 mt-0.5">
-                      Drag the floating action button (FAB) anywhere on screen. Its position is saved automatically.
+                      Drag the floating action button (FAB) anywhere on the Dashboard. Its position saves automatically.
                       Use the button below to snap it back to the default bottom-right corner.
                     </p>
                   </div>
@@ -378,6 +608,7 @@ export default function OrgSettings() {
             </Card>
           )}
 
+          {/* ── Security ─────────────────────────────────────────────────── */}
           {activeSection === "security" && (
             <Card className="border-slate-200 shadow-sm">
               <CardHeader>
@@ -400,9 +631,9 @@ export default function OrgSettings() {
                 <div className="space-y-3">
                   {[
                     { label: "Multi-factor Authentication", value: "Managed by Clerk" },
-                    { label: "Session Management", value: "Active — auto-renews" },
-                    { label: "Organization Isolation", value: "Enforced via Firestore rules" },
-                    { label: "Role-Based Access", value: `org:owner (${organization?.name || "—"})` },
+                    { label: "Session Management",          value: "Active — auto-renews" },
+                    { label: "Organization Isolation",      value: "Enforced via Firestore rules" },
+                    { label: "Role-Based Access",           value: `org:owner (${organization?.name || "—"})` },
                   ].map((item) => (
                     <div key={item.label} className="flex items-center justify-between rounded-xl border border-slate-100 bg-slate-50 px-4 py-3">
                       <p className="text-sm font-medium text-slate-700">{item.label}</p>
@@ -415,6 +646,7 @@ export default function OrgSettings() {
               </CardContent>
             </Card>
           )}
+
         </div>
       </div>
     </div>
