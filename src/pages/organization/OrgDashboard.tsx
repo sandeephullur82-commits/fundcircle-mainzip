@@ -397,7 +397,9 @@ export default function OrgDashboard() {
 // ── Quick Actions FAB Speed Dial (Draggable) ──────────────────────────────────
 const FAB_SIZE = 56;
 const DIAL_ITEM_SIZE = 44;
-const DRAG_THRESHOLD = 6; // px movement before drag is registered
+const DRAG_THRESHOLD = 6;
+const FAB_MARGIN = 16;
+const MOB_NAV_H = 56;
 
 const FAB_ACTIONS = [
   { id: "addCustomer",      label: "Add Customer",        icon: UserPlus,     tab: "customers",   color: "#2563eb" },
@@ -409,20 +411,29 @@ const FAB_ACTIONS = [
   { id: "generateReport",   label: "Generate Report",     icon: BarChart2,    tab: "reports",     color: "#9333ea" },
 ] as const;
 
-// ── FAB layout constants ────────────────────────────────────────────────────
-const FAB_MARGIN   = 16;   // px gap from every edge
-const MOB_NAV_H    = 56;   // mobile bottom-nav height (matches the <nav> element)
+/** Returns the height of the bottom nav bar for the current viewport width. */
+function getBottomNavH(): number {
+  return window.innerWidth < 768 ? MOB_NAV_H : 0;
+}
 
-/** Clamp left/top pixel coords to the safe drag area */
-function clampFabPos(x: number, y: number) {
-  const bottomNavH = window.innerWidth < 768 ? MOB_NAV_H : 0;
+/**
+ * Clamp left/top pixel coords strictly within the visible viewport.
+ *   left  >= FAB_MARGIN
+ *   top   >= FAB_MARGIN
+ *   right  <= viewportWidth  - FAB_SIZE - FAB_MARGIN
+ *   bottom <= viewportHeight - FAB_SIZE - bottomNavHeight - FAB_MARGIN
+ */
+function clampFabPos(x: number, y: number): { x: number; y: number } {
+  const vw = window.innerWidth;
+  const vh = window.innerHeight;
+  const navH = getBottomNavH();
   return {
-    x: Math.max(FAB_MARGIN, Math.min(x, window.innerWidth  - FAB_SIZE - FAB_MARGIN)),
-    y: Math.max(FAB_MARGIN, Math.min(y, window.innerHeight - FAB_SIZE - bottomNavH - FAB_MARGIN)),
+    x: Math.max(FAB_MARGIN, Math.min(x, vw - FAB_SIZE - FAB_MARGIN)),
+    y: Math.max(FAB_MARGIN, Math.min(y, vh - FAB_SIZE - navH - FAB_MARGIN)),
   };
 }
 
-/** Convert pixel position → viewport-relative fractions [0..1] */
+/** Pixel position → viewport-relative fractions in [0..1]. */
 function pixelsToPercent(x: number, y: number) {
   return {
     xPercent: x / window.innerWidth,
@@ -430,8 +441,10 @@ function pixelsToPercent(x: number, y: number) {
   };
 }
 
-/** Convert fractions back to clamped pixel position.
- *  Returns null if the fractions are invalid (NaN, outside 0..1). */
+/**
+ * Fractions → clamped pixel position.
+ * Returns null if the values are invalid so callers fall back to the CSS default.
+ */
 function percentToPixels(xPercent: unknown, yPercent: unknown): { x: number; y: number } | null {
   if (
     typeof xPercent !== "number" || typeof yPercent !== "number" ||
@@ -444,6 +457,25 @@ function percentToPixels(xPercent: unknown, yPercent: unknown): { x: number; y: 
   );
 }
 
+/** localStorage key scoped per org so different orgs don't share a position. */
+function lsKey(orgId: string) { return `fc_fab_pos_${orgId}`; }
+
+/** Read saved fractions from localStorage; returns null on any error. */
+function lsRead(orgId: string): { xPercent: number; yPercent: number } | null {
+  try {
+    const raw = localStorage.getItem(lsKey(orgId));
+    if (!raw) return null;
+    const { xPercent, yPercent } = JSON.parse(raw);
+    if (typeof xPercent === "number" && typeof yPercent === "number") return { xPercent, yPercent };
+  } catch {}
+  return null;
+}
+
+/** Persist fractions to localStorage; silently swallows errors. */
+function lsWrite(orgId: string, xPercent: number, yPercent: number) {
+  try { localStorage.setItem(lsKey(orgId), JSON.stringify({ xPercent, yPercent })); } catch {}
+}
+
 function QuickActionsFAB({
   open, setOpen, onAction, orgId,
 }: {
@@ -452,15 +484,25 @@ function QuickActionsFAB({
   onAction: (tab: string) => void;
   orgId: string;
 }) {
-  // null  = no saved position → CSS default (bottom-right)
-  // {x,y} = resolved left/top pixel coords
-  const [pos, setPos] = useState<{ x: number; y: number } | null>(null);
+  // null  = no saved position → CSS default (bottom-right corner)
+  // {x,y} = resolved left/top pixel coords (position: fixed)
+  const [pos, setPos] = useState<{ x: number; y: number } | null>(() => {
+    // Synchronously read from localStorage on first render so the FAB appears
+    // in the correct place immediately — before any Firestore response arrives.
+    if (!orgId) return null;
+    const saved = lsRead(orgId);
+    if (!saved) return null;
+    return percentToPixels(saved.xPercent, saved.yPercent);
+  });
+
   const [isDragging, setIsDragging] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
 
-  // Latest persisted fractions — kept in a ref so the resize handler can always
-  // read the current value without being a stale closure.
-  const savedPercent = useRef<{ xPercent: number; yPercent: number } | null>(null);
+  // Latest persisted fractions — kept in a ref so the resize/orientation handler
+  // always reads the current value without a stale closure.
+  const savedPercent = useRef<{ xPercent: number; yPercent: number } | null>(
+    orgId ? lsRead(orgId) : null
+  );
 
   const drag = useRef({
     active:   false,
@@ -471,34 +513,46 @@ function QuickActionsFAB({
     rafId:    null as number | null,
   });
 
-  // ── Real-time Firestore position sync ──────────────────────────────────────
+  // ── Save to both localStorage + Firestore (percentages) ────────────────────
+  const savePos = (x: number, y: number) => {
+    const { xPercent, yPercent } = pixelsToPercent(x, y);
+    savedPercent.current = { xPercent, yPercent };
+    if (orgId) {
+      lsWrite(orgId, xPercent, yPercent);
+      setDoc(
+        doc(db, "organizations", orgId, "settings", "ui"),
+        { fabPosition: { xPercent, yPercent } },
+        { merge: true }
+      ).catch(() => {});
+    }
+  };
+
+  // ── Real-time Firestore position sync ───────────────────────────────────────
+  // localStorage already gives instant restore; Firestore handles cross-device sync.
   useEffect(() => {
     if (!orgId) return;
     const uiRef = doc(db, "organizations", orgId, "settings", "ui");
     const unsub = onSnapshot(uiRef, (snap) => {
-      if (drag.current.active) return; // never clobber an active drag
-      if (!snap.exists()) { savedPercent.current = null; setPos(null); return; }
+      if (drag.current.active) return;
+      if (!snap.exists()) return;
       const fp = snap.data()?.fabPosition;
-      // Accept new percent format; silently ignore old x/y pixel format (treats as reset)
       const resolved = percentToPixels(fp?.xPercent, fp?.yPercent);
       if (resolved) {
         savedPercent.current = { xPercent: fp.xPercent, yPercent: fp.yPercent };
+        lsWrite(orgId, fp.xPercent, fp.yPercent);
         setPos(resolved);
-      } else {
-        savedPercent.current = null;
-        setPos(null);
       }
     }, () => {});
     return unsub;
   }, [orgId]);
 
-  // ── Recalculate position on viewport resize / orientation change ────────────
+  // ── Re-clamp position on viewport resize / orientation change ───────────────
   useEffect(() => {
     const onResize = () => {
       if (drag.current.active) return;
       if (!savedPercent.current) { setPos(null); return; }
       const resolved = percentToPixels(savedPercent.current.xPercent, savedPercent.current.yPercent);
-      setPos(resolved);  // null → falls back to CSS default
+      setPos(resolved ?? null);
     };
     window.addEventListener("resize",            onResize, { passive: true });
     window.addEventListener("orientationchange", onResize, { passive: true });
@@ -508,7 +562,7 @@ function QuickActionsFAB({
     };
   }, []);
 
-  // ── ESC closes Speed Dial ──────────────────────────────────────────────────
+  // ── ESC closes Speed Dial ───────────────────────────────────────────────────
   useEffect(() => {
     if (!open) return;
     const h = (e: KeyboardEvent) => { if (e.key === "Escape") setOpen(false); };
@@ -516,25 +570,13 @@ function QuickActionsFAB({
     return () => document.removeEventListener("keydown", h);
   }, [open, setOpen]);
 
-  // ── Firestore save (percentages) ───────────────────────────────────────────
-  const savePos = (x: number, y: number) => {
-    if (!orgId) return;
-    const { xPercent, yPercent } = pixelsToPercent(x, y);
-    savedPercent.current = { xPercent, yPercent };
-    setDoc(
-      doc(db, "organizations", orgId, "settings", "ui"),
-      { fabPosition: { xPercent, yPercent } },
-      { merge: true }
-    ).catch(() => {});
-  };
-
-  // ── Drag handlers ──────────────────────────────────────────────────────────
+  // ── Drag handlers ───────────────────────────────────────────────────────────
   const handlePointerDown = (e: React.PointerEvent<HTMLButtonElement>) => {
     if (e.button > 0) return;
     e.stopPropagation();
 
-    // When no saved pos, read actual rendered rect so we never depend on
-    // window.innerHeight (unreliable on mobile with address-bar / safe areas).
+    // Read the actual rendered rect so we start from the true visual position.
+    // This is reliable even on mobile where window.innerHeight can fluctuate.
     let fabX: number, fabY: number;
     if (pos) {
       fabX = pos.x;
@@ -544,11 +586,14 @@ function QuickActionsFAB({
       fabX = r.left;
       fabY = r.top;
     }
+    // Clamp the start position itself so a stale value never seeds an out-of-bounds drag.
+    const clamped = clampFabPos(fabX, fabY);
 
     drag.current = {
       active: true, hasMoved: false,
       startX: e.clientX, startY: e.clientY,
-      fabX, fabY, pendingX: fabX, pendingY: fabY,
+      fabX: clamped.x, fabY: clamped.y,
+      pendingX: clamped.x, pendingY: clamped.y,
       rafId: null,
     };
     (e.currentTarget as HTMLButtonElement).setPointerCapture(e.pointerId);
@@ -566,6 +611,7 @@ function QuickActionsFAB({
       setOpen(false);
     }
 
+    // Always clamp — the FAB can never leave the visible viewport.
     const clamped = clampFabPos(drag.current.fabX + dx, drag.current.fabY + dy);
     drag.current.pendingX = clamped.x;
     drag.current.pendingY = clamped.y;
@@ -585,32 +631,40 @@ function QuickActionsFAB({
     setIsDragging(false);
 
     if (drag.current.hasMoved) {
+      // Final clamp on release — guarantees the resting position is always valid.
       const { x, y } = clampFabPos(drag.current.pendingX, drag.current.pendingY);
       setPos({ x, y });
-      savePos(x, y);   // persists as percentages
+      savePos(x, y);
     } else {
       setOpen(!open);
     }
   };
 
-  // ── Layout helpers ─────────────────────────────────────────────────────────
+  // ── Layout helpers ──────────────────────────────────────────────────────────
   const dialAbove    = pos ? pos.y >= window.innerHeight * 0.45 : true;
   const handleAction = (tab: string) => { setOpen(false); onAction(tab); };
 
-  // Default (no saved pos): CSS bottom/right — safe-area-aware, never relies on
-  // window.innerHeight, works across orientations, scroll, and address-bar changes.
-  // Saved pos: left/top pixel coords derived from stored viewport percentages.
+  // When no saved position: CSS bottom/right default (safe-area-aware, no JS measurement).
+  // When position saved: left/top pixel coords from stored viewport fractions.
+  // Always position: fixed — never absolute, never outside the viewport.
   const containerStyle: React.CSSProperties = pos
-    ? { position: "fixed", left: pos.x, top: pos.y, zIndex: 9999,
-        willChange: isDragging ? "left, top" : "auto" }
-    : { position: "fixed",
-        bottom: "calc(80px + env(safe-area-inset-bottom, 0px))",
-        right:  FAB_MARGIN,
-        zIndex: 9999 };
+    ? {
+        position:   "fixed",
+        left:       pos.x,
+        top:        pos.y,
+        zIndex:     9999,
+        willChange: isDragging ? "left, top" : "auto",
+      }
+    : {
+        position: "fixed",
+        bottom:   `calc(${MOB_NAV_H + FAB_MARGIN}px + env(safe-area-inset-bottom, 0px))`,
+        right:    FAB_MARGIN,
+        zIndex:   9999,
+      };
 
   return (
     <>
-      {/* Invisible backdrop — closes Speed Dial on outside click */}
+      {/* Invisible backdrop — closes Speed Dial on outside tap/click */}
       {open && !isDragging && (
         <div
           aria-hidden="true"
@@ -645,8 +699,7 @@ function QuickActionsFAB({
           }}
         >
           {FAB_ACTIONS.map((action, i) => {
-            const Icon  = action.icon;
-            // Stagger delays: items closest to FAB appear first
+            const Icon       = action.icon;
             const idx        = dialAbove ? i : (FAB_ACTIONS.length - 1 - i);
             const enterDelay = `${idx * 35}ms`;
             const exitDelay  = `${(FAB_ACTIONS.length - 1 - idx) * 22}ms`;
@@ -658,11 +711,11 @@ function QuickActionsFAB({
                 role="menuitem"
                 aria-label={action.label}
                 style={{
-                  display:   "flex",
+                  display:    "flex",
                   alignItems: "center",
-                  gap:       10,
-                  opacity:   visible ? 1 : 0,
-                  transform: visible
+                  gap:        10,
+                  opacity:    visible ? 1 : 0,
+                  transform:  visible
                     ? "scale(1) translateY(0px)"
                     : "scale(0.72) translateY(12px)",
                   transition: `opacity 180ms ease ${delay}, transform 210ms cubic-bezier(0.34,1.4,0.64,1) ${delay}`,
@@ -671,15 +724,15 @@ function QuickActionsFAB({
                 {/* Label pill */}
                 <span
                   style={{
-                    background:    "rgba(15,23,42,0.85)",
-                    color:         "#fff",
-                    fontSize:      12,
-                    fontWeight:    600,
-                    padding:       "5px 11px",
-                    borderRadius:  999,
-                    whiteSpace:    "nowrap",
-                    userSelect:    "none",
-                    boxShadow:     "0 2px 10px rgba(0,0,0,0.20)",
+                    background:     "rgba(15,23,42,0.85)",
+                    color:          "#fff",
+                    fontSize:       12,
+                    fontWeight:     600,
+                    padding:        "5px 11px",
+                    borderRadius:   999,
+                    whiteSpace:     "nowrap",
+                    userSelect:     "none",
+                    boxShadow:      "0 2px 10px rgba(0,0,0,0.20)",
                     backdropFilter: "blur(4px)",
                   }}
                 >
@@ -691,29 +744,29 @@ function QuickActionsFAB({
                   aria-label={action.label}
                   onClick={() => handleAction(action.tab)}
                   style={{
-                    width:        DIAL_ITEM_SIZE,
-                    height:       DIAL_ITEM_SIZE,
-                    borderRadius: "50%",
-                    border:       "none",
-                    cursor:       "pointer",
-                    background:   action.color,
-                    color:        "#fff",
-                    display:      "flex",
-                    alignItems:   "center",
+                    width:          DIAL_ITEM_SIZE,
+                    height:         DIAL_ITEM_SIZE,
+                    borderRadius:   "50%",
+                    border:         "none",
+                    cursor:         "pointer",
+                    background:     action.color,
+                    color:          "#fff",
+                    display:        "flex",
+                    alignItems:     "center",
                     justifyContent: "center",
-                    flexShrink:   0,
-                    boxShadow:    "0 3px 12px rgba(0,0,0,0.22)",
-                    transition:   "transform 120ms ease, box-shadow 120ms ease",
+                    flexShrink:     0,
+                    boxShadow:      "0 3px 12px rgba(0,0,0,0.22)",
+                    transition:     "transform 120ms ease, box-shadow 120ms ease",
                   }}
                   onPointerEnter={(e) => {
                     const el = e.currentTarget as HTMLButtonElement;
-                    el.style.transform  = "scale(1.12)";
-                    el.style.boxShadow  = "0 6px 20px rgba(0,0,0,0.28)";
+                    el.style.transform = "scale(1.12)";
+                    el.style.boxShadow = "0 6px 20px rgba(0,0,0,0.28)";
                   }}
                   onPointerLeave={(e) => {
                     const el = e.currentTarget as HTMLButtonElement;
-                    el.style.transform  = "scale(1)";
-                    el.style.boxShadow  = "0 3px 12px rgba(0,0,0,0.22)";
+                    el.style.transform = "scale(1)";
+                    el.style.boxShadow = "0 3px 12px rgba(0,0,0,0.22)";
                   }}
                 >
                   <Icon style={{ width: 18, height: 18 }} aria-hidden="true" />
@@ -723,7 +776,7 @@ function QuickActionsFAB({
           })}
         </div>
 
-        {/* ── Main FAB ── */}
+        {/* ── Main FAB button ── */}
         <button
           onPointerDown={handlePointerDown}
           onPointerMove={handlePointerMove}
@@ -733,22 +786,22 @@ function QuickActionsFAB({
           aria-haspopup="menu"
           aria-label={isDragging ? "Drag FAB" : open ? "Close quick actions" : "Open quick actions"}
           style={{
-            width:        FAB_SIZE,
-            height:       FAB_SIZE,
-            borderRadius: "50%",
-            border:       "none",
-            cursor:       isDragging ? "grabbing" : "grab",
-            display:      "flex",
-            alignItems:   "center",
+            width:          FAB_SIZE,
+            height:         FAB_SIZE,
+            borderRadius:   "50%",
+            border:         "none",
+            cursor:         isDragging ? "grabbing" : "grab",
+            display:        "flex",
+            alignItems:     "center",
             justifyContent: "center",
-            flexShrink:   0,
-            touchAction:  "none",       // prevent scroll interference on mobile
-            userSelect:   "none",
-            transform:    open && !isDragging ? "rotate(45deg)" : "rotate(0deg)",
-            transition:   isDragging
-              ? "box-shadow 80ms ease"  // no rotation transition during drag
+            flexShrink:     0,
+            touchAction:    "none",
+            userSelect:     "none",
+            transform:      open && !isDragging ? "rotate(45deg)" : "rotate(0deg)",
+            transition:     isDragging
+              ? "box-shadow 80ms ease"
               : "transform 240ms cubic-bezier(0.34,1.4,0.64,1), box-shadow 150ms ease",
-            boxShadow:    isDragging
+            boxShadow:      isDragging
               ? "0 8px 32px rgba(0,0,0,0.38)"
               : open
                 ? "0 6px 28px rgba(2,132,199,0.50)"
