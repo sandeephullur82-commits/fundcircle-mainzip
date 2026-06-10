@@ -8,7 +8,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { createDirectMember, validateCustomerEmail, reassignCustomer } from "@/lib/services";
-import { useOrganization, useUser } from "@clerk/clerk-react";
+import { useOrganization, useUser, useAuth } from "@clerk/clerk-react";
 import { where, doc, updateDoc, serverTimestamp, getDocs, query, collection } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import {
@@ -32,6 +32,7 @@ type CreatedCredentials = {
 export default function OrgCustomers() {
   const { user } = useUser();
   const { organization } = useOrganization();
+  const { getToken } = useAuth();
 
   const { data: customers, loading } = useCollectionRealtime<Membership>("organizationMembers", [
     where("role", "==", "CUSTOMER"),
@@ -248,6 +249,7 @@ export default function OrgCustomers() {
 
     setIsSubmitting(true);
     try {
+      const authToken = await getToken();
       const { generatedPassword } = await createDirectMember({
         firstName: sanitizeName(firstName),
         lastName: sanitizeName(lastName),
@@ -264,6 +266,7 @@ export default function OrgCustomers() {
         customerType,
         createdBy: user.id,
         actorName: user.fullName || user.firstName || "",
+        authToken: authToken || undefined,
       });
       setCredentials({ name: `${firstName.trim()} ${lastName.trim()}`.trim(), email: emailKey, password: generatedPassword });
       toast.success("Customer account created successfully.");
