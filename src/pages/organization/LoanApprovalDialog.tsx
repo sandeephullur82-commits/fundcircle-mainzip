@@ -8,7 +8,7 @@ import {
   CheckCircle, Loader2, TrendingUp, Banknote, ShieldCheck,
   AlertTriangle, ChevronDown, Crown, Calendar, ClipboardCheck,
   UserCheck, Building2, Smartphone, FileText, ChevronRight,
-  CreditCard,
+  CreditCard, UserPlus, Save,
 } from "lucide-react";
 import { calculateEMI, approveLoan, createLoan } from "@/lib/services";
 import { Loan, LoanApplication, Membership } from "@/types";
@@ -19,7 +19,7 @@ type RiskLevel = "LOW" | "MEDIUM" | "HIGH";
 type DisbursementMethod = "CASH" | "UPI" | "BANK_TRANSFER" | "CHEQUE";
 type VerificationStatus = "PENDING" | "VERIFIED" | "REJECTED";
 
-const NOMINEE_THRESHOLD = 25000;
+const NOMINEE_THRESHOLD = 0; // nominee always required
 
 const CHECKLIST_ITEMS = [
   { id: "identity",   label: "Customer identity documents verified" },
@@ -99,6 +99,28 @@ export default function LoanApprovalDialog({
   const [approvalNotes, setApprovalNotes] = useState("");
   const [processing, setProcessing] = useState(false);
 
+  // Inline nominee form state
+  const [showInlineNominee, setShowInlineNominee] = useState(false);
+  const [savingInlineNominee, setSavingInlineNominee] = useState(false);
+  const [inlineNomineeName, setInlineNomineeName] = useState("");
+  const [inlineNomineeRelation, setInlineNomineeRelation] = useState("");
+  const [inlineNomineePhone, setInlineNomineePhone] = useState("");
+  const [inlineNomineeAddress, setInlineNomineeAddress] = useState("");
+  // Locally-saved nominee override (enables approval without page reload)
+  const [localNomineeSaved, setLocalNomineeSaved] = useState<{
+    name: string; relation: string; phone: string; address: string;
+  } | null>(null);
+
+  useEffect(() => {
+    if (!isOpen) {
+      setLocalNomineeSaved(null);
+      setShowInlineNominee(false);
+      setInlineNomineeName(""); setInlineNomineeRelation("");
+      setInlineNomineePhone(""); setInlineNomineeAddress("");
+      return;
+    }
+  }, [isOpen]);
+
   useEffect(() => {
     if (!isOpen) return;
     const amt = loan?.principalAmount ?? (loan as any)?.principal ?? application?.loanAmount ?? 0;
@@ -136,8 +158,15 @@ export default function LoanApprovalDialog({
   const totalRepayment = liveEMI * requestedTenure;
   const totalInterest  = totalRepayment - approvedAmountNum;
 
+  // Effective nominee — local override takes precedence after inline save
+  const effectiveNomineeName     = localNomineeSaved?.name     ?? nomineeName;
+  const effectiveNomineeRelation = localNomineeSaved?.relation ?? nomineeRelation;
+  const effectiveNomineePhone    = localNomineeSaved?.phone    ?? nomineePhone;
+  const effectiveNomineeAddress  = localNomineeSaved?.address  ?? nomineeAddress;
+  const effectiveNomineeComplete = !!(effectiveNomineeName && effectiveNomineeRelation);
+
   const requiresNominee = approvedAmountNum > NOMINEE_THRESHOLD;
-  const nomineeBlocked  = requiresNominee && !nomineeComplete;
+  const nomineeBlocked  = requiresNominee && !effectiveNomineeComplete;
   const checkedCount    = Object.values(checklist).filter(Boolean).length;
 
   const isOwnerMember = (m: any) => (m?.role || "").toUpperCase() === "OWNER";
@@ -153,9 +182,46 @@ export default function LoanApprovalDialog({
     return "";
   };
 
+  const handleSaveInlineNominee = async () => {
+    if (!inlineNomineeName.trim()) { toast.error("Nominee name is required."); return; }
+    if (!inlineNomineeRelation)    { toast.error("Nominee relationship is required."); return; }
+    const customerDoc = members.find((m) => m.id === customerId || m.clerkUserId === customerId);
+    if (!customerDoc) { toast.error("Customer profile not found."); return; }
+    setSavingInlineNominee(true);
+    try {
+      const nomineeFields = {
+        nomineeName:     inlineNomineeName.trim(),
+        nomineeRelation: inlineNomineeRelation,
+        nomineePhone:    inlineNomineePhone.trim(),
+        nomineeAddress:  inlineNomineeAddress.trim(),
+        nominee: {
+          name:     inlineNomineeName.trim(),
+          relation: inlineNomineeRelation,
+          phone:    inlineNomineePhone.trim(),
+          address:  inlineNomineeAddress.trim(),
+        },
+        updatedAt: serverTimestamp(),
+      };
+      await updateDoc(doc(db, "organizationMembers", customerDoc.id), nomineeFields);
+      try { await updateDoc(doc(db, "customers", customerDoc.id), nomineeFields); } catch (_) {}
+      setLocalNomineeSaved({
+        name:     inlineNomineeName.trim(),
+        relation: inlineNomineeRelation,
+        phone:    inlineNomineePhone.trim(),
+        address:  inlineNomineeAddress.trim(),
+      });
+      setShowInlineNominee(false);
+      toast.success("Nominee saved — approval is now enabled.");
+    } catch (err: any) {
+      toast.error(err?.message || "Failed to save nominee.");
+    } finally {
+      setSavingInlineNominee(false);
+    }
+  };
+
   const handleApprove = async () => {
     if (nomineeBlocked) {
-      toast.error(`Nominee required for loans above ₹${NOMINEE_THRESHOLD.toLocaleString()}. Customer must update profile first.`);
+      toast.error("Nominee is required. Please add one using '+ Add Nominee Now' above.");
       return;
     }
     if (!approvedAmountNum || approvedAmountNum <= 0) {
@@ -285,40 +351,130 @@ export default function LoanApprovalDialog({
 
           {/* ── 2. Nominee Status Card ───────────────────────────────────────── */}
           <div className={`rounded-xl p-4 border space-y-2 ${
-            nomineeBlocked   ? "bg-red-50 border-red-300" :
-            nomineeComplete  ? "bg-purple-50 border-purple-100" :
-                               "bg-amber-50 border-amber-200"
+            effectiveNomineeComplete ? "bg-purple-50 border-purple-100" :
+            showInlineNominee        ? "bg-blue-50 border-blue-200"     :
+                                       "bg-red-50 border-red-200"
           }`}>
             <div className="flex items-center gap-2 mb-1">
               <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider flex-1">Nominee Details</p>
               <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
-                nomineeBlocked   ? "bg-red-200 text-red-800" :
-                nomineeComplete  ? "bg-purple-200 text-purple-800" :
-                                   "bg-amber-200 text-amber-800"
+                effectiveNomineeComplete ? "bg-purple-200 text-purple-800" :
+                showInlineNominee        ? "bg-blue-200 text-blue-800"     :
+                                           "bg-red-200 text-red-800"
               }`}>
-                {nomineeComplete ? "✓ Complete" : requiresNominee ? "REQUIRED — Missing" : "Incomplete"}
+                {effectiveNomineeComplete ? "✓ Complete" : "Required — Missing"}
               </span>
             </div>
-            {nomineeName ? (
+
+            {effectiveNomineeComplete ? (
+              /* Nominee exists — show details */
               <div className="grid grid-cols-2 gap-x-6 gap-y-1">
                 {[
-                  { label: "Name",     value: nomineeName },
-                  { label: "Relation", value: nomineeRelation },
-                  { label: "Phone",    value: nomineePhone },
-                  { label: "Address",  value: nomineeAddress },
+                  { label: "Name",     value: effectiveNomineeName },
+                  { label: "Relation", value: effectiveNomineeRelation },
+                  { label: "Phone",    value: effectiveNomineePhone },
+                  { label: "Address",  value: effectiveNomineeAddress },
                 ].filter((r) => r.value).map((row) => (
                   <div key={row.label} className="flex items-center justify-between text-sm">
                     <span className="text-slate-500">{row.label}</span>
                     <span className="font-medium text-slate-800">{row.value}</span>
                   </div>
                 ))}
+                {localNomineeSaved && (
+                  <div className="col-span-2 mt-1 text-[10px] text-emerald-600 font-semibold flex items-center gap-1">
+                    <CheckCircle className="w-3 h-3" /> Nominee added in this session
+                  </div>
+                )}
+              </div>
+            ) : showInlineNominee ? (
+              /* Inline add form */
+              <div className="space-y-2.5">
+                <div className="grid grid-cols-2 gap-2">
+                  <div className="space-y-1 col-span-2">
+                    <Label className="text-xs text-slate-500">Full Name *</Label>
+                    <input
+                      value={inlineNomineeName}
+                      onChange={(e) => setInlineNomineeName(e.target.value)}
+                      placeholder="Nominee's full name"
+                      className="w-full h-9 px-3 rounded-lg border border-slate-200 bg-white text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-400/30"
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <Label className="text-xs text-slate-500">Relationship *</Label>
+                    <select
+                      value={inlineNomineeRelation}
+                      onChange={(e) => setInlineNomineeRelation(e.target.value)}
+                      className="w-full h-9 px-3 rounded-lg border border-slate-200 bg-white text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-400/30"
+                    >
+                      <option value="">Select…</option>
+                      {["Spouse","Father","Mother","Son","Daughter","Sibling","Other"].map((r) => (
+                        <option key={r} value={r}>{r}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className="space-y-1">
+                    <Label className="text-xs text-slate-500">Phone</Label>
+                    <input
+                      value={inlineNomineePhone}
+                      onChange={(e) => setInlineNomineePhone(e.target.value)}
+                      placeholder="Contact number"
+                      className="w-full h-9 px-3 rounded-lg border border-slate-200 bg-white text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-400/30"
+                    />
+                  </div>
+                  <div className="space-y-1 col-span-2">
+                    <Label className="text-xs text-slate-500">Address</Label>
+                    <input
+                      value={inlineNomineeAddress}
+                      onChange={(e) => setInlineNomineeAddress(e.target.value)}
+                      placeholder="Nominee's address"
+                      className="w-full h-9 px-3 rounded-lg border border-slate-200 bg-white text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-400/30"
+                    />
+                  </div>
+                </div>
+                <div className="flex gap-2 pt-1">
+                  <Button
+                    size="sm"
+                    onClick={handleSaveInlineNominee}
+                    disabled={savingInlineNominee}
+                    className="flex-1 bg-blue-600 hover:bg-blue-700 text-white"
+                  >
+                    {savingInlineNominee ? (
+                      <><Loader2 className="w-3.5 h-3.5 animate-spin mr-1" />Saving…</>
+                    ) : (
+                      <><Save className="w-3.5 h-3.5 mr-1" />Save Nominee</>
+                    )}
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    onClick={() => setShowInlineNominee(false)}
+                    disabled={savingInlineNominee}
+                  >
+                    Cancel
+                  </Button>
+                </div>
               </div>
             ) : (
-              <p className={`text-xs ${nomineeBlocked ? "text-red-700 font-semibold" : "text-amber-700"}`}>
-                {nomineeBlocked
-                  ? `⚠ Nominee is mandatory for loans above ₹${NOMINEE_THRESHOLD.toLocaleString()}. Approval blocked until customer adds a nominee.`
-                  : "No nominee on file — ask the customer to update their profile."}
-              </p>
+              /* No nominee — show options */
+              <div className="space-y-2">
+                <p className="text-xs text-red-700 font-semibold">
+                  ⚠ Nominee is required to approve this loan.
+                </p>
+                <p className="text-[11px] text-slate-500">Choose one of the options below:</p>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="w-full border-blue-300 text-blue-700 hover:bg-blue-50"
+                  onClick={() => setShowInlineNominee(true)}
+                >
+                  <UserPlus className="w-3.5 h-3.5 mr-1.5" />
+                  Option A — Add Nominee Now
+                </Button>
+                <p className="text-[10px] text-slate-400 text-center">— or —</p>
+                <p className="text-[11px] text-slate-500 text-center">
+                  Option B — Close this dialog, open the customer profile and add the nominee there, then come back to approve.
+                </p>
+              </div>
             )}
           </div>
 
@@ -627,19 +783,6 @@ export default function LoanApprovalDialog({
             </div>
           </div>
 
-          {/* ── Nominee block alert ──────────────────────────────────────────── */}
-          {nomineeBlocked && (
-            <div className="flex items-start gap-3 bg-red-50 border border-red-200 rounded-xl p-3">
-              <AlertTriangle className="w-4 h-4 text-red-500 mt-0.5 shrink-0" />
-              <div>
-                <p className="text-sm font-semibold text-red-700">Cannot approve — Nominee required</p>
-                <p className="text-xs text-red-600 mt-0.5">
-                  Loans above ₹{NOMINEE_THRESHOLD.toLocaleString()} require a nominee. The customer must add one from their profile.
-                </p>
-              </div>
-            </div>
-          )}
-
           {/* ── Action Buttons ───────────────────────────────────────────────── */}
           <div className="flex gap-3 pt-1 pb-1">
             <Button variant="outline" className="flex-1" onClick={onClose} disabled={processing}>
@@ -648,11 +791,14 @@ export default function LoanApprovalDialog({
             <Button
               className="flex-1 bg-emerald-600 hover:bg-emerald-700"
               onClick={handleApprove}
-              disabled={processing || nomineeBlocked}
+              disabled={processing || nomineeBlocked || showInlineNominee}
+              title={nomineeBlocked ? "Add a nominee above before approving" : undefined}
             >
               {processing
                 ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" /> Processing…</>
-                : "Approve & Activate"}
+                : nomineeBlocked
+                  ? "Nominee Required"
+                  : "Approve & Activate"}
             </Button>
           </div>
 

@@ -260,6 +260,7 @@ export default function CustomerDashboard() {
             membershipId={membershipId}
             user={user}
             loanApplications={apps}
+            loans={lns}
           />
         );
       case "emi_schedule":
@@ -296,6 +297,7 @@ export default function CustomerDashboard() {
             user={user}
             membershipId={membershipId}
             membershipDoc={membershipDoc ?? null}
+            nomineeLocked={!!(membershipDoc as any)?.nomineeLocked}
           />
         );
       case "security":

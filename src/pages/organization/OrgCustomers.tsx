@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
-import { createDirectMember, validateCustomerEmail, reassignCustomer } from "@/lib/services";
+import { createDirectMember, validateCustomerEmail, reassignCustomer, createAuditLog } from "@/lib/services";
 import { useOrganization, useUser, useAuth } from "@clerk/clerk-react";
 import { where, doc, updateDoc, serverTimestamp, getDocs, query, collection } from "firebase/firestore";
 import { db } from "@/lib/firebase";
@@ -76,6 +76,9 @@ export default function OrgCustomers() {
   const [editCustomerType, setEditCustomerType] = useState<"SAVINGS" | "LOAN" | "SAVINGS_LOAN">("SAVINGS_LOAN");
   const [editNotes, setEditNotes] = useState("");
   const [savingEdit, setSavingEdit] = useState(false);
+  // Nominee override reason (required when customer has an active loan)
+  const [nomineeOverrideReason, setNomineeOverrideReason] = useState("");
+  const [showNomineeOverride, setShowNomineeOverride] = useState(false);
 
   // Deactivate state
   const [deactivateCustomer, setDeactivateCustomer] = useState<Membership | null>(null);
@@ -111,11 +114,12 @@ export default function OrgCustomers() {
     }
   });
 
-  // Active loan count per customer membership ID
+  // Active loan count per customer membership ID (includes ACTIVE, OVERDUE, PARTIALLY_PAID)
+  const ACTIVE_LOAN_STATUSES_SET = new Set(["ACTIVE", "OVERDUE", "PARTIALLY_PAID"]);
   const activeLoansByCustomer: Record<string, number> = {};
   loans.forEach((l: any) => {
     const st = (l.status || "").toUpperCase();
-    if (st === "ACTIVE" && l.customerId) {
+    if (ACTIVE_LOAN_STATUSES_SET.has(st) && l.customerId) {
       activeLoansByCustomer[l.customerId] = (activeLoansByCustomer[l.customerId] || 0) + 1;
     }
   });
@@ -292,6 +296,8 @@ export default function OrgCustomers() {
     setEditCollectorId((customer as any).assignedAgentId || "");
     setEditCustomerType(((customer as any).customerType as any) || "SAVINGS_LOAN");
     setEditNotes((customer as any).notes || "");
+    setNomineeOverrideReason("");
+    setShowNomineeOverride(false);
   };
 
   const handleSaveEdit = async () => {
@@ -314,6 +320,24 @@ export default function OrgCustomers() {
       address: cleanNomineeAddress,
     };
     const cleanNotes = sanitizeMultiline(editNotes, 500);
+
+    // Detect nominee change when customer has an active loan — require override reason
+    const prevNomineeName     = editCustomer.nomineeName     || editCustomer.nominee?.name     || "";
+    const prevNomineeRelation = editCustomer.nomineeRelation || editCustomer.nominee?.relation || "";
+    const nomineeChanged = cleanNomineeName !== prevNomineeName || cleanNomineeRelation !== prevNomineeRelation;
+    const custActiveLoans = activeLoansByCustomer[editCustomer.id] || 0;
+    if (nomineeChanged && custActiveLoans > 0) {
+      if (!showNomineeOverride) {
+        setShowNomineeOverride(true);
+        toast.warning("This customer has an active loan. Provide a reason to override the locked nominee.");
+        return;
+      }
+      if (!nomineeOverrideReason.trim()) {
+        toast.error("A reason is required to change a nominee on an active loan.");
+        return;
+      }
+    }
+
     setSavingEdit(true);
     const newCollector = collectorsForAssignment.find((c) => c.id === editCollectorId);
     try {
@@ -339,8 +363,34 @@ export default function OrgCustomers() {
       try {
         await updateDoc(doc(db, "customers", editCustomer.id), memberUpdate);
       } catch (_) {}
+
+      // Write audit log when nominee is overridden on an active loan
+      if (nomineeChanged && custActiveLoans > 0 && nomineeOverrideReason.trim()) {
+        try {
+          await createAuditLog({
+            organizationId: organization?.id || "",
+            actorId: user?.id || "",
+            actorRole: "OWNER",
+            actorName: user?.fullName || user?.primaryEmailAddress?.emailAddress || "Owner",
+            action: "NOMINEE_OVERRIDE",
+            entityType: "Customer",
+            entityId: editCustomer.id,
+            metadata: {
+              previousNomineeName: prevNomineeName,
+              previousNomineeRelation: prevNomineeRelation,
+              newNomineeName: cleanNomineeName,
+              newNomineeRelation: cleanNomineeRelation,
+              reason: nomineeOverrideReason.trim(),
+              activeLoanCount: custActiveLoans,
+            },
+          });
+        } catch (_) {}
+      }
+
       toast.success("Customer updated successfully.");
       setEditCustomer(null);
+      setNomineeOverrideReason("");
+      setShowNomineeOverride(false);
     } catch (err) {
       toast.error("Failed to update customer.");
     } finally { setSavingEdit(false); }
@@ -977,6 +1027,31 @@ export default function OrgCustomers() {
                 <Label className="flex items-center gap-1.5"><MapPin className="w-3.5 h-3.5 text-slate-400" /> Nominee Address</Label>
                 <Input value={editNominee.address} onChange={(e) => setEditNominee({ ...editNominee, address: e.target.value })} placeholder="Nominee's residential address" />
               </div>
+
+              {/* Nominee override reason — required when customer has an active loan */}
+              {showNomineeOverride && editCustomer && (activeLoansByCustomer[editCustomer.id] || 0) > 0 && (
+                <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 space-y-2">
+                  <div className="flex items-start gap-2">
+                    <AlertTriangle className="w-4 h-4 text-amber-500 shrink-0 mt-0.5" />
+                    <div>
+                      <p className="text-xs font-semibold text-amber-800">Nominee Override — Active Loan</p>
+                      <p className="text-[11px] text-amber-600 mt-0.5">
+                        This customer has an active loan. Changing the nominee requires an explicit reason. This action will be logged.
+                      </p>
+                    </div>
+                  </div>
+                  <div className="space-y-1">
+                    <Label className="text-xs text-amber-700">Override Reason *</Label>
+                    <textarea
+                      value={nomineeOverrideReason}
+                      onChange={(e) => setNomineeOverrideReason(e.target.value)}
+                      rows={2}
+                      placeholder="e.g. Nominee deceased, court order, customer request with documentation…"
+                      className="w-full rounded-md border border-amber-200 bg-white px-3 py-2 text-sm text-slate-900 placeholder:text-slate-400 focus:border-amber-400 focus:outline-none resize-none"
+                    />
+                  </div>
+                </div>
+              )}
 
               <div className="space-y-1.5">
                 <Label className="flex items-center gap-1.5"><FileText className="w-3.5 h-3.5 text-slate-400" /> Notes</Label>

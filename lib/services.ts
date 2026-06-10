@@ -417,6 +417,9 @@ export async function approveLoan(params: {
       disbursementMethod: params.disbursementMethod || "CASH",
     },
   });
+
+  // Sync nominee lock — loan is now ACTIVE, so lock the nominee
+  try { await syncNomineeLock(loan.customerId, loan.organizationId); } catch (_) {}
 }
 
 export async function rejectLoan(params: {
@@ -448,6 +451,40 @@ export async function rejectLoan(params: {
     entityId: params.loanId,
     metadata: { reason: params.reason, customerId: loan.customerId },
   });
+}
+
+// ── Nominee Lock Sync ─────────────────────────────────────────────────────────
+
+/**
+ * Recalculates and syncs nomineeLocked / canApplyLoan / activeLoanCount
+ * on the customer's organizationMembers (and customers) doc.
+ * Called after loan approval and loan closure.
+ */
+export async function syncNomineeLock(customerId: string, organizationId: string): Promise<void> {
+  const ACTIVE_STATUSES = ["ACTIVE", "OVERDUE", "PARTIALLY_PAID"];
+  try {
+    const loansSnap = await getDocs(
+      query(
+        collection(db, "loans"),
+        where("customerId", "==", customerId),
+        where("organizationId", "==", organizationId)
+      )
+    );
+    const activeCount = loansSnap.docs.filter((d) =>
+      ACTIVE_STATUSES.includes((d.data().status || "").toUpperCase())
+    ).length;
+    const locked = activeCount > 0;
+    const update = {
+      nomineeLocked: locked,
+      activeLoanCount: activeCount,
+      canApplyLoan: !locked,
+      updatedAt: serverTimestamp(),
+    };
+    await updateDoc(doc(db, "organizationMembers", customerId), update);
+    try { await updateDoc(doc(db, "customers", customerId), update); } catch (_) {}
+  } catch (e) {
+    console.error("[syncNomineeLock] Failed:", e);
+  }
 }
 
 // ── EMI Collection ────────────────────────────────────────────────────────────
@@ -555,6 +592,9 @@ export async function recordEMICollection(params: {
       entityId: params.loanId,
       metadata: { customerId: params.customerId },
     });
+
+    // Sync nominee lock — loan is now CLOSED, unlock if no other active loans
+    try { await syncNomineeLock(params.customerId, params.organizationId); } catch (_) {}
   }
 
   return { receiptNo, loanClosed, installmentId: params.installmentId, collectionId: collRef.id };

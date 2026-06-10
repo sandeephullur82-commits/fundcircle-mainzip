@@ -1,8 +1,8 @@
 import React, { useState, useEffect } from "react";
 import {
   User, Edit3, Save, X, Phone, MapPin, Shield, Camera,
-  LogOut, Calendar, Users, RefreshCw,
-  CreditCard, AlertTriangle,
+  LogOut, RefreshCw,
+  CreditCard, AlertTriangle, Lock,
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { SignOutButton, useClerk } from "@clerk/clerk-react";
@@ -16,6 +16,7 @@ interface Props {
   user: any;
   membershipId: string | null;
   membershipDoc: Membership | null;
+  nomineeLocked?: boolean;
 }
 
 function Field({
@@ -46,7 +47,7 @@ function Field({
   );
 }
 
-export default function ProfileTab({ user, membershipId, membershipDoc }: Props) {
+export default function ProfileTab({ user, membershipId, membershipDoc, nomineeLocked = false }: Props) {
   const { signOut } = useClerk();
   const [editMode, setEditMode] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -300,12 +301,23 @@ export default function ProfileTab({ user, membershipId, membershipDoc }: Props)
       </Card>
 
       {/* Nominee */}
-      <Card className={!nomineeComplete ? "ring-1 ring-amber-300 dark:ring-amber-700" : ""}>
+      <Card className={
+        nomineeLocked ? "ring-1 ring-blue-300 dark:ring-blue-700" :
+        !nomineeComplete ? "ring-1 ring-amber-300 dark:ring-amber-700" : ""
+      }>
         <CardHeader className="pb-0">
           <CardTitle className="text-sm flex items-center gap-2">
             <Shield className="w-4 h-4 text-purple-500" />
             Nominee Details
-            {!nomineeComplete && (
+            {nomineeLocked ? (
+              <span className="ml-auto flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full bg-blue-100 text-blue-700 dark:bg-blue-950/40 dark:text-blue-400">
+                <Lock className="w-3 h-3" /> Active &amp; Locked
+              </span>
+            ) : nomineeComplete ? (
+              <span className="ml-auto text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-400">
+                🟡 Editable
+              </span>
+            ) : (
               <span className="ml-auto text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-100 text-amber-700 dark:bg-amber-950/40 dark:text-amber-400">
                 Incomplete
               </span>
@@ -313,12 +325,20 @@ export default function ProfileTab({ user, membershipId, membershipDoc }: Props)
           </CardTitle>
         </CardHeader>
         <CardContent className="pt-4 space-y-4">
+          {nomineeLocked && (
+            <div className="flex items-start gap-2 bg-blue-50 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-800 rounded-xl px-3 py-2.5">
+              <Lock className="w-4 h-4 text-blue-500 shrink-0 mt-0.5" />
+              <p className="text-xs text-blue-700 dark:text-blue-300">
+                Nominee locked because an active loan exists. Contact the organization to request changes.
+              </p>
+            </div>
+          )}
           <Field label="Nominee Name" value={editMode ? nomineeName : resolvedNomineeName}
-            editMode={editMode} onChange={setNomineeName} placeholder="Full name of nominee" />
+            editMode={editMode && !nomineeLocked} onChange={setNomineeName} placeholder="Full name of nominee" />
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-1">
               <p className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Relationship</p>
-              {editMode ? (
+              {editMode && !nomineeLocked ? (
                 <select value={nomineeRelation} onChange={(e) => setNomineeRelation(e.target.value)}
                   className="w-full h-10 px-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-white text-sm focus:outline-none focus:ring-2 focus:ring-emerald-400/30">
                   <option value="">Select…</option>
@@ -335,10 +355,10 @@ export default function ProfileTab({ user, membershipId, membershipDoc }: Props)
               )}
             </div>
             <Field label="Nominee Phone" value={editMode ? nomineePhone : resolvedNomineePhone}
-              editMode={editMode} onChange={setNomineePhone} placeholder="+91 ..." />
+              editMode={editMode && !nomineeLocked} onChange={setNomineePhone} placeholder="+91 ..." />
           </div>
           <Field label="Nominee Address" value={editMode ? nomineeAddress : resolvedNomineeAddress}
-            editMode={editMode} onChange={setNomineeAddress} placeholder="Nominee's residential address"
+            editMode={editMode && !nomineeLocked} onChange={setNomineeAddress} placeholder="Nominee's residential address"
             icon={<MapPin className="w-4 h-4 text-slate-400" />} />
         </CardContent>
       </Card>

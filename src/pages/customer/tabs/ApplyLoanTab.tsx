@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { Send, TrendingUp, Clock, CheckCircle, XCircle, FileText } from "lucide-react";
+import { Send, TrendingUp, Clock, CheckCircle, XCircle, FileText, CreditCard } from "lucide-react";
 import FieldError from "@/components/ui/FieldError";
 import { sanitizeMultiline } from "@/lib/validation";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -7,7 +7,7 @@ import { addDoc, collection as fsCol, serverTimestamp } from "firebase/firestore
 import { db } from "@/lib/firebase";
 import { toast } from "sonner";
 import { format } from "date-fns";
-import type { LoanApplication } from "@/types";
+import type { LoanApplication, Loan } from "@/types";
 
 function toDate(ts: any): Date {
   if (!ts) return new Date(0);
@@ -26,14 +26,17 @@ const LOAN_PURPOSES = [
   "Agriculture", "Vehicle Purchase", "Wedding", "Debt Consolidation", "Other",
 ];
 
+const ACTIVE_LOAN_STATUSES = ["ACTIVE", "OVERDUE", "PARTIALLY_PAID"];
+
 interface Props {
   orgId: string;
   membershipId: string | null;
   user: any;
   loanApplications: LoanApplication[];
+  loans?: Loan[];
 }
 
-export default function ApplyLoanTab({ orgId, membershipId, user, loanApplications }: Props) {
+export default function ApplyLoanTab({ orgId, membershipId, user, loanApplications, loans = [] }: Props) {
   const [loanAmount, setLoanAmount] = useState("");
   const [loanPurpose, setLoanPurpose] = useState("");
   const [tenureMonths, setTenureMonths] = useState("12");
@@ -50,6 +53,10 @@ export default function ApplyLoanTab({ orgId, membershipId, user, loanApplicatio
   );
   const hasPending = sortedApps.some((a) => a.status === "PENDING");
   const hasNone = sortedApps.length === 0;
+
+  const hasActiveLoan = loans.some((l) =>
+    ACTIVE_LOAN_STATUSES.includes((l.status || "").toUpperCase())
+  );
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -126,6 +133,61 @@ export default function ApplyLoanTab({ orgId, membershipId, user, loanApplicatio
     if (status === "REJECTED") return <XCircle className="w-4 h-4 text-red-500" />;
     return <FileText className="w-4 h-4 text-slate-400" />;
   };
+
+  if (hasActiveLoan) {
+    return (
+      <div className="space-y-4">
+        {/* Active loan banner */}
+        <div className="p-5 bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800 rounded-2xl">
+          <div className="flex items-start gap-3">
+            <CreditCard className="w-5 h-5 text-amber-500 shrink-0 mt-0.5" />
+            <div>
+              <p className="text-sm font-semibold text-amber-800 dark:text-amber-300">You have an active loan</p>
+              <p className="text-xs text-amber-600 dark:text-amber-400 mt-1">
+                New loan application available after your current loan is closed.
+              </p>
+            </div>
+          </div>
+        </div>
+
+        {/* My Applications (still show history) */}
+        {sortedApps.length > 0 && (
+          <Card>
+            <CardHeader className="pb-0">
+              <CardTitle className="text-sm flex items-center gap-2">
+                <TrendingUp className="w-4 h-4 text-emerald-500" />
+                My Applications
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="p-0 mt-2">
+              <div className="divide-y divide-slate-50 dark:divide-slate-800">
+                {sortedApps.map((app) => (
+                  <div key={app.id} className="px-4 py-3">
+                    <div className="flex items-start gap-3">
+                      <div className="mt-0.5 shrink-0">{appStatusIcon(app.status)}</div>
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center justify-between gap-2">
+                          <p className="text-sm font-semibold text-slate-900 dark:text-white">
+                            ₹{Number(app.loanAmount).toLocaleString()} · {app.tenureMonths} months
+                          </p>
+                          <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border shrink-0 ${appStatusStyles[app.status] ?? appStatusStyles.PENDING}`}>
+                            {app.status}
+                          </span>
+                        </div>
+                        <p className="text-xs text-slate-400 mt-0.5">
+                          {app.loanPurpose} · {toDate(app.createdAt).getTime() > 0 ? format(toDate(app.createdAt), "MMM d, yyyy") : "—"}
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </CardContent>
+          </Card>
+        )}
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-4">
