@@ -381,8 +381,8 @@ export default function OrgDashboard() {
         })}
       </nav>
 
-      {/* Quick Actions FAB — admin mode only */}
-      {mode === "admin" && (
+      {/* Quick Actions FAB — dashboard tab only */}
+      {mode === "admin" && activeTab === "overview" && (
         <QuickActionsFAB
           open={fabOpen}
           setOpen={setFabOpen}
