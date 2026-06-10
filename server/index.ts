@@ -50,6 +50,55 @@ function generatePassword(): string {
   return parts.join("");
 }
 
+// ─── Firestore REST helpers ───────────────────────────────────────────────────
+const FIREBASE_PROJECT_ID = process.env.VITE_FIREBASE_PROJECT_ID || "fundcircle-66b66";
+const FIREBASE_API_KEY = process.env.VITE_FIREBASE_API_KEY;
+const FS_BASE = `https://firestore.googleapis.com/v1/projects/${FIREBASE_PROJECT_ID}/databases/(default)/documents`;
+
+const sv  = (v: string)  => ({ stringValue:  v ?? "" });
+const iv  = (v: number)  => ({ integerValue: String(Math.round(v ?? 0)) });
+const bv  = (v: boolean) => ({ booleanValue: !!v });
+const tv  = (d?: Date)   => ({ timestampValue: (d ?? new Date()).toISOString() });
+
+async function fsSet(col: string, docId: string, fields: Record<string, any>): Promise<void> {
+  if (!FIREBASE_API_KEY) throw new Error("VITE_FIREBASE_API_KEY env var not set");
+  const url = `${FS_BASE}/${col}/${docId}?key=${FIREBASE_API_KEY}`;
+  const resp = await fetch(url, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ fields }),
+  });
+  if (!resp.ok) {
+    const txt = await resp.text();
+    throw new Error(`Firestore write failed [${col}/${docId}] HTTP ${resp.status}: ${txt.slice(0, 300)}`);
+  }
+}
+
+async function fsAdd(col: string, fields: Record<string, any>): Promise<string> {
+  if (!FIREBASE_API_KEY) throw new Error("VITE_FIREBASE_API_KEY env var not set");
+  const url = `${FS_BASE}/${col}?key=${FIREBASE_API_KEY}`;
+  const resp = await fetch(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ fields }),
+  });
+  if (!resp.ok) {
+    const txt = await resp.text();
+    throw new Error(`Firestore add failed [${col}] HTTP ${resp.status}: ${txt.slice(0, 300)}`);
+  }
+  const data: any = await resp.json();
+  return (data.name as string).split("/").pop()!;
+}
+
+function membershipIdFor(orgId: string, userId: string): string {
+  return `${orgId}_${userId}`;
+}
+
+function generateAccountNumber(): string {
+  const n = Math.floor(Math.random() * 9000000000) + 1000000000;
+  return `FC${n}`;
+}
+
 // ─── Auth Middleware ──────────────────────────────────────────────────────────
 async function authMiddleware(req: Request, res: Response, next: NextFunction) {
   const authHeader = req.headers.authorization;
@@ -69,9 +118,16 @@ async function authMiddleware(req: Request, res: Response, next: NextFunction) {
 
 // ─── Create Agent (direct creation, no invitation) ───────────────────────────
 app.post("/api/create-agent", authMiddleware, async (req, res) => {
-  const { firstName, lastName, email, phone, organizationId, createdBy } = req.body as {
+  const {
+    firstName, lastName, email, phone,
+    organizationId, organizationName,
+    createdBy, actorName,
+    address, notes, employeeCode,
+  } = req.body as {
     firstName: string; lastName: string; email: string;
-    phone?: string; organizationId: string; createdBy?: string;
+    phone?: string; organizationId: string; organizationName?: string;
+    createdBy?: string; actorName?: string;
+    address?: string; notes?: string; employeeCode?: string;
   };
 
   console.log("[FC CreateAgent] ▶ Request received");
@@ -86,15 +142,18 @@ app.post("/api/create-agent", authMiddleware, async (req, res) => {
 
   const emailKey = email.trim().toLowerCase();
   const generatedPassword = generatePassword();
+  const fullName = `${firstName.trim()} ${(lastName || "").trim()}`.trim();
 
   let userId: string;
+  let isNewUser = false;
 
+  // ── 1. Clerk user ────────────────────────────────────────────────────────
   try {
     const existing = await clerkClient.users.getUserList({ emailAddress: [emailKey] });
 
     if (existing.data.length > 0) {
       userId = existing.data[0].id;
-      // Update password for existing user so they use the new temp password
+      console.log("[FC CreateAgent] Existing Clerk user found:", userId);
       await clerkClient.users.updateUser(userId, { password: generatedPassword });
     } else {
       const created = await clerkClient.users.createUser({
@@ -105,14 +164,16 @@ app.post("/api/create-agent", authMiddleware, async (req, res) => {
         skipPasswordChecks: false,
       });
       userId = created.id;
+      isNewUser = true;
+      console.log("[FC CreateAgent] ✓ Clerk user created:", userId);
     }
   } catch (err: any) {
     const msg = err?.errors?.[0]?.longMessage || err?.message || "Failed to create Clerk user";
-    console.error("[FC CreateAgent] Clerk user creation failed:", msg);
+    console.error("[FC CreateAgent] ✗ Clerk user error:", msg);
     return res.status(500).json({ error: msg });
   }
 
-  // Add to org as agent
+  // ── 2. Clerk org membership ──────────────────────────────────────────────
   try {
     const list = await clerkClient.organizations.getOrganizationMembershipList({
       organizationId, limit: 500,
@@ -124,27 +185,131 @@ app.post("/api/create-agent", authMiddleware, async (req, res) => {
       await clerkClient.organizations.createOrganizationMembership({
         organizationId, userId, role: agentRole,
       });
+      console.log("[FC CreateAgent] ✓ Clerk membership created");
+    } else {
+      console.log("[FC CreateAgent] User already a member of org — skipping membership");
     }
   } catch (err: any) {
     const msg = err?.errors?.[0]?.longMessage || err?.message || "Failed to add to organization";
-    console.error("[FC CreateAgent] Org membership failed:", msg);
+    console.error("[FC CreateAgent] ✗ Clerk membership error:", msg);
+    if (isNewUser) {
+      try { await clerkClient.users.deleteUser(userId); console.log("[FC CreateAgent] ↩ Rolled back Clerk user:", userId); }
+      catch (rb: any) { console.error("[FC CreateAgent] ✗ Rollback failed:", rb?.message); }
+    }
     return res.status(500).json({ error: msg });
   }
 
-  return res.json({ userId, email: emailKey, generatedPassword });
+  // ── 3. Firestore documents ───────────────────────────────────────────────
+  const membershipDocId = membershipIdFor(organizationId, userId);
+  const now = new Date();
+
+  try {
+    console.log("[FC CreateAgent] Writing Firestore docs — membershipDocId:", membershipDocId);
+
+    const membershipFields: Record<string, any> = {
+      id:           sv(membershipDocId),
+      clerkUserId:  sv(userId),
+      email:        sv(emailKey),
+      fullName:     sv(fullName),
+      name:         sv(fullName),
+      firstName:    sv(firstName.trim()),
+      lastName:     sv((lastName || "").trim()),
+      role:         sv("AGENT"),
+      clerkRole:    sv("org:pigmy_collector"),
+      organizationId:   sv(organizationId),
+      organizationName: sv(organizationName || ""),
+      phone:        sv(phone || ""),
+      address:      sv(address || ""),
+      notes:        sv(notes || ""),
+      assignedArea: sv(""),
+      profileCompleted: bv(false),
+      status:       sv("PENDING_SETUP"),
+      createdBy:    sv(createdBy || ""),
+      createdAt:    tv(now),
+      updatedAt:    tv(now),
+    };
+    if (employeeCode?.trim()) {
+      membershipFields.employeeCode = sv(employeeCode.trim());
+    }
+
+    // 3a. organizationMembers
+    await fsSet("organizationMembers", membershipDocId, membershipFields);
+    console.log("[FC CreateAgent] ✓ organizationMembers written");
+
+    // 3b. users
+    await fsSet("users", userId, {
+      clerkUserId: sv(userId),
+      id:          sv(userId),
+      email:       sv(emailKey),
+      name:        sv(fullName),
+      firstName:   sv(firstName.trim()),
+      lastName:    sv((lastName || "").trim()),
+      status:      sv("PENDING_SETUP"),
+      profileCompleted: bv(false),
+      createdAt:   tv(now),
+      updatedAt:   tv(now),
+    });
+    console.log("[FC CreateAgent] ✓ users written");
+
+    // 3c. audit_logs
+    await fsAdd("audit_logs", {
+      organizationId: sv(organizationId),
+      actorId:        sv(createdBy || ""),
+      actorRole:      sv("OWNER"),
+      actorName:      sv(actorName || ""),
+      action:         sv("AGENT_CREATED"),
+      entityType:     sv("Agent"),
+      entityId:       sv(membershipDocId),
+      metadata: {
+        mapValue: {
+          fields: {
+            email:    sv(emailKey),
+            fullName: sv(fullName),
+            role:     sv("AGENT"),
+          },
+        },
+      },
+      createdAt: tv(now),
+    });
+    console.log("[FC CreateAgent] ✓ audit_logs written");
+
+  } catch (fsErr: any) {
+    console.error("[FC CreateAgent] ✗ Firestore write failed:", fsErr.message);
+    if (isNewUser) {
+      console.log("[FC CreateAgent] ↩ Rolling back Clerk user:", userId);
+      try { await clerkClient.users.deleteUser(userId); console.log("[FC CreateAgent] ↩ Rollback complete"); }
+      catch (rb: any) { console.error("[FC CreateAgent] ✗ Rollback failed:", rb?.message); }
+    }
+    return res.status(500).json({ error: `Failed to create agent records: ${fsErr.message}` });
+  }
+
+  console.log("[FC CreateAgent] ✓ Agent fully created — userId:", userId, "membershipDocId:", membershipDocId);
+  return res.json({ userId, email: emailKey, generatedPassword, membershipDocId });
 });
 
 // ─── Create Customer (direct creation, no invitation) ────────────────────────
 app.post("/api/create-customer", authMiddleware, async (req, res) => {
-  const { firstName, lastName, email, phone, organizationId, createdBy } = req.body as {
+  const {
+    firstName, lastName, email, phone,
+    organizationId, organizationName,
+    createdBy, actorName,
+    assignedAgentId, assignedAgentName, assignedCollectorRole,
+    customerType,
+    address, notes,
+  } = req.body as {
     firstName: string; lastName: string; email: string;
-    phone?: string; organizationId: string; createdBy?: string;
+    phone?: string; organizationId: string; organizationName?: string;
+    createdBy?: string; actorName?: string;
+    assignedAgentId?: string; assignedAgentName?: string; assignedCollectorRole?: string;
+    customerType?: string;
+    address?: string; notes?: string;
   };
 
   console.log("[FC CreateCustomer] ▶ Request received");
-  console.log("[FC CreateCustomer]   Org ID   :", organizationId ?? "MISSING");
-  console.log("[FC CreateCustomer]   createdBy:", createdBy ?? "MISSING");
-  console.log("[FC CreateCustomer]   email    :", email ?? "MISSING");
+  console.log("[FC CreateCustomer]   Org ID      :", organizationId ?? "MISSING");
+  console.log("[FC CreateCustomer]   createdBy   :", createdBy ?? "MISSING");
+  console.log("[FC CreateCustomer]   email       :", email ?? "MISSING");
+  console.log("[FC CreateCustomer]   customerType:", customerType ?? "SAVINGS_LOAN");
 
   if (!firstName || !email || !organizationId) {
     console.warn("[FC CreateCustomer] ✗ Missing required fields");
@@ -153,14 +318,19 @@ app.post("/api/create-customer", authMiddleware, async (req, res) => {
 
   const emailKey = email.trim().toLowerCase();
   const generatedPassword = generatePassword();
+  const fullName = `${firstName.trim()} ${(lastName || "").trim()}`.trim();
+  const effectiveCustomerType = customerType || "SAVINGS_LOAN";
 
   let userId: string;
+  let isNewUser = false;
 
+  // ── 1. Clerk user ────────────────────────────────────────────────────────
   try {
     const existing = await clerkClient.users.getUserList({ emailAddress: [emailKey] });
 
     if (existing.data.length > 0) {
       userId = existing.data[0].id;
+      console.log("[FC CreateCustomer] Existing Clerk user found:", userId);
       await clerkClient.users.updateUser(userId, { password: generatedPassword });
     } else {
       const created = await clerkClient.users.createUser({
@@ -171,14 +341,16 @@ app.post("/api/create-customer", authMiddleware, async (req, res) => {
         skipPasswordChecks: false,
       });
       userId = created.id;
+      isNewUser = true;
+      console.log("[FC CreateCustomer] ✓ Clerk user created:", userId);
     }
   } catch (err: any) {
     const msg = err?.errors?.[0]?.longMessage || err?.message || "Failed to create Clerk user";
-    console.error("[FC CreateCustomer] Clerk user creation failed:", msg);
+    console.error("[FC CreateCustomer] ✗ Clerk user error:", msg);
     return res.status(500).json({ error: msg });
   }
 
-  // Add to org as customer
+  // ── 2. Clerk org membership ──────────────────────────────────────────────
   try {
     const list = await clerkClient.organizations.getOrganizationMembershipList({
       organizationId, limit: 500,
@@ -190,14 +362,146 @@ app.post("/api/create-customer", authMiddleware, async (req, res) => {
       await clerkClient.organizations.createOrganizationMembership({
         organizationId, userId, role: customerRole,
       });
+      console.log("[FC CreateCustomer] ✓ Clerk membership created");
+    } else {
+      console.log("[FC CreateCustomer] User already a member of org — skipping membership");
     }
   } catch (err: any) {
     const msg = err?.errors?.[0]?.longMessage || err?.message || "Failed to add to organization";
-    console.error("[FC CreateCustomer] Org membership failed:", msg);
+    console.error("[FC CreateCustomer] ✗ Clerk membership error:", msg);
+    if (isNewUser) {
+      try { await clerkClient.users.deleteUser(userId); console.log("[FC CreateCustomer] ↩ Rolled back Clerk user:", userId); }
+      catch (rb: any) { console.error("[FC CreateCustomer] ✗ Rollback failed:", rb?.message); }
+    }
     return res.status(500).json({ error: msg });
   }
 
-  return res.json({ userId, email: emailKey, generatedPassword });
+  // ── 3. Firestore documents ───────────────────────────────────────────────
+  const membershipDocId = membershipIdFor(organizationId, userId);
+  const accountNumber   = generateAccountNumber();
+  const now = new Date();
+
+  try {
+    console.log("[FC CreateCustomer] Writing Firestore docs — membershipDocId:", membershipDocId);
+
+    const membershipFields: Record<string, any> = {
+      id:           sv(membershipDocId),
+      clerkUserId:  sv(userId),
+      email:        sv(emailKey),
+      fullName:     sv(fullName),
+      name:         sv(fullName),
+      firstName:    sv(firstName.trim()),
+      lastName:     sv((lastName || "").trim()),
+      role:         sv("CUSTOMER"),
+      clerkRole:    sv("org:customer"),
+      organizationId:   sv(organizationId),
+      organizationName: sv(organizationName || ""),
+      phone:        sv(phone || ""),
+      address:      sv(address || ""),
+      notes:        sv(notes || ""),
+      assignedArea: sv(""),
+      assignedAgentId:       sv(assignedAgentId || ""),
+      assignedAgentName:     sv(assignedAgentName || ""),
+      assignedCollectorRole: sv(assignedCollectorRole || ""),
+      customerType: sv(effectiveCustomerType),
+      profileCompleted: bv(false),
+      status:       sv("PENDING_SETUP"),
+      createdBy:    sv(createdBy || ""),
+      createdAt:    tv(now),
+      updatedAt:    tv(now),
+    };
+
+    // 3a. organizationMembers
+    await fsSet("organizationMembers", membershipDocId, membershipFields);
+    console.log("[FC CreateCustomer] ✓ organizationMembers written");
+
+    // 3b. customers (profile mirror with account number)
+    await fsSet("customers", membershipDocId, {
+      ...membershipFields,
+      accountNumber:          sv(accountNumber),
+      agentId:                sv(assignedAgentId || createdBy || ""),
+      assigned_to_user_id:    sv(assignedAgentId || createdBy || ""),
+    });
+    console.log("[FC CreateCustomer] ✓ customers written — accountNumber:", accountNumber);
+
+    // 3c. savings_accounts (skip for LOAN-only customers)
+    const needsSavings = effectiveCustomerType !== "LOAN";
+    if (needsSavings) {
+      await fsAdd("savings_accounts", {
+        customerId:       sv(membershipDocId),
+        organizationId:   sv(organizationId),
+        accountNumber:    sv(accountNumber),
+        balance:          iv(0),
+        totalDeposited:   iv(0),
+        totalWithdrawn:   iv(0),
+        status:           sv("ACTIVE"),
+        planId:           sv(""),
+        planName:         sv(""),
+        monthlyAmount:    iv(0),
+        tenure:           iv(0),
+        interestRate:     iv(0),
+        maturityAmount:   iv(0),
+        startDate:        sv(""),
+        maturityDate:     sv(""),
+        createdAt:        tv(now),
+        updatedAt:        tv(now),
+      });
+      console.log("[FC CreateCustomer] ✓ savings_accounts written");
+    } else {
+      console.log("[FC CreateCustomer] LOAN-only customer — skipping savings_accounts");
+    }
+
+    // 3d. users
+    await fsSet("users", userId, {
+      clerkUserId: sv(userId),
+      id:          sv(userId),
+      email:       sv(emailKey),
+      name:        sv(fullName),
+      firstName:   sv(firstName.trim()),
+      lastName:    sv((lastName || "").trim()),
+      status:      sv("PENDING_SETUP"),
+      profileCompleted: bv(false),
+      createdAt:   tv(now),
+      updatedAt:   tv(now),
+    });
+    console.log("[FC CreateCustomer] ✓ users written");
+
+    // 3e. audit_logs
+    await fsAdd("audit_logs", {
+      organizationId: sv(organizationId),
+      actorId:        sv(createdBy || ""),
+      actorRole:      sv("OWNER"),
+      actorName:      sv(actorName || ""),
+      action:         sv("CUSTOMER_CREATED"),
+      entityType:     sv("Customer"),
+      entityId:       sv(membershipDocId),
+      metadata: {
+        mapValue: {
+          fields: {
+            email:         sv(emailKey),
+            fullName:      sv(fullName),
+            role:          sv("CUSTOMER"),
+            customerType:  sv(effectiveCustomerType),
+            accountNumber: sv(accountNumber),
+          },
+        },
+      },
+      createdAt: tv(now),
+    });
+    console.log("[FC CreateCustomer] ✓ audit_logs written");
+
+  } catch (fsErr: any) {
+    console.error("[FC CreateCustomer] ✗ Firestore write failed:", fsErr.message);
+    if (isNewUser) {
+      console.log("[FC CreateCustomer] ↩ Rolling back Clerk user:", userId);
+      try { await clerkClient.users.deleteUser(userId); console.log("[FC CreateCustomer] ↩ Rollback complete"); }
+      catch (rb: any) { console.error("[FC CreateCustomer] ✗ Rollback failed:", rb?.message); }
+    }
+    return res.status(500).json({ error: `Failed to create customer records: ${fsErr.message}` });
+  }
+
+  console.log("[FC CreateCustomer] ✓ Customer fully created — userId:", userId, "membershipDocId:", membershipDocId);
+  return res.json({ userId, email: emailKey, generatedPassword, membershipDocId });
 });
 
 // ─── Deactivate agent ─────────────────────────────────────────────────────────
@@ -237,8 +541,6 @@ app.post("/api/agents/:userId/reactivate", async (req, res) => {
 });
 
 // ─── MFA diagnostics & reset ──────────────────────────────────────────────────
-// GET /api/clerk/mfa-status?email=...
-// Returns the user's enrolled MFA factors so the frontend knows what's blocking sign-in.
 app.get("/api/clerk/mfa-status", async (req, res) => {
   const email = (req.query.email as string ?? "").trim().toLowerCase();
   if (!email) return res.status(400).json({ error: "email query param required" });
@@ -267,10 +569,6 @@ app.get("/api/clerk/mfa-status", async (req, res) => {
   }
 });
 
-// POST /api/clerk/reset-user-mfa
-// Body: { email: string }
-// Removes ALL enrolled MFA factors from the user so they can sign in without MFA
-// (effective when Clerk instance MFA is "optional"; shows Dashboard instructions if "required").
 app.post("/api/clerk/reset-user-mfa", async (req, res) => {
   const email = (req.body?.email ?? "").trim().toLowerCase();
   if (!email) return res.status(400).json({ error: "email required" });
@@ -292,7 +590,6 @@ app.post("/api/clerk/reset-user-mfa", async (req, res) => {
     console.log("[FC MFA]   totpEnabled     :", (user as any).totpEnabled ?? false);
     console.log("[FC MFA]   backupCodeEnabled:", (user as any).backupCodeEnabled ?? false);
 
-    // ── Delete all MFA factors via DELETE /v1/users/{userId}/mfa ──────────
     let cleared = false;
     let factorsRemoved: string[] = [];
 
@@ -302,13 +599,11 @@ app.post("/api/clerk/reset-user-mfa", async (req, res) => {
       factorsRemoved.push("all");
       console.log("[FC MFA]   ✓ disableMFA() succeeded — all MFA factors removed");
     } catch (mfaErr: any) {
-      // disableMFA may not exist in this SDK version — fall back to raw request
       const code = mfaErr?.errors?.[0]?.code;
       if (code === "resource_not_found" || mfaErr?.status === 404) {
         console.log("[FC MFA]   No MFA factors to delete (user had none enrolled)");
         cleared = true;
       } else {
-        // Try raw DELETE via the users.request method
         try {
           await (clerkClient.users as any).request({
             method: "DELETE",
@@ -320,7 +615,6 @@ app.post("/api/clerk/reset-user-mfa", async (req, res) => {
         } catch (rawErr: any) {
           const rawMsg = rawErr?.errors?.[0]?.longMessage || rawErr?.message || String(rawErr);
           console.error("[FC MFA]   ✗ Raw DELETE /mfa failed:", rawMsg);
-          // Non-fatal: if user had no factors this is expected
           cleared = true;
           console.log("[FC MFA]   Treating as no-op (user may have had no enrolled factors)");
         }

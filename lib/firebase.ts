@@ -1,6 +1,6 @@
 /// <reference types="vite/client" />
 import { getApps, initializeApp, getApp } from "firebase/app";
-import { initializeFirestore, getFirestore, persistentLocalCache } from "firebase/firestore";
+import { initializeFirestore, getFirestore, memoryLocalCache } from "firebase/firestore";
 import { getStorage } from "firebase/storage";
 
 const firebaseConfig = {
@@ -12,17 +12,15 @@ const firebaseConfig = {
   appId: import.meta.env.VITE_FIREBASE_APP_ID
 };
 
-// Guard against re-initialization during HMR (module is re-evaluated on each hot update)
 const app = getApps().length ? getApp() : initializeApp(firebaseConfig);
 
 function getDb() {
   try {
     return initializeFirestore(app, {
-      localCache: persistentLocalCache(),
+      localCache: memoryLocalCache(),
       experimentalForceLongPolling: true,
     });
   } catch {
-    // Already initialized (HMR re-evaluation) — return existing instance
     return getFirestore(app);
   }
 }

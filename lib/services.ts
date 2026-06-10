@@ -540,12 +540,21 @@ export async function createDirectMember(params: {
   const endpoint = params.role === "AGENT" ? "/api/create-agent" : "/api/create-customer";
 
   const payload = {
-    firstName: params.firstName.trim(),
-    lastName: params.lastName.trim(),
-    email: emailKey,
-    phone: params.phone?.trim() || "",
-    organizationId: params.organizationId,
-    createdBy: params.createdBy,
+    firstName:            params.firstName.trim(),
+    lastName:             params.lastName.trim(),
+    email:                emailKey,
+    phone:                params.phone?.trim() || "",
+    organizationId:       params.organizationId,
+    organizationName:     params.organizationName || "",
+    createdBy:            params.createdBy,
+    actorName:            params.actorName || "",
+    assignedAgentId:      params.assignedAgentId || "",
+    assignedAgentName:    params.assignedAgentName || "",
+    assignedCollectorRole: params.assignedCollectorRole || "",
+    customerType:         params.role === "CUSTOMER" ? (params.customerType || "SAVINGS_LOAN") : undefined,
+    address:              params.address?.trim() || "",
+    notes:                params.notes?.trim() || "",
+    employeeCode:         params.employeeCode?.trim() || "",
   };
 
   console.log("[FC createDirectMember] ▶ Starting member creation");
@@ -599,83 +608,7 @@ export async function createDirectMember(params: {
   }
 
   const { userId: clerkUserId, generatedPassword } = await res.json();
-  const membershipDocId = membershipIdFor(params.organizationId, clerkUserId);
-  const fullName = `${params.firstName.trim()} ${params.lastName.trim()}`.trim();
-
-  const effectiveCustomerType = params.role === "CUSTOMER"
-    ? (params.customerType || "SAVINGS_LOAN")
-    : undefined;
-
-  const membershipData: any = {
-    id: membershipDocId,
-    clerkUserId,
-    email: emailKey,
-    fullName,
-    name: fullName,
-    firstName: params.firstName.trim(),
-    lastName: params.lastName.trim(),
-    role: params.role,
-    clerkRole: params.role === "AGENT" ? "org:pigmy_collector" : "org:customer",
-    organizationId: params.organizationId,
-    organizationName: params.organizationName,
-    phone: params.phone?.trim() || "",
-    address: params.address?.trim() || "",
-    notes: params.notes?.trim() || "",
-    assignedArea: "",
-    assignedAgentId: params.assignedAgentId || "",
-    assignedAgentName: params.assignedAgentName || "",
-    assignedCollectorRole: params.assignedCollectorRole || "",
-    ...(params.employeeCode?.trim() ? { employeeCode: params.employeeCode.trim() } : {}),
-    profileCompleted: false,
-    status: "PENDING_SETUP",
-    createdBy: params.createdBy,
-    createdAt: serverTimestamp(),
-    updatedAt: serverTimestamp(),
-    ...(effectiveCustomerType ? { customerType: effectiveCustomerType } : {}),
-  };
-
-  await setDoc(doc(db, "organizationMembers", membershipDocId), membershipData, { merge: true });
-
-  if (params.role === "CUSTOMER") {
-    const accountNumber = generateAccountNumber();
-    const existingAccount = await getSavingsAccountByCustomer(membershipDocId, params.organizationId);
-    await setDoc(doc(db, "customers", membershipDocId), {
-      ...membershipData,
-      accountNumber,
-      agentId: params.assignedAgentId || params.createdBy || "",
-      assigned_to_user_id: params.assignedAgentId || params.createdBy || "",
-    }, { merge: true });
-    const needsSavings = effectiveCustomerType !== "LOAN";
-    if (!existingAccount && needsSavings) {
-      await createSavingsAccountForCustomer({ customerId: membershipDocId, organizationId: params.organizationId });
-    }
-    try {
-      await setDoc(doc(db, "organizations", params.organizationId), {
-        "usage.activeCustomers": increment(1),
-        updatedAt: serverTimestamp(),
-      }, { merge: true });
-    } catch (_) {}
-  }
-
-  await setDoc(doc(db, "users", clerkUserId), {
-    clerkUserId, id: clerkUserId,
-    email: emailKey, name: fullName,
-    status: "PENDING_SETUP",
-    createdAt: serverTimestamp(),
-    updatedAt: serverTimestamp(),
-  }, { merge: true });
-
-  await createAuditLog({
-    organizationId: params.organizationId,
-    actorId: params.createdBy,
-    actorRole: "OWNER",
-    actorName: params.actorName || "",
-    action: params.role === "AGENT" ? "AGENT_CREATED" : "CUSTOMER_CREATED",
-    entityType: params.role === "AGENT" ? "Agent" : "Customer",
-    entityId: membershipDocId,
-    metadata: { email: emailKey, fullName, role: params.role },
-  });
-
+  console.log("[FC createDirectMember] ✓ Server completed all writes. Clerk user:", clerkUserId);
   return { clerkUserId, generatedPassword };
 }
 
