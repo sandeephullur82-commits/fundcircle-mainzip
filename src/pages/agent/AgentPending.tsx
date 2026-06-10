@@ -22,7 +22,7 @@ export default function AgentPending() {
 
   // Firestore-level filter: only fetch customers assigned to this agent
   const { data: allMembers, loading: membersLoading } = useCollectionRealtime<Membership>("organizationMembers", [
-    where("role", "in", ["CUSTOMER", "customer"]),
+    where("role", "==", "CUSTOMER"),
     where("assignedAgentId", "==", agentId || "NONE"),
   ]);
   const { data: collections } = useCollectionRealtime<Collection>("collections");

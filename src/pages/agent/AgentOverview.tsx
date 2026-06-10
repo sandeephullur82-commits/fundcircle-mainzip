@@ -34,7 +34,7 @@ export default function AgentOverview() {
 
   // Fetch only this agent's assigned customers (Firestore-scoped, not full org dump)
   const { data: allMembers } = useCollectionRealtime<Membership>("organizationMembers", [
-    where("role", "in", ["CUSTOMER", "customer"]),
+    where("role", "==", "CUSTOMER"),
     where("assignedAgentId", "==", agentId || "NONE"),
   ]);
   // Fetch only this agent's collections (Firestore-scoped)
@@ -49,11 +49,13 @@ export default function AgentOverview() {
   const todayCollections = myCollections.filter((c) => toDate(c.collectedAt || c.timestamp) >= today);
   const todayTotal = todayCollections.reduce((s, c) => s + (Number(c.amount) || 0), 0);
 
-  // Members already filtered to this agent's assignments by Firestore
-  const myCustomers = allMembers.filter((m) =>
-    m.assignedAgentId === agentId || (m as any).assigned_to_user_id === agentId
-  );
-  const activeCustomers = myCustomers.filter((m) => (m as any).status === "ACTIVE");
+  // Debug logging (Check 9)
+  console.log("[FC AgentOverview] Clerk user ID:", agentId);
+  console.log("[FC AgentOverview] Org ID:", orgId);
+  console.log("[FC AgentOverview] Customers returned:", allMembers.length, allMembers.map(m => ({ id: m.id, assignedAgentId: (m as any).assignedAgentId, status: (m as any).status })));
+
+  // allMembers is already Firestore-scoped to this agent
+  const activeCustomers = allMembers.filter((m) => (m as any).status === "ACTIVE");
 
   // Customers with no collection today
   const pendingCustomers = activeCustomers.filter((c) => {
@@ -151,7 +153,7 @@ export default function AgentOverview() {
             <p className="text-2xl font-black text-slate-900">{activeCustomers.length}</p>
             <div className="flex items-center gap-1 mt-0.5">
               <Users className="w-3 h-3 text-slate-400" />
-              <span className="text-xs text-slate-400">{myCustomers.length} total</span>
+              <span className="text-xs text-slate-400">{allMembers.length} total</span>
             </div>
           </CardContent>
         </Card>

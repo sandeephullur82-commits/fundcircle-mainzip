@@ -1,7 +1,7 @@
 import {
   collection, addDoc, updateDoc, deleteDoc, doc,
   serverTimestamp, getDoc, setDoc, query, where,
-  getDocs, increment, Timestamp, orderBy, limit, runTransaction
+  getDocs, increment, Timestamp, orderBy, limit, runTransaction, writeBatch
 } from "firebase/firestore";
 import { db } from "./firebase";
 import {
@@ -1468,4 +1468,110 @@ export async function transferSavingsAgent(
     entityId: accountId,
     metadata: { newAgentId: agentId, newAgentName: agentName },
   });
+}
+
+// ── One-time migration: fix assignedAgentId from membership doc IDs → Clerk user IDs ──
+export async function migrateCustomerAssignments(organizationId: string): Promise<{
+  checked: number;
+  migrated: number;
+  skipped: number;
+  errors: string[];
+}> {
+  console.log("[FC Migration] Starting assignedAgentId migration for org:", organizationId);
+
+  // 1. Load all agent + owner membership docs so we can map docId → clerkUserId
+  const [agentSnap, ownerSnap] = await Promise.all([
+    getDocs(query(collection(db, "organizationMembers"),
+      where("organizationId", "==", organizationId),
+      where("role", "==", "AGENT"),
+    )),
+    getDocs(query(collection(db, "organizationMembers"),
+      where("organizationId", "==", organizationId),
+      where("role", "==", "OWNER"),
+    )),
+  ]);
+
+  // Map: membershipDocId → clerkUserId
+  const docIdToClerk: Record<string, string> = {};
+  [...agentSnap.docs, ...ownerSnap.docs].forEach((d) => {
+    const data = d.data() as any;
+    if (data.clerkUserId) {
+      docIdToClerk[d.id] = data.clerkUserId;
+    }
+  });
+  console.log("[FC Migration] Collector map built:", Object.keys(docIdToClerk).length, "entries");
+
+  // 2. Load all customer membership docs for this org
+  const customerSnap = await getDocs(query(
+    collection(db, "organizationMembers"),
+    where("organizationId", "==", organizationId),
+    where("role", "==", "CUSTOMER"),
+  ));
+
+  let checked = 0;
+  let migrated = 0;
+  let skipped = 0;
+  const errors: string[] = [];
+
+  // Process in batches of 500 (Firestore writeBatch limit)
+  const BATCH_SIZE = 400;
+  let batch = writeBatch(db);
+  let batchCount = 0;
+
+  const flush = async () => {
+    if (batchCount > 0) {
+      await batch.commit();
+      batch = writeBatch(db);
+      batchCount = 0;
+    }
+  };
+
+  for (const d of customerSnap.docs) {
+    checked++;
+    const data = d.data() as any;
+    const stored: string = data.assignedAgentId || "";
+
+    if (!stored) { skipped++; continue; }
+
+    // Already a Clerk user ID — starts with "user_"
+    if (stored.startsWith("user_")) { skipped++; continue; }
+
+    let clerkUserId: string | undefined;
+
+    // Path A: direct lookup by membership doc ID
+    if (docIdToClerk[stored]) {
+      clerkUserId = docIdToClerk[stored];
+    }
+    // Path B: extract from "${orgId}_user_xxx" format
+    else if (stored.startsWith(organizationId + "_")) {
+      const suffix = stored.slice(organizationId.length + 1);
+      if (suffix.startsWith("user_")) {
+        clerkUserId = suffix;
+      }
+    }
+
+    if (!clerkUserId) {
+      console.warn("[FC Migration] Cannot resolve:", stored, "for customer:", d.id);
+      skipped++;
+      continue;
+    }
+
+    console.log("[FC Migration] Fixing", d.id, ":", stored, "→", clerkUserId);
+    batch.update(doc(db, "organizationMembers", d.id), {
+      assignedAgentId: clerkUserId,
+      assigned_to_user_id: clerkUserId,
+      updatedAt: serverTimestamp(),
+    });
+    batchCount++;
+    migrated++;
+
+    if (batchCount >= BATCH_SIZE) {
+      try { await flush(); } catch (e: any) { errors.push(`Batch flush: ${e.message}`); }
+    }
+  }
+
+  try { await flush(); } catch (e: any) { errors.push(`Final flush: ${e.message}`); }
+
+  console.log(`[FC Migration] Done — checked:${checked} migrated:${migrated} skipped:${skipped} errors:${errors.length}`);
+  return { checked, migrated, skipped, errors };
 }

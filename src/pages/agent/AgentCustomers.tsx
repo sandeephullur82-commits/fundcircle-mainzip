@@ -69,6 +69,11 @@ export default function AgentCustomers({ collectorRole = "AGENT", collectorName 
   const pendingCustomerCount = allCustomers.filter((c: any) => c.status === "PENDING_SETUP").length;
   const atLimit = activeCustomerCount >= maxCustomers;
 
+  // Debug logging (Check 9)
+  console.log("[FC AgentCustomers] Clerk user ID:", agentId);
+  console.log("[FC AgentCustomers] Org ID:", organization?.id);
+  console.log("[FC AgentCustomers] Customers returned:", allCustomers.length, allCustomers.map((c: any) => ({ id: c.id, assignedAgentId: c.assignedAgentId, status: c.status })));
+
   // allCustomers is already Firestore-scoped to this agent; just apply search filter
   const myCustomers = allCustomers.filter((c: any) => {
     return !searchTerm ||

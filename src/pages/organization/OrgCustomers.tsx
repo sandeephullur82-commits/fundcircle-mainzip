@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
-import { createDirectMember, validateCustomerEmail, reassignCustomer, createAuditLog } from "@/lib/services";
+import { createDirectMember, validateCustomerEmail, reassignCustomer, createAuditLog, migrateCustomerAssignments } from "@/lib/services";
 import { useOrganization, useUser, useAuth } from "@clerk/clerk-react";
 import { where, doc, updateDoc, serverTimestamp, getDocs, query, collection } from "firebase/firestore";
 import { db } from "@/lib/firebase";
@@ -84,6 +84,10 @@ export default function OrgCustomers() {
   const [deactivateCustomer, setDeactivateCustomer] = useState<Membership | null>(null);
   const [deactivating, setDeactivating] = useState(false);
 
+  // Migration state
+  const [isMigrating, setIsMigrating] = useState(false);
+  const [migrationDone, setMigrationDone] = useState(false);
+
   const activeOwners = owners.filter((o: any) => o.status === "ACTIVE" || o.status === "active");
   const activeAgents = agents.filter((a: any) => a.status === "ACTIVE" || a.status === "active");
   const collectorsForAssignment = [...activeOwners, ...activeAgents];
@@ -101,7 +105,9 @@ export default function OrgCustomers() {
 
   const collectorLabel = (c: any) => {
     const name = c.fullName || (c as any).name || c.email || c.id;
-    const count = customerCountByCollector[c.id] || 0;
+    // Look up by Clerk user ID first (used in new docs), fall back to doc ID (legacy)
+    const lookupKey = (c as any).clerkUserId || c.id;
+    const count = customerCountByCollector[lookupKey] || customerCountByCollector[c.id] || 0;
     const ownerTag = isOwnerMember(c) ? " · Owner" : "";
     return `${name} (${count})${ownerTag}`;
   };
@@ -133,6 +139,30 @@ export default function OrgCustomers() {
   const maxCustomers = orgDoc?.limits?.maxCustomers || 10;
   const activeCustomers = customers.filter((c: any) => c.status === "ACTIVE").length;
   const atLimit = activeCustomers >= maxCustomers;
+
+  // ── Check if any customer has legacy membership-doc-ID format in assignedAgentId ──
+  const needsMigration = !migrationDone && customers.some((c: any) => {
+    const aid: string = (c as any).assignedAgentId || "";
+    return aid && !aid.startsWith("user_") && aid.includes("_");
+  });
+
+  const handleRunMigration = async () => {
+    if (!organization?.id) return;
+    setIsMigrating(true);
+    try {
+      const result = await migrateCustomerAssignments(organization.id);
+      setMigrationDone(true);
+      toast.success(
+        `Migration complete — ${result.migrated} customer${result.migrated !== 1 ? "s" : ""} fixed` +
+        (result.errors.length ? ` (${result.errors.length} errors — check console)` : "")
+      );
+      if (result.errors.length) console.error("[FC Migration] Errors:", result.errors);
+    } catch (err: any) {
+      toast.error("Migration failed: " + (err?.message || "Unknown error"));
+    } finally {
+      setIsMigrating(false);
+    }
+  };
 
   const filteredCustomers = customers.filter((u) =>
     ((u?.fullName || (u as any)?.name || "").toLowerCase().includes(searchTerm.toLowerCase())) ||
@@ -450,6 +480,25 @@ export default function OrgCustomers() {
 
   return (
     <div className="space-y-6">
+      {/* ── Migration banner: shown only when legacy assignedAgentId data is detected ── */}
+      {needsMigration && (
+        <div className="flex items-start gap-3 rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+          <AlertTriangle className="w-5 h-5 shrink-0 mt-0.5 text-amber-500" />
+          <div className="flex-1 min-w-0">
+            <p className="font-semibold">Agent assignment data needs a one-time fix</p>
+            <p className="text-amber-700 mt-0.5">Some customers were saved with an older format that prevents agents from seeing their assigned customers. This takes a few seconds and is safe to run.</p>
+          </div>
+          <Button
+            size="sm"
+            className="shrink-0 bg-amber-600 hover:bg-amber-700 text-white"
+            onClick={handleRunMigration}
+            disabled={isMigrating}
+          >
+            {isMigrating ? "Fixing…" : "Fix Now"}
+          </Button>
+        </div>
+      )}
+
       <div className="flex flex-col sm:flex-row justify-between gap-4">
         <div>
           <h2 className="text-2xl font-bold text-slate-900">Manage Customers</h2>

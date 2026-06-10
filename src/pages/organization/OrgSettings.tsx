@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { useOrganization, useUser } from "@clerk/clerk-react";
 import { doc, setDoc, serverTimestamp, updateDoc, deleteField } from "firebase/firestore";
 import { db } from "@/lib/firebase";
@@ -424,7 +424,7 @@ export default function OrgSettings() {
   };
 
   // ── Sections nav ───────────────────────────────────────────────────────────
-  const sections: { id: SectionId; label: string; icon: ({ className, "aria-hidden": a }: { className?: string; "aria-hidden"?: "true" }) => JSX.Element; badge?: string }[] = [
+  const sections: { id: SectionId; label: string; icon: React.ComponentType<any>; badge?: string }[] = [
     { id: "organization",  label: "Organization",   icon: Building2 },
     { id: "profile",       label: "Profile",        icon: User      },
     { id: "notifications", label: "Notifications",  icon: Bell      },
