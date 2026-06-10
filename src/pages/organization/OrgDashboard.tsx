@@ -409,14 +409,7 @@ const FAB_ACTIONS = [
   { id: "generateReport",   label: "Generate Report",     icon: BarChart2,    tab: "reports",     color: "#9333ea" },
 ] as const;
 
-function getDefaultFabPos(): { x: number; y: number } {
-  const mob = window.innerWidth < 768;
-  return {
-    x: window.innerWidth  - FAB_SIZE - (mob ? 16 : 24),
-    y: window.innerHeight - FAB_SIZE - (mob ? 80 : 24),
-  };
-}
-
+// clamp a left/top position inside the viewport
 function clampFabPos(x: number, y: number) {
   return {
     x: Math.max(0, Math.min(x, window.innerWidth  - FAB_SIZE)),
@@ -432,11 +425,12 @@ function QuickActionsFAB({
   onAction: (tab: string) => void;
   orgId: string;
 }) {
-  // Persisted position — null means "use default (bottom-right)"
+  // null  = no saved position → CSS default (bottom/right)
+  // {x,y} = saved left/top coords
   const [pos, setPos] = useState<{ x: number; y: number } | null>(null);
   const [isDragging, setIsDragging] = useState(false);
+  const containerRef = useRef<HTMLDivElement>(null);
 
-  // Mutable drag state — all updated via ref to avoid re-render during move
   const drag = useRef({
     active:   false,
     hasMoved: false,
@@ -459,7 +453,7 @@ function QuickActionsFAB({
       } else {
         setPos(null);
       }
-    }, () => {}); // silent fail
+    }, () => {});
     return unsub;
   }, [orgId]);
 
@@ -471,7 +465,7 @@ function QuickActionsFAB({
     return () => document.removeEventListener("keydown", h);
   }, [open, setOpen]);
 
-  // ── Firestore save (fire-and-forget) ───────────────────────────────────────
+  // ── Firestore save ─────────────────────────────────────────────────────────
   const savePos = (x: number, y: number) => {
     if (!orgId) return;
     setDoc(
@@ -483,19 +477,27 @@ function QuickActionsFAB({
 
   // ── Drag handlers ──────────────────────────────────────────────────────────
   const handlePointerDown = (e: React.PointerEvent<HTMLButtonElement>) => {
-    if (e.button > 0) return; // primary only
+    if (e.button > 0) return;
     e.stopPropagation();
-    const current = pos ?? getDefaultFabPos();
+
+    // Resolve starting left/top from saved pos OR from the actual rendered rect.
+    // getBoundingClientRect() is used when pos===null so we never rely on
+    // window.innerHeight (unreliable on mobile with address-bar / safe areas).
+    let fabX: number, fabY: number;
+    if (pos) {
+      fabX = pos.x;
+      fabY = pos.y;
+    } else {
+      const r = (containerRef.current ?? e.currentTarget).getBoundingClientRect();
+      fabX = r.left;
+      fabY = r.top;
+    }
+
     drag.current = {
-      active:   true,
-      hasMoved: false,
-      startX:   e.clientX,
-      startY:   e.clientY,
-      fabX:     current.x,
-      fabY:     current.y,
-      pendingX: current.x,
-      pendingY: current.y,
-      rafId:    null,
+      active: true, hasMoved: false,
+      startX: e.clientX, startY: e.clientY,
+      fabX, fabY, pendingX: fabX, pendingY: fabY,
+      rafId: null,
     };
     (e.currentTarget as HTMLButtonElement).setPointerCapture(e.pointerId);
   };
@@ -509,14 +511,13 @@ function QuickActionsFAB({
       if (Math.hypot(dx, dy) <= DRAG_THRESHOLD) return;
       drag.current.hasMoved = true;
       setIsDragging(true);
-      setOpen(false); // close Speed Dial when dragging starts
+      setOpen(false);
     }
 
     const clamped = clampFabPos(drag.current.fabX + dx, drag.current.fabY + dy);
     drag.current.pendingX = clamped.x;
     drag.current.pendingY = clamped.y;
 
-    // Throttle DOM updates to one per animation frame
     if (!drag.current.rafId) {
       drag.current.rafId = requestAnimationFrame(() => {
         setPos({ x: drag.current.pendingX, y: drag.current.pendingY });
@@ -525,13 +526,10 @@ function QuickActionsFAB({
     }
   };
 
-  const handlePointerUp = (e: React.PointerEvent<HTMLButtonElement>) => {
+  const handlePointerUp = (_e: React.PointerEvent<HTMLButtonElement>) => {
     if (!drag.current.active) return;
     drag.current.active = false;
-    if (drag.current.rafId) {
-      cancelAnimationFrame(drag.current.rafId);
-      drag.current.rafId = null;
-    }
+    if (drag.current.rafId) { cancelAnimationFrame(drag.current.rafId); drag.current.rafId = null; }
     setIsDragging(false);
 
     if (drag.current.hasMoved) {
@@ -539,24 +537,29 @@ function QuickActionsFAB({
       setPos({ x, y });
       savePos(x, y);
     } else {
-      // No movement → treat as tap/click → toggle Speed Dial
       setOpen(!open);
     }
   };
 
-  // ── Derived position + layout ──────────────────────────────────────────────
-  const currentPos = pos ?? getDefaultFabPos();
-  // Show dial above FAB when FAB is in lower half of screen, below otherwise
-  const dialAbove  = currentPos.y >= window.innerHeight * 0.45;
+  // ── Layout helpers ─────────────────────────────────────────────────────────
+  // dial above FAB when we know it's in the lower portion of the screen
+  const dialAbove = pos ? pos.y >= window.innerHeight * 0.45 : true;
 
-  const handleAction = (tab: string) => {
-    setOpen(false);
-    onAction(tab);
-  };
+  const handleAction = (tab: string) => { setOpen(false); onAction(tab); };
+
+  // When no saved pos: CSS bottom/right (safe-area-aware, reliable on all mobile).
+  // When saved pos exists (or dragging): left/top absolute coords.
+  const containerStyle: React.CSSProperties = pos
+    ? { position: "fixed", left: pos.x, top: pos.y, zIndex: 9999,
+        willChange: isDragging ? "left, top" : "auto" }
+    : { position: "fixed",
+        bottom: "calc(90px + env(safe-area-inset-bottom, 0px))",
+        right: 20,
+        zIndex: 9999 };
 
   return (
     <>
-      {/* Invisible backdrop — closes Speed Dial on outside click (not during drag) */}
+      {/* Invisible backdrop — closes Speed Dial on outside click */}
       {open && !isDragging && (
         <div
           aria-hidden="true"
@@ -565,22 +568,17 @@ function QuickActionsFAB({
         />
       )}
 
-      {/* ── Speed Dial container (absolutely placed) ── */}
+      {/* ── Speed Dial container ── */}
       <div
+        ref={containerRef}
         role="group"
         aria-label="Quick actions"
         style={{
-          position:  "fixed",
-          left:      currentPos.x,
-          top:       currentPos.y,
-          zIndex:    9999,
-          display:   "flex",
-          // When dialAbove: column = items first (above), FAB button last
-          // When dialBelow: column-reverse = FAB button first (top), items below
+          ...containerStyle,
+          display: "flex",
           flexDirection: dialAbove ? "column" : "column-reverse",
           alignItems: "flex-end",
           gap: 10,
-          willChange: isDragging ? "left, top" : "auto",
         }}
       >
         {/* ── Dial items ── */}
