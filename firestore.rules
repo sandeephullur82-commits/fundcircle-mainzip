@@ -132,7 +132,9 @@ service cloud.firestore {
     // ── Savings Plans ─────────────────────────────────────────────────────────
     match /savings_plans/{docId} {
       allow read: if isSignedIn() && isOrgMember(resource.data.organizationId);
-      allow create: if isSignedIn() && isOwner(incomingOrgId());
+      allow create: if isSignedIn() && isOwner(incomingOrgId()) &&
+        request.resource.data.organizationId is string &&
+        request.resource.data.organizationId.size() > 0;
       allow update: if isSignedIn() && isOwner(resource.data.organizationId);
       allow delete: if isSignedIn() && isOwner(resource.data.organizationId);
     }
@@ -140,7 +142,9 @@ service cloud.firestore {
     // ── Savings Applications ─────────────────────────────────────────────────
     match /savings_applications/{docId} {
       allow read: if isSignedIn() && isOrgMember(resource.data.organizationId);
-      allow create: if isSignedIn() && isOrgMember(incomingOrgId());
+      allow create: if isSignedIn() && isOrgMember(incomingOrgId()) &&
+        request.resource.data.organizationId is string &&
+        request.resource.data.organizationId.size() > 0;
       allow update: if isSignedIn() && isOwnerOrAgent(resource.data.organizationId);
       allow delete: if false;
     }
@@ -148,7 +152,9 @@ service cloud.firestore {
     // ── Savings Accounts ─────────────────────────────────────────────────────
     match /savings_accounts/{docId} {
       allow read: if isSignedIn() && isOrgMember(resource.data.organizationId);
-      allow create: if isSignedIn() && isOwnerOrAgent(incomingOrgId());
+      allow create: if isSignedIn() && isOwnerOrAgent(incomingOrgId()) &&
+        request.resource.data.organizationId is string &&
+        request.resource.data.organizationId.size() > 0;
       allow update: if isSignedIn() && isOwnerOrAgent(resource.data.organizationId);
       allow delete: if false;
     }
@@ -156,14 +162,24 @@ service cloud.firestore {
     // ── Savings Transactions (immutable) ─────────────────────────────────────
     match /savings_transactions/{docId} {
       allow read: if isSignedIn() && isOrgMember(resource.data.organizationId);
-      allow create: if isSignedIn() && isOwnerOrAgent(incomingOrgId());
+      // Amount must be a positive number; org must be set
+      allow create: if isSignedIn() && isOwnerOrAgent(incomingOrgId()) &&
+        request.resource.data.amount is number &&
+        request.resource.data.amount > 0 &&
+        request.resource.data.organizationId is string &&
+        request.resource.data.organizationId.size() > 0;
       allow update, delete: if false;
     }
 
     // ── Collections ledger (immutable) ───────────────────────────────────────
     match /collections/{docId} {
       allow read: if isSignedIn() && isOrgMember(resource.data.organizationId);
-      allow create: if isSignedIn() && isOwnerOrAgent(incomingOrgId());
+      // Amount must be a positive number; org must be set; receipt number required
+      allow create: if isSignedIn() && isOwnerOrAgent(incomingOrgId()) &&
+        request.resource.data.amount is number &&
+        request.resource.data.amount > 0 &&
+        request.resource.data.organizationId is string &&
+        request.resource.data.organizationId.size() > 0;
       allow update, delete: if false;
     }
 
@@ -177,7 +193,12 @@ service cloud.firestore {
     // ── Loan Applications ─────────────────────────────────────────────────────
     match /loanApplications/{docId} {
       allow read: if isSignedIn() && isOrgMember(resource.data.organizationId);
-      allow create: if isSignedIn() && isOrgMember(incomingOrgId());
+      // Loan amount must be at least ₹1,000; org must be set
+      allow create: if isSignedIn() && isOrgMember(incomingOrgId()) &&
+        request.resource.data.loanAmount is number &&
+        request.resource.data.loanAmount >= 1000 &&
+        request.resource.data.organizationId is string &&
+        request.resource.data.organizationId.size() > 0;
       allow update: if isSignedIn() && isOwnerOrAgent(resource.data.organizationId);
       allow delete: if false;
     }
@@ -185,7 +206,12 @@ service cloud.firestore {
     // ── Loans ────────────────────────────────────────────────────────────────
     match /loans/{docId} {
       allow read: if isSignedIn() && isOrgMember(resource.data.organizationId);
-      allow create: if isSignedIn() && isOwnerOrAgent(incomingOrgId());
+      // Principal must be positive; org must be set
+      allow create: if isSignedIn() && isOwnerOrAgent(incomingOrgId()) &&
+        request.resource.data.principalAmount is number &&
+        request.resource.data.principalAmount > 0 &&
+        request.resource.data.organizationId is string &&
+        request.resource.data.organizationId.size() > 0;
       allow update: if isSignedIn() && isOwnerOrAgent(resource.data.organizationId);
       allow delete: if false;
     }
@@ -193,7 +219,9 @@ service cloud.firestore {
     // ── Loan Installments ────────────────────────────────────────────────────
     match /loan_installments/{docId} {
       allow read: if isSignedIn() && isOrgMember(resource.data.organizationId);
-      allow create: if isSignedIn() && isOwnerOrAgent(incomingOrgId());
+      allow create: if isSignedIn() && isOwnerOrAgent(incomingOrgId()) &&
+        request.resource.data.organizationId is string &&
+        request.resource.data.organizationId.size() > 0;
       allow update: if isSignedIn() && isOwnerOrAgent(resource.data.organizationId);
       allow delete: if false;
     }

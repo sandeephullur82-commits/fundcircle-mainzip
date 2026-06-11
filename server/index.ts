@@ -184,6 +184,53 @@ async function generateEmployeeCode(orgId: string, orgName: string): Promise<str
   return `${prefix}-EMP${String(seq).padStart(4, "0")}`;
 }
 
+// ─── Server-side input validators ────────────────────────────────────────────
+const EMAIL_RE = /^[a-z0-9._%+\-]+@[a-z0-9.\-]+\.[a-z]{2,}$/i;
+const ALLOWED_CUSTOMER_TYPES = new Set(["SAVINGS", "LOAN", "SAVINGS_LOAN"]);
+const ALLOWED_NOMINEE_RELS   = new Set([
+  "Father","Mother","Spouse","Brother","Sister",
+  "Son","Daughter","Sibling","Guardian","Other",
+]);
+
+function srvValidEmail(email: string): boolean {
+  return EMAIL_RE.test((email ?? "").trim());
+}
+function srvValidPhone(phone: string): boolean {
+  const d = phone.replace(/\D/g, "");
+  return (d.length === 10 && /^[6-9]/.test(d))
+      || (d.length === 12 && /^91[6-9]/.test(d))
+      || (d.length === 11 && /^0[6-9]/.test(d));
+}
+function srvValidName(name: string, min = 2, max = 100): boolean {
+  const t = (name ?? "").trim();
+  return t.length >= min && t.length <= max;
+}
+/** Sanitize a string: trim, strip HTML tags and injection chars, cap length. */
+function srvSanitize(s: string, maxLen = 500): string {
+  if (!s) return "";
+  return s.trim()
+    .replace(/<[^>]*>/g, "")
+    .replace(/[<>"\/\\;{}]/g, "")
+    .substring(0, maxLen);
+}
+
+/**
+ * Verify the calling user (from Clerk JWT) is an OWNER or MANAGER of the org.
+ * Falls back to `true` when the API key is unavailable (dev mode).
+ */
+async function verifyIsOrgAdmin(callerClerkId: string, orgId: string): Promise<boolean> {
+  if (!FIREBASE_API_KEY) return true;
+  const memberDocId = `${orgId}_${callerClerkId}`;
+  const url = `${FS_BASE}/organizationMembers/${encodeURIComponent(memberDocId)}?key=${FIREBASE_API_KEY}`;
+  try {
+    const resp = await fetch(url);
+    if (!resp.ok) return false;
+    const data: any = await resp.json();
+    const role = (data.fields?.role?.stringValue || "").toUpperCase();
+    return role === "OWNER" || role === "ORGANIZATION_OWNER" || role === "MANAGER";
+  } catch { return false; }
+}
+
 // ─── Auth Middleware ──────────────────────────────────────────────────────────
 async function authMiddleware(req: Request, res: Response, next: NextFunction) {
   const authHeader = req.headers.authorization;
@@ -229,9 +276,33 @@ app.post("/api/create-agent", authMiddleware, async (req, res) => {
     return res.status(400).json({ error: "firstName, email, and organizationId are required." });
   }
 
+  // ── Server-side validation ──────────────────────────────────────────────────
+  const agentValidErrors: Record<string, string> = {};
+  if (!srvValidName(firstName, 2, 50))  agentValidErrors.firstName = "First name must be 2–50 characters.";
+  if (lastName && !srvValidName(lastName, 1, 50)) agentValidErrors.lastName = "Last name is too long (max 50 chars).";
+  if (!srvValidEmail(email))            agentValidErrors.email     = "A valid email address is required.";
+  if (phone && !srvValidPhone(phone))   agentValidErrors.phone     = "Phone must be a valid 10-digit number.";
+  if (Object.keys(agentValidErrors).length) {
+    console.warn("[FC CreateAgent] ✗ Validation failed:", agentValidErrors);
+    return res.status(400).json({ error: "Validation failed.", errors: agentValidErrors });
+  }
+
+  // ── Authorization: caller must be org owner/manager ─────────────────────────
+  const callerClerkId = (req as any).clerkUserId as string | undefined;
+  if (callerClerkId) {
+    const isAdmin = await verifyIsOrgAdmin(callerClerkId, organizationId);
+    if (!isAdmin) {
+      console.warn("[FC CreateAgent] ✗ Forbidden — caller is not an owner/admin of org:", organizationId);
+      return res.status(403).json({ error: "Only organization owners or managers can create agents." });
+    }
+  }
+
+  // ── Sanitize all string inputs before use ────────────────────────────────────
   const emailKey = email.trim().toLowerCase();
+  const sanitizedFirst = srvSanitize(firstName, 50);
+  const sanitizedLast  = srvSanitize(lastName || "", 50);
   const generatedPassword = generatePassword();
-  const fullName = `${firstName.trim()} ${(lastName || "").trim()}`.trim();
+  const fullName = `${sanitizedFirst} ${sanitizedLast}`.trim();
 
   let userId: string;
   let isNewUser = false;
@@ -249,8 +320,8 @@ app.post("/api/create-agent", authMiddleware, async (req, res) => {
     } else {
       const created = await clerkClient.users.createUser({
         emailAddress: [emailKey],
-        firstName: firstName.trim(),
-        lastName: (lastName || "").trim(),
+        firstName: sanitizedFirst,
+        lastName:  sanitizedLast,
         password: generatedPassword,
         skipPasswordChecks: false,
       });
@@ -316,15 +387,15 @@ app.post("/api/create-agent", authMiddleware, async (req, res) => {
       email:            sv(emailKey),
       fullName:         sv(fullName),
       name:             sv(fullName),
-      firstName:        sv(firstName.trim()),
-      lastName:         sv((lastName || "").trim()),
+      firstName:        sv(sanitizedFirst),
+      lastName:         sv(sanitizedLast),
       role:             sv("AGENT"),
       clerkRole:        sv("org:pigmy_collector"),
       organizationId:   sv(organizationId),
-      organizationName: sv(organizationName || ""),
-      phone:            sv(phone || ""),
-      address:          sv(address || ""),
-      notes:            sv(notes || ""),
+      organizationName: sv(srvSanitize(organizationName || "", 100)),
+      phone:            sv(phone ? phone.replace(/\D/g, "").slice(0, 10) : ""),
+      address:          sv(srvSanitize(address || "", 500)),
+      notes:            sv(srvSanitize(notes || "", 500)),
       assignedArea:     sv(""),
       employeeCode:     sv(employeeCode),
       profileCompleted: bv(false),
@@ -448,10 +519,37 @@ app.post("/api/create-customer", authMiddleware, async (req, res) => {
     return res.status(400).json({ error: "firstName, email, and organizationId are required." });
   }
 
+  // ── Server-side validation ──────────────────────────────────────────────────
+  const custValidErrors: Record<string, string> = {};
+  if (!srvValidName(firstName, 2, 50))  custValidErrors.firstName = "First name must be 2–50 characters.";
+  if (lastName && !srvValidName(lastName, 1, 50)) custValidErrors.lastName = "Last name is too long (max 50 chars).";
+  if (!srvValidEmail(email))            custValidErrors.email     = "A valid email address is required.";
+  if (phone && !srvValidPhone(phone))   custValidErrors.phone     = "Phone must be a valid 10-digit number.";
+  if (customerType && !ALLOWED_CUSTOMER_TYPES.has(customerType)) {
+    custValidErrors.customerType = "Customer type must be SAVINGS, LOAN, or SAVINGS_LOAN.";
+  }
+  if (Object.keys(custValidErrors).length) {
+    console.warn("[FC CreateCustomer] ✗ Validation failed:", custValidErrors);
+    return res.status(400).json({ error: "Validation failed.", errors: custValidErrors });
+  }
+
+  // ── Authorization: caller must be org owner/manager ─────────────────────────
+  const callerClerkIdCust = (req as any).clerkUserId as string | undefined;
+  if (callerClerkIdCust) {
+    const isAdmin = await verifyIsOrgAdmin(callerClerkIdCust, organizationId);
+    if (!isAdmin) {
+      console.warn("[FC CreateCustomer] ✗ Forbidden — caller is not an owner/admin of org:", organizationId);
+      return res.status(403).json({ error: "Only organization owners or managers can create customers." });
+    }
+  }
+
+  // ── Sanitize all string inputs before use ────────────────────────────────────
   const emailKey = email.trim().toLowerCase();
+  const sanitizedFirstCust = srvSanitize(firstName, 50);
+  const sanitizedLastCust  = srvSanitize(lastName || "", 50);
   const generatedPassword = generatePassword();
-  const fullName = `${firstName.trim()} ${(lastName || "").trim()}`.trim();
-  const effectiveCustomerType = customerType || "SAVINGS_LOAN";
+  const fullName = `${sanitizedFirstCust} ${sanitizedLastCust}`.trim();
+  const effectiveCustomerType = ALLOWED_CUSTOMER_TYPES.has(customerType || "") ? customerType! : "SAVINGS_LOAN";
 
   let userId: string;
   let isNewUser = false;
@@ -467,8 +565,8 @@ app.post("/api/create-customer", authMiddleware, async (req, res) => {
     } else {
       const created = await clerkClient.users.createUser({
         emailAddress: [emailKey],
-        firstName: firstName.trim(),
-        lastName: (lastName || "").trim(),
+        firstName: sanitizedFirstCust,
+        lastName:  sanitizedLastCust,
         password: generatedPassword,
         skipPasswordChecks: false,
       });
@@ -522,15 +620,15 @@ app.post("/api/create-customer", authMiddleware, async (req, res) => {
       email:        sv(emailKey),
       fullName:     sv(fullName),
       name:         sv(fullName),
-      firstName:    sv(firstName.trim()),
-      lastName:     sv((lastName || "").trim()),
+      firstName:    sv(sanitizedFirstCust),
+      lastName:     sv(sanitizedLastCust),
       role:         sv("CUSTOMER"),
       clerkRole:    sv("org:customer"),
       organizationId:   sv(organizationId),
-      organizationName: sv(organizationName || ""),
-      phone:        sv(phone || ""),
-      address:      sv(address || ""),
-      notes:        sv(notes || ""),
+      organizationName: sv(srvSanitize(organizationName || "", 100)),
+      phone:        sv(phone ? phone.replace(/\D/g, "").slice(0, 10) : ""),
+      address:      sv(srvSanitize(address || "", 500)),
+      notes:        sv(srvSanitize(notes || "", 500)),
       assignedArea: sv(""),
       assignedAgentId:       sv(assignedAgentId || ""),
       assignedAgentName:     sv(assignedAgentName || ""),
@@ -696,6 +794,25 @@ app.put("/api/update-customer/:customerId", authMiddleware, async (req, res) => 
     return res.status(400).json({ error: "customerId and organizationId are required." });
   }
 
+  // ── Server-side validation for update payload ────────────────────────────────
+  const updValidErrors: Record<string, string> = {};
+  if (phone !== undefined && phone !== null && phone.trim() && !srvValidPhone(phone)) {
+    updValidErrors.phone = "Phone must be a valid 10-digit number.";
+  }
+  if (customerType !== undefined && customerType !== null && !ALLOWED_CUSTOMER_TYPES.has(customerType)) {
+    updValidErrors.customerType = "Customer type must be SAVINGS, LOAN, or SAVINGS_LOAN.";
+  }
+  if (nomineeRelation !== undefined && nomineeRelation !== null &&
+      nomineeRelation.trim() && !ALLOWED_NOMINEE_RELS.has(nomineeRelation.trim())) {
+    updValidErrors.nomineeRelation = "Select a valid nominee relationship.";
+  }
+  if (nomineePhone !== undefined && nomineePhone !== null && nomineePhone.trim() && !srvValidPhone(nomineePhone)) {
+    updValidErrors.nomineePhone = "Nominee phone must be a valid 10-digit number.";
+  }
+  if (Object.keys(updValidErrors).length) {
+    return res.status(400).json({ error: "Validation failed.", errors: updValidErrors });
+  }
+
   console.log("[FC UpdateCustomer] customerId:", customerId, "orgId:", organizationId, "newType:", customerType ?? "(unchanged)");
 
   // ── 1. Fetch current doc to check existing customerType ──────────────────
@@ -730,29 +847,38 @@ app.put("/api/update-customer/:customerId", authMiddleware, async (req, res) => 
   const now = new Date();
   const fields: Record<string, any> = { updatedAt: tv(now) };
 
-  if (customerType     != null) fields.customerType     = sv(customerType);
-  if (phone            != null) fields.phone            = sv(phone);
-  if (address          != null) fields.address          = sv(address);
-  if (nomineeName      != null) fields.nomineeName      = sv(nomineeName);
-  if (nomineeRelation  != null) fields.nomineeRelation  = sv(nomineeRelation);
-  if (nomineePhone     != null) fields.nomineePhone     = sv(nomineePhone);
-  if (nomineeAddress   != null) fields.nomineeAddress   = sv(nomineeAddress);
+  // Sanitize all string fields before writing
+  const cleanPhone           = phone          ? phone.replace(/\D/g, "").slice(0, 10) : null;
+  const cleanAddress         = address        ? srvSanitize(address, 500)       : null;
+  const cleanNomineeName     = nomineeName    ? srvSanitize(nomineeName, 100)   : null;
+  const cleanNomineeRelation = nomineeRelation ? nomineeRelation.trim()          : null;
+  const cleanNomineePhone    = nomineePhone   ? nomineePhone.replace(/\D/g, "").slice(0, 10) : null;
+  const cleanNomineeAddress  = nomineeAddress ? srvSanitize(nomineeAddress, 500) : null;
+  const cleanNotes           = notes          ? srvSanitize(notes, 500)          : null;
+
+  if (customerType         != null) fields.customerType    = sv(customerType);
+  if (cleanPhone           != null) fields.phone           = sv(cleanPhone);
+  if (cleanAddress         != null) fields.address         = sv(cleanAddress);
+  if (cleanNomineeName     != null) fields.nomineeName     = sv(cleanNomineeName);
+  if (cleanNomineeRelation != null) fields.nomineeRelation = sv(cleanNomineeRelation);
+  if (cleanNomineePhone    != null) fields.nomineePhone    = sv(cleanNomineePhone);
+  if (cleanNomineeAddress  != null) fields.nomineeAddress  = sv(cleanNomineeAddress);
   // Keep nested nominee map in sync for legacy compat
-  if (nomineeName != null) {
+  if (cleanNomineeName != null) {
     fields.nominee = {
       mapValue: {
         fields: {
-          name:     sv(nomineeName),
-          relation: sv(nomineeRelation || ""),
-          phone:    sv(nomineePhone    || ""),
-          address:  sv(nomineeAddress  || ""),
+          name:     sv(cleanNomineeName),
+          relation: sv(cleanNomineeRelation || ""),
+          phone:    sv(cleanNomineePhone    || ""),
+          address:  sv(cleanNomineeAddress  || ""),
         },
       },
     };
   }
-  if (notes            != null) fields.notes            = sv(notes);
-  if (assignedAgentId  != null) fields.assignedAgentId  = sv(assignedAgentId);
-  if (assignedAgentName != null) fields.assignedAgentName = sv(assignedAgentName);
+  if (cleanNotes           != null) fields.notes           = sv(cleanNotes);
+  if (assignedAgentId      != null) fields.assignedAgentId  = sv(assignedAgentId);
+  if (assignedAgentName    != null) fields.assignedAgentName = sv(srvSanitize(assignedAgentName, 100));
 
   // ── 4. Partial-update both collections ──────────────────────────────────
   try {

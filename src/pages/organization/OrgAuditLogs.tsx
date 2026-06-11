@@ -1,6 +1,7 @@
 import { useState, useMemo } from "react";
 import { useCollectionRealtime } from "@/lib/firestore-hooks";
 import { AuditLog, AuditModule, AuditCategory } from "@/types";
+import { sanitizeSearch } from "@/lib/validation";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -227,8 +228,9 @@ export default function OrgAuditLogs() {
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400" />
             <Input
               value={search}
-              onChange={(e) => { setSearch(e.target.value); resetPage(); }}
+              onChange={(e) => { setSearch(sanitizeSearch(e.target.value)); resetPage(); }}
               placeholder="Search action, actor, receipt, entity…"
+              maxLength={100}
               className="pl-8 h-9 text-sm"
             />
           </div>

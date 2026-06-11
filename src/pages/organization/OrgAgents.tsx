@@ -20,7 +20,7 @@ import { toast } from "sonner";
 import { format } from "date-fns";
 import FieldError from "@/components/ui/FieldError";
 import {
-  sanitizeName, sanitizeEmail, sanitizeMultiline,
+  sanitizeName, sanitizeEmail, sanitizeMultiline, sanitizeSearch,
   validateEmail, validatePhone10, validateLettersOnlyName,
 } from "@/lib/validation";
 
@@ -521,7 +521,7 @@ export default function OrgAgents() {
             <div className="relative flex-1">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 w-4 h-4" />
               <Input placeholder="Search by name, email, phone, code…" className="pl-10 h-11"
-                value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} />
+                value={searchTerm} onChange={(e) => setSearchTerm(sanitizeSearch(e.target.value))} maxLength={100} />
             </div>
             <div className="flex gap-2">
               {(["ALL", "ACTIVE", "INACTIVE", "ARCHIVED"] as const).map((s) => (

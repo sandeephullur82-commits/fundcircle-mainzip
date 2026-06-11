@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useCollectionRealtime } from "@/lib/firestore-hooks";
 import { Collection, Membership } from "@/types";
+import { sanitizeSearch } from "@/lib/validation";
 import { Card, CardContent } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Input } from "@/components/ui/input";
@@ -165,7 +166,7 @@ export default function OrgCollections() {
       <div className="flex flex-wrap gap-2 items-center">
         <div className="relative flex-1 min-w-[160px]">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
-          <Input value={search} onChange={(e) => handleFilterChange(() => setSearch(e.target.value))} placeholder="Search customer or receipt…" className="pl-9 h-9" />
+          <Input value={search} onChange={(e) => handleFilterChange(() => setSearch(sanitizeSearch(e.target.value)))} placeholder="Search customer or receipt…" maxLength={100} className="pl-9 h-9" />
         </div>
 
         {/* Type filter */}

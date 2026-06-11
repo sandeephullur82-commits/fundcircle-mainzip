@@ -14,6 +14,11 @@ import { calculateEMI, approveLoan, createLoan } from "@/lib/services";
 import { Loan, LoanApplication, Membership } from "@/types";
 import { doc, updateDoc, serverTimestamp } from "firebase/firestore";
 import { db } from "@/lib/firebase";
+import FieldError from "@/components/ui/FieldError";
+import {
+  validateAmount, validateRate, validatePhone10,
+  validateName, sanitizeName, sanitizeMultiline,
+} from "@/lib/validation";
 
 type RiskLevel = "LOW" | "MEDIUM" | "HIGH";
 type DisbursementMethod = "CASH" | "UPI" | "BANK_TRANSFER" | "CHEQUE";
@@ -98,6 +103,7 @@ export default function LoanApprovalDialog({
   const [collectorId, setCollectorId] = useState("");
   const [approvalNotes, setApprovalNotes] = useState("");
   const [processing, setProcessing] = useState(false);
+  const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
 
   // Inline nominee form state
   const [showInlineNominee, setShowInlineNominee] = useState(false);
@@ -185,32 +191,40 @@ export default function LoanApprovalDialog({
   };
 
   const handleSaveInlineNominee = async () => {
-    if (!inlineNomineeName.trim()) { toast.error("Nominee name is required."); return; }
-    if (!inlineNomineeRelation)    { toast.error("Nominee relationship is required."); return; }
+    const nameRes = validateName(inlineNomineeName.trim(), { label: "Nominee name", minLength: 2, maxLength: 100 });
+    if (!nameRes.valid) { toast.error(nameRes.error!); return; }
+    if (!inlineNomineeRelation) { toast.error("Nominee relationship is required."); return; }
+    if (inlineNomineePhone.trim()) {
+      const phoneRes = validatePhone10(inlineNomineePhone.trim());
+      if (!phoneRes.valid) { toast.error(phoneRes.error!); return; }
+    }
+    const cleanName    = sanitizeName(inlineNomineeName);
+    const cleanPhone   = inlineNomineePhone.replace(/\D/g, "").slice(0, 10);
+    const cleanAddress = sanitizeMultiline(inlineNomineeAddress, 500);
     const customerDoc = members.find((m) => m.id === customerId || m.clerkUserId === customerId);
     if (!customerDoc) { toast.error("Customer profile not found."); return; }
     setSavingInlineNominee(true);
     try {
       const nomineeFields = {
-        nomineeName:     inlineNomineeName.trim(),
+        nomineeName:     cleanName,
         nomineeRelation: inlineNomineeRelation,
-        nomineePhone:    inlineNomineePhone.trim(),
-        nomineeAddress:  inlineNomineeAddress.trim(),
+        nomineePhone:    cleanPhone,
+        nomineeAddress:  cleanAddress,
         nominee: {
-          name:     inlineNomineeName.trim(),
+          name:     cleanName,
           relation: inlineNomineeRelation,
-          phone:    inlineNomineePhone.trim(),
-          address:  inlineNomineeAddress.trim(),
+          phone:    cleanPhone,
+          address:  cleanAddress,
         },
         updatedAt: serverTimestamp(),
       };
       await updateDoc(doc(db, "organizationMembers", customerDoc.id), nomineeFields);
       try { await updateDoc(doc(db, "customers", customerDoc.id), nomineeFields); } catch (_) {}
       setLocalNomineeSaved({
-        name:     inlineNomineeName.trim(),
+        name:     cleanName,
         relation: inlineNomineeRelation,
-        phone:    inlineNomineePhone.trim(),
-        address:  inlineNomineeAddress.trim(),
+        phone:    cleanPhone,
+        address:  cleanAddress,
       });
       setShowInlineNominee(false);
       toast.success("Nominee saved — approval is now enabled.");
@@ -226,6 +240,32 @@ export default function LoanApprovalDialog({
       toast.error("Nominee is required. Please add one using '+ Add Nominee Now' above.");
       return;
     }
+    // Validate amount and rate
+    const amtRes = validateAmount(approvedAmount, { label: "Approved amount", min: 1000, max: 10_000_000 });
+    if (!amtRes.valid) {
+      setFieldErrors((p) => ({ ...p, approvedAmount: amtRes.error! }));
+      toast.error(amtRes.error!);
+      return;
+    }
+    const rateRes = validateRate(interestRate, { label: "Interest rate", max: 60 });
+    if (!rateRes.valid) {
+      setFieldErrors((p) => ({ ...p, interestRate: rateRes.error! }));
+      toast.error(rateRes.error!);
+      return;
+    }
+    // Validate disbursement reference fields
+    const disbErrors: Record<string, string> = {};
+    if (disbursementMethod === "UPI"          && !upiId.trim())    disbErrors.upiId    = "UPI ID is required for UPI disbursement.";
+    if (disbursementMethod === "BANK_TRANSFER" && !bankAccNo.trim()) disbErrors.bankAccNo = "Account number is required.";
+    if (disbursementMethod === "BANK_TRANSFER" && !bankIfsc.trim()) disbErrors.bankIfsc  = "IFSC code is required.";
+    if (disbursementMethod === "CHEQUE"        && !chequeNo.trim()) disbErrors.chequeNo  = "Cheque number is required.";
+    if (Object.keys(disbErrors).length) {
+      setFieldErrors((p) => ({ ...p, ...disbErrors }));
+      toast.error("Please fill in the required disbursement reference fields.");
+      return;
+    }
+    // Clear any stale field errors before proceeding
+    setFieldErrors({});
     if (!approvedAmountNum || approvedAmountNum <= 0) {
       toast.error("Approved amount must be greater than zero.");
       return;
@@ -499,11 +539,16 @@ export default function LoanApprovalDialog({
                   <Input
                     type="number" min="1" step="1"
                     value={approvedAmount}
-                    onChange={(e) => setApprovedAmount(e.target.value)}
+                    onChange={(e) => {
+                      setApprovedAmount(e.target.value);
+                      const r = validateAmount(e.target.value, { label: "Approved amount", min: 1000, max: 10_000_000 });
+                      setFieldErrors((p) => ({ ...p, approvedAmount: r.valid ? "" : r.error! }));
+                    }}
                     className="pl-7 font-semibold border-emerald-300 focus-visible:ring-emerald-300"
                     placeholder={String(requestedAmount)}
                   />
                 </div>
+                <FieldError error={fieldErrors.approvedAmount} />
               </div>
             </div>
             <div className="grid grid-cols-2 gap-3">
@@ -512,8 +557,13 @@ export default function LoanApprovalDialog({
                 <Input
                   type="number" min="0" max="100" step="0.1"
                   value={interestRate}
-                  onChange={(e) => setInterestRate(e.target.value)}
+                  onChange={(e) => {
+                    setInterestRate(e.target.value);
+                    const r = validateRate(e.target.value, { label: "Interest rate", max: 60 });
+                    setFieldErrors((p) => ({ ...p, interestRate: r.valid ? "" : r.error! }));
+                  }}
                 />
+                <FieldError error={fieldErrors.interestRate} />
               </div>
               <div className="space-y-1.5">
                 <Label className="text-xs text-slate-500">Tenure</Label>
@@ -589,7 +639,8 @@ export default function LoanApprovalDialog({
               <div className="bg-indigo-50 rounded-xl p-3 border border-indigo-100 grid grid-cols-2 gap-2">
                 <div className="space-y-1">
                   <Label className="text-xs">UPI ID</Label>
-                  <Input value={upiId} onChange={(e) => setUpiId(e.target.value)} placeholder="e.g. user@paytm" className="h-9" />
+                  <Input value={upiId} onChange={(e) => { setUpiId(e.target.value); setFieldErrors((p) => ({ ...p, upiId: "" })); }} placeholder="e.g. user@paytm" className="h-9" />
+                  <FieldError error={fieldErrors.upiId} />
                 </div>
                 <div className="space-y-1">
                   <Label className="text-xs">UTR Number</Label>
@@ -602,11 +653,13 @@ export default function LoanApprovalDialog({
               <div className="bg-indigo-50 rounded-xl p-3 border border-indigo-100 grid grid-cols-3 gap-2">
                 <div className="space-y-1">
                   <Label className="text-xs">Account No.</Label>
-                  <Input value={bankAccNo} onChange={(e) => setBankAccNo(e.target.value)} placeholder="Account number" className="h-9" />
+                  <Input value={bankAccNo} onChange={(e) => { setBankAccNo(e.target.value); setFieldErrors((p) => ({ ...p, bankAccNo: "" })); }} placeholder="Account number" className="h-9" />
+                  <FieldError error={fieldErrors.bankAccNo} />
                 </div>
                 <div className="space-y-1">
                   <Label className="text-xs">IFSC Code</Label>
-                  <Input value={bankIfsc} onChange={(e) => setBankIfsc(e.target.value)} placeholder="e.g. SBIN0001234" className="h-9" />
+                  <Input value={bankIfsc} onChange={(e) => { setBankIfsc(e.target.value); setFieldErrors((p) => ({ ...p, bankIfsc: "" })); }} placeholder="e.g. SBIN0001234" className="h-9" />
+                  <FieldError error={fieldErrors.bankIfsc} />
                 </div>
                 <div className="space-y-1">
                   <Label className="text-xs">UTR / Ref.</Label>
@@ -619,7 +672,8 @@ export default function LoanApprovalDialog({
               <div className="bg-indigo-50 rounded-xl p-3 border border-indigo-100 grid grid-cols-3 gap-2">
                 <div className="space-y-1">
                   <Label className="text-xs">Cheque No.</Label>
-                  <Input value={chequeNo} onChange={(e) => setChequeNo(e.target.value)} placeholder="e.g. 001234" className="h-9" />
+                  <Input value={chequeNo} onChange={(e) => { setChequeNo(e.target.value); setFieldErrors((p) => ({ ...p, chequeNo: "" })); }} placeholder="e.g. 001234" className="h-9" />
+                  <FieldError error={fieldErrors.chequeNo} />
                 </div>
                 <div className="space-y-1">
                   <Label className="text-xs">Bank Name</Label>
@@ -793,7 +847,7 @@ export default function LoanApprovalDialog({
             <Button
               className="flex-1 bg-emerald-600 hover:bg-emerald-700"
               onClick={handleApprove}
-              disabled={processing || nomineeBlocked || showInlineNominee}
+              disabled={processing || nomineeBlocked || showInlineNominee || Object.values(fieldErrors).some(Boolean)}
               title={nomineeBlocked ? "Add a nominee above before approving" : undefined}
             >
               {processing

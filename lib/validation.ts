@@ -54,6 +54,32 @@ export function sanitizeMultiline(input: string, maxLength = 500): string {
   return input.trim().substring(0, maxLength);
 }
 
+/** Sanitize an address field: trim, strip HTML/injection chars, cap length. */
+export function sanitizeAddress(input: string, maxLength = 500): string {
+  if (!input) return "";
+  return input
+    .trim()
+    .replace(/<[^>]*>/g, "")
+    .replace(/[<>"\/\\;{}]/g, "")
+    .substring(0, maxLength);
+}
+
+/**
+ * Sanitize a search query: strip HTML tags, injection chars, SQL keywords, cap at 100 chars.
+ * Apply to every search/filter input before using in queries or display.
+ */
+export function sanitizeSearch(input: string): string {
+  if (!input) return "";
+  return input
+    .trim()
+    .replace(/<[^>]*>/g, "")
+    .replace(/[<>"\/\\;{}()\[\]]/g, "")
+    .replace(/--/g, "")
+    .replace(/\/\*/g, "")
+    .replace(/\b(SELECT|DROP|INSERT|DELETE|UPDATE|UNION|EXEC|SCRIPT)\b/gi, "")
+    .substring(0, 100);
+}
+
 // ── Validators ────────────────────────────────────────────────────────────────
 
 export interface ValidationResult {
@@ -237,15 +263,18 @@ export function validatePhone10(
 
 /**
  * Validate an address field.
+ * When required=true, enforces a minimum of 10 chars to prevent placeholder values.
  */
 export function validateAddress(
   address: string,
-  options?: { required?: boolean; maxLength?: number }
+  options?: { required?: boolean; minLength?: number; maxLength?: number }
 ): ValidationResult {
   const required = options?.required ?? true;
+  const minLen = options?.minLength ?? 10;
   const maxLen = options?.maxLength ?? 500;
   const trimmed = (address ?? "").trim();
   if (!trimmed) return required ? { valid: false, error: "Address is required" } : { valid: true };
+  if (trimmed.length < minLen) return { valid: false, error: `Address must be at least ${minLen} characters` };
   if (trimmed.length > maxLen) return { valid: false, error: `Address cannot exceed ${maxLen} characters` };
   return { valid: true };
 }
@@ -257,6 +286,45 @@ export function validateNotes(notes: string, maxLength = 500): ValidationResult 
   if (!(notes ?? "").trim()) return { valid: true };
   if (notes.trim().length > maxLength)
     return { valid: false, error: `Notes cannot exceed ${maxLength} characters` };
+  return { valid: true };
+}
+
+/** Validate a loan purpose: required, non-empty, max 200 chars. */
+export function validateLoanPurpose(purpose: string): ValidationResult {
+  const trimmed = (purpose ?? "").trim();
+  if (!trimmed) return { valid: false, error: "Loan purpose is required" };
+  if (trimmed.length > 200) return { valid: false, error: "Loan purpose cannot exceed 200 characters" };
+  return { valid: true };
+}
+
+/**
+ * Allowed nominee relationship values (mirrors LoanApprovalDialog selector).
+ */
+export const ALLOWED_NOMINEE_RELATIONSHIPS = [
+  "Father", "Mother", "Spouse", "Brother", "Sister",
+  "Son", "Daughter", "Sibling", "Guardian", "Other",
+] as const;
+export type NomineeRelationship = typeof ALLOWED_NOMINEE_RELATIONSHIPS[number];
+
+/** Validate nominee relationship is from the allowed list. */
+export function validateNomineeRelationship(relation: string): ValidationResult {
+  if (!relation?.trim()) return { valid: false, error: "Nominee relationship is required" };
+  if (!(ALLOWED_NOMINEE_RELATIONSHIPS as readonly string[]).includes(relation.trim())) {
+    return { valid: false, error: "Select a valid relationship" };
+  }
+  return { valid: true };
+}
+
+/** Allowed customer types. */
+export const ALLOWED_CUSTOMER_TYPES = ["SAVINGS", "LOAN", "SAVINGS_LOAN"] as const;
+export type CustomerType = typeof ALLOWED_CUSTOMER_TYPES[number];
+
+/** Validate that customer type is one of the allowed values. */
+export function validateCustomerType(type: string): ValidationResult {
+  if (!type?.trim()) return { valid: false, error: "Customer type is required" };
+  if (!(ALLOWED_CUSTOMER_TYPES as readonly string[]).includes(type as any)) {
+    return { valid: false, error: "Customer type must be SAVINGS, LOAN, or SAVINGS_LOAN" };
+  }
   return { valid: true };
 }
 

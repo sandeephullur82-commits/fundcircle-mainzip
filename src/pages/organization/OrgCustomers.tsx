@@ -19,7 +19,7 @@ import {
 import { toast } from "sonner";
 import FieldError from "@/components/ui/FieldError";
 import {
-  sanitizeName, sanitizeEmail, sanitizeMultiline,
+  sanitizeName, sanitizeEmail, sanitizeMultiline, sanitizeSearch,
   validateEmail, validatePhone10, validateLettersOnlyName,
 } from "@/lib/validation";
 
@@ -72,6 +72,7 @@ export default function OrgCustomers() {
   const [editPhone, setEditPhone] = useState("");
   const [editAddress, setEditAddress] = useState("");
   const [editNominee, setEditNominee] = useState({ name: "", relation: "", phone: "", address: "" });
+  const [nomineePhoneError, setNomineePhoneError] = useState("");
   const [editCollectorId, setEditCollectorId] = useState("");
   const [editCustomerType, setEditCustomerType] = useState<"SAVINGS" | "LOAN" | "SAVINGS_LOAN">("SAVINGS_LOAN");
   const [editNotes, setEditNotes] = useState("");
@@ -375,6 +376,7 @@ export default function OrgCustomers() {
     setEditNotes((customer as any).notes || "");
     setNomineeOverrideReason("");
     setShowNomineeOverride(false);
+    setNomineePhoneError("");
   };
 
   const handleSaveEdit = async () => {
@@ -923,7 +925,7 @@ export default function OrgCustomers() {
               placeholder="Search customers…"
               className="pl-10 h-11"
               value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
+              onChange={(e) => setSearchTerm(sanitizeSearch(e.target.value))}
             />
           </div>
         </CardHeader>
@@ -1301,7 +1303,21 @@ export default function OrgCustomers() {
                 </div>
                 <div className="space-y-1.5">
                   <Label>Nominee Phone</Label>
-                  <Input value={editNominee.phone} onChange={(e) => setEditNominee({ ...editNominee, phone: e.target.value })} placeholder="+91…" />
+                  <Input
+                    value={editNominee.phone}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      setEditNominee({ ...editNominee, phone: val });
+                      if (val.trim()) {
+                        const r = validatePhone10(val);
+                        setNomineePhoneError(r.valid ? "" : (r.error ?? ""));
+                      } else {
+                        setNomineePhoneError("");
+                      }
+                    }}
+                    placeholder="+91…"
+                  />
+                  <FieldError error={nomineePhoneError} />
                 </div>
               </div>
               <div className="space-y-1.5">

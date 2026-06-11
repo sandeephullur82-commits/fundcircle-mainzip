@@ -13,6 +13,7 @@ import { Search, Plus, CheckCircle, XCircle, Eye, Loader2, CreditCard, Inbox, Ch
 import { useUser, useOrganization } from "@clerk/clerk-react";
 import { createLoan, rejectLoan, calculateEMI } from "@/lib/services";
 import FieldError from "@/components/ui/FieldError";
+import { sanitizeSearch } from "@/lib/validation";
 import { where, onSnapshot, query, collection, doc, updateDoc, serverTimestamp } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import LoanApprovalDialog from "./LoanApprovalDialog";
@@ -337,7 +338,7 @@ export default function OrgLoans() {
           <div className="flex flex-wrap gap-2 items-center">
             <div className="relative flex-1 min-w-[180px]">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
-              <Input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search by customer…" className="pl-9 h-9" />
+              <Input value={search} onChange={(e) => setSearch(sanitizeSearch(e.target.value))} placeholder="Search by customer…" maxLength={100} className="pl-9 h-9" />
             </div>
             <div className="flex gap-1">
               {(["ALL", "PENDING", "ACTIVE", "CLOSED", "REJECTED"] as LoanStatus[]).map((s) => (
