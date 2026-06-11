@@ -1,0 +1,111 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1000" height="750" font-family="Arial, sans-serif">
+  <rect width="1000" height="750" fill="#F8FAFC" rx="12"/>
+  <text x="500" y="34" text-anchor="middle" font-size="20" font-weight="bold" fill="#1E293B">FundCircle — Use Case Diagram</text>
+
+  <!-- System Boundary -->
+  <rect x="180" y="50" width="640" height="680" fill="none" stroke="#94A3B8" stroke-width="2" stroke-dasharray="8,4" rx="12"/>
+  <text x="500" y="72" text-anchor="middle" font-size="14" font-weight="bold" fill="#64748B">FundCircle System</text>
+
+  <!-- Actor: Owner -->
+  <ellipse cx="80" cy="190" rx="20" ry="28" fill="none" stroke="#1D4ED8" stroke-width="2"/>
+  <line x1="80" y1="218" x2="80" y2="280" stroke="#1D4ED8" stroke-width="2"/>
+  <line x1="80" y1="240" x2="50" y2="260" stroke="#1D4ED8" stroke-width="2"/>
+  <line x1="80" y1="240" x2="110" y2="260" stroke="#1D4ED8" stroke-width="2"/>
+  <line x1="80" y1="280" x2="55" y2="310" stroke="#1D4ED8" stroke-width="2"/>
+  <line x1="80" y1="280" x2="105" y2="310" stroke="#1D4ED8" stroke-width="2"/>
+  <text x="80" y="330" text-anchor="middle" font-size="12" font-weight="bold" fill="#1D4ED8">Owner/Admin</text>
+
+  <!-- Actor: Agent -->
+  <ellipse cx="80" cy="470" rx="20" ry="28" fill="none" stroke="#059669" stroke-width="2"/>
+  <line x1="80" y1="498" x2="80" y2="560" stroke="#059669" stroke-width="2"/>
+  <line x1="80" y1="520" x2="50" y2="540" stroke="#059669" stroke-width="2"/>
+  <line x1="80" y1="520" x2="110" y2="540" stroke="#059669" stroke-width="2"/>
+  <line x1="80" y1="560" x2="55" y2="590" stroke="#059669" stroke-width="2"/>
+  <line x1="80" y1="560" x2="105" y2="590" stroke="#059669" stroke-width="2"/>
+  <text x="80" y="610" text-anchor="middle" font-size="12" font-weight="bold" fill="#059669">Agent/Collector</text>
+
+  <!-- Actor: Customer -->
+  <ellipse cx="940" cy="340" rx="20" ry="28" fill="none" stroke="#7C3AED" stroke-width="2"/>
+  <line x1="940" y1="368" x2="940" y2="430" stroke="#7C3AED" stroke-width="2"/>
+  <line x1="940" y1="390" x2="910" y2="410" stroke="#7C3AED" stroke-width="2"/>
+  <line x1="940" y1="390" x2="970" y2="410" stroke="#7C3AED" stroke-width="2"/>
+  <line x1="940" y1="430" x2="915" y2="460" stroke="#7C3AED" stroke-width="2"/>
+  <line x1="940" y1="430" x2="965" y2="460" stroke="#7C3AED" stroke-width="2"/>
+  <text x="940" y="480" text-anchor="middle" font-size="12" font-weight="bold" fill="#7C3AED">Customer</text>
+
+  <!-- Owner Use Cases -->
+  <ellipse cx="420" cy="120" rx="120" ry="22" fill="#DBEAFE" stroke="#3B82F6" stroke-width="1.5"/>
+  <text x="420" y="124" text-anchor="middle" font-size="11" fill="#1E40AF">Create Organization</text>
+
+  <ellipse cx="420" cy="175" rx="120" ry="22" fill="#DBEAFE" stroke="#3B82F6" stroke-width="1.5"/>
+  <text x="420" y="179" text-anchor="middle" font-size="11" fill="#1E40AF">Create Customer Account</text>
+
+  <ellipse cx="420" cy="230" rx="120" ry="22" fill="#DBEAFE" stroke="#3B82F6" stroke-width="1.5"/>
+  <text x="420" y="234" text-anchor="middle" font-size="11" fill="#1E40AF">Create Agent Account</text>
+
+  <ellipse cx="420" cy="285" rx="120" ry="22" fill="#DBEAFE" stroke="#3B82F6" stroke-width="1.5"/>
+  <text x="420" y="289" text-anchor="middle" font-size="11" fill="#1E40AF">Approve / Reject Loan</text>
+
+  <ellipse cx="420" cy="340" rx="120" ry="22" fill="#DBEAFE" stroke="#3B82F6" stroke-width="1.5"/>
+  <text x="420" y="344" text-anchor="middle" font-size="11" fill="#1E40AF">Manage Savings Plans</text>
+
+  <ellipse cx="420" cy="395" rx="120" ry="22" fill="#DBEAFE" stroke="#3B82F6" stroke-width="1.5"/>
+  <text x="420" y="399" text-anchor="middle" font-size="11" fill="#1E40AF">View Audit Logs</text>
+
+  <ellipse cx="420" cy="450" rx="120" ry="22" fill="#DBEAFE" stroke="#3B82F6" stroke-width="1.5"/>
+  <text x="420" y="454" text-anchor="middle" font-size="11" fill="#1E40AF">Export Excel Reports</text>
+
+  <!-- Agent Use Cases -->
+  <ellipse cx="580" cy="510" rx="120" ry="22" fill="#D1FAE5" stroke="#10B981" stroke-width="1.5"/>
+  <text x="580" y="514" text-anchor="middle" font-size="11" fill="#065F46">Record EMI Collection</text>
+
+  <ellipse cx="580" cy="565" rx="120" ry="22" fill="#D1FAE5" stroke="#10B981" stroke-width="1.5"/>
+  <text x="580" y="569" text-anchor="middle" font-size="11" fill="#065F46">Record Savings Deposit</text>
+
+  <ellipse cx="580" cy="620" rx="120" ry="22" fill="#D1FAE5" stroke="#10B981" stroke-width="1.5"/>
+  <text x="580" y="624" text-anchor="middle" font-size="11" fill="#065F46">View Assigned Customers</text>
+
+  <ellipse cx="580" cy="675" rx="120" ry="22" fill="#D1FAE5" stroke="#10B981" stroke-width="1.5"/>
+  <text x="580" y="679" text-anchor="middle" font-size="11" fill="#065F46">Generate Receipt</text>
+
+  <!-- Customer Use Cases -->
+  <ellipse cx="720" cy="175" rx="120" ry="22" fill="#F3E8FF" stroke="#A855F7" stroke-width="1.5"/>
+  <text x="720" y="179" text-anchor="middle" font-size="11" fill="#6B21A8">View Savings Balance</text>
+
+  <ellipse cx="720" cy="230" rx="120" ry="22" fill="#F3E8FF" stroke="#A855F7" stroke-width="1.5"/>
+  <text x="720" y="234" text-anchor="middle" font-size="11" fill="#6B21A8">Apply for Loan</text>
+
+  <ellipse cx="720" cy="285" rx="120" ry="22" fill="#F3E8FF" stroke="#A855F7" stroke-width="1.5"/>
+  <text x="720" y="289" text-anchor="middle" font-size="11" fill="#6B21A8">View EMI Schedule</text>
+
+  <ellipse cx="720" cy="340" rx="120" ry="22" fill="#F3E8FF" stroke="#A855F7" stroke-width="1.5"/>
+  <text x="720" y="344" text-anchor="middle" font-size="11" fill="#6B21A8">Download Receipts</text>
+
+  <ellipse cx="720" cy="395" rx="120" ry="22" fill="#F3E8FF" stroke="#A855F7" stroke-width="1.5"/>
+  <text x="720" y="399" text-anchor="middle" font-size="11" fill="#6B21A8">View Passbook</text>
+
+  <!-- Common -->
+  <ellipse cx="500" cy="510" rx="110" ry="22" fill="#FEF3C7" stroke="#F59E0B" stroke-width="1.5"/>
+  <text x="500" y="514" text-anchor="middle" font-size="11" fill="#78350F">Sign In / Sign Out</text>
+
+  <!-- Lines: Owner to Use Cases -->
+  <line x1="100" y1="230" x2="300" y2="175" stroke="#3B82F6" stroke-width="1"/>
+  <line x1="100" y1="240" x2="300" y2="230" stroke="#3B82F6" stroke-width="1"/>
+  <line x1="100" y1="250" x2="300" y2="285" stroke="#3B82F6" stroke-width="1"/>
+  <line x1="100" y1="255" x2="300" y2="340" stroke="#3B82F6" stroke-width="1"/>
+  <line x1="100" y1="255" x2="300" y2="395" stroke="#3B82F6" stroke-width="1"/>
+  <line x1="100" y1="260" x2="300" y2="450" stroke="#3B82F6" stroke-width="1"/>
+
+  <!-- Lines: Agent to Use Cases -->
+  <line x1="100" y1="500" x2="460" y2="510" stroke="#10B981" stroke-width="1"/>
+  <line x1="100" y1="510" x2="460" y2="565" stroke="#10B981" stroke-width="1"/>
+  <line x1="100" y1="520" x2="460" y2="620" stroke="#10B981" stroke-width="1"/>
+  <line x1="100" y1="530" x2="460" y2="675" stroke="#10B981" stroke-width="1"/>
+
+  <!-- Lines: Customer to Use Cases -->
+  <line x1="920" y1="390" x2="840" y2="340" stroke="#A855F7" stroke-width="1"/>
+  <line x1="920" y1="390" x2="840" y2="285" stroke="#A855F7" stroke-width="1"/>
+  <line x1="920" y1="385" x2="840" y2="230" stroke="#A855F7" stroke-width="1"/>
+  <line x1="920" y1="380" x2="840" y2="175" stroke="#A855F7" stroke-width="1"/>
+  <line x1="920" y1="395" x2="840" y2="395" stroke="#A855F7" stroke-width="1"/>
+</svg>

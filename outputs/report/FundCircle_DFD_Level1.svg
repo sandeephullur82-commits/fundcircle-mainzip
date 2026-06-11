@@ -1,0 +1,64 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1000" height="700" font-family="Arial, sans-serif">
+  <defs><marker id="a1" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0,8 3,0 6" fill="#475569"/></marker></defs>
+  <rect width="1000" height="700" fill="#F8FAFC" rx="12"/>
+  <text x="500" y="34" text-anchor="middle" font-size="20" font-weight="bold" fill="#1E293B">FundCircle — DFD Level 1</text>
+
+  <!-- Processes -->
+  <ellipse cx="200" cy="150" rx="100" ry="45" fill="#EFF6FF" stroke="#3B82F6" stroke-width="2"/>
+  <text x="200" y="146" text-anchor="middle" font-size="12" font-weight="bold" fill="#1E40AF">P1: Authentication</text>
+  <text x="200" y="162" text-anchor="middle" font-size="10" fill="#3B82F6">&amp; Authorization</text>
+
+  <ellipse cx="500" cy="150" rx="100" ry="45" fill="#EFF6FF" stroke="#3B82F6" stroke-width="2"/>
+  <text x="500" y="146" text-anchor="middle" font-size="12" font-weight="bold" fill="#1E40AF">P2: Customer &amp;</text>
+  <text x="500" y="162" text-anchor="middle" font-size="10" fill="#3B82F6">Agent Management</text>
+
+  <ellipse cx="800" cy="150" rx="100" ry="45" fill="#EFF6FF" stroke="#3B82F6" stroke-width="2"/>
+  <text x="800" y="146" text-anchor="middle" font-size="12" font-weight="bold" fill="#1E40AF">P3: Loan</text>
+  <text x="800" y="162" text-anchor="middle" font-size="10" fill="#3B82F6">Management</text>
+
+  <ellipse cx="200" cy="400" rx="100" ry="45" fill="#D1FAE5" stroke="#10B981" stroke-width="2"/>
+  <text x="200" y="396" text-anchor="middle" font-size="12" font-weight="bold" fill="#065F46">P4: Collection</text>
+  <text x="200" y="412" text-anchor="middle" font-size="10" fill="#10B981">&amp; Receipts</text>
+
+  <ellipse cx="500" cy="400" rx="100" ry="45" fill="#D1FAE5" stroke="#10B981" stroke-width="2"/>
+  <text x="500" y="396" text-anchor="middle" font-size="12" font-weight="bold" fill="#065F46">P5: Savings</text>
+  <text x="500" y="412" text-anchor="middle" font-size="10" fill="#10B981">Management</text>
+
+  <ellipse cx="800" cy="400" rx="100" ry="45" fill="#D1FAE5" stroke="#10B981" stroke-width="2"/>
+  <text x="800" y="396" text-anchor="middle" font-size="12" font-weight="bold" fill="#065F46">P6: Reporting &amp;</text>
+  <text x="800" y="412" text-anchor="middle" font-size="10" fill="#10B981">Audit Logging</text>
+
+  <!-- Data Stores -->
+  <rect x="50" y="560" width="180" height="36" fill="#FEF3C7" stroke="#F59E0B" stroke-width="2"/>
+  <line x1="50" y1="570" x2="50" y2="596" stroke="#F59E0B" stroke-width="1"/>
+  <text x="60" y="582" font-size="11" fill="#78350F">DS1: organizationMembers</text>
+
+  <rect x="280" y="560" width="155" height="36" fill="#FEF3C7" stroke="#F59E0B" stroke-width="2"/>
+  <line x1="280" y1="570" x2="280" y2="596" stroke="#F59E0B" stroke-width="1"/>
+  <text x="290" y="582" font-size="11" fill="#78350F">DS2: savings_accounts</text>
+
+  <rect x="490" y="560" width="145" height="36" fill="#FEF3C7" stroke="#F59E0B" stroke-width="2"/>
+  <line x1="490" y1="570" x2="490" y2="596" stroke="#F59E0B" stroke-width="1"/>
+  <text x="500" y="582" font-size="11" fill="#78350F">DS3: loans / EMI</text>
+
+  <rect x="700" y="560" width="155" height="36" fill="#FEF3C7" stroke="#F59E0B" stroke-width="2"/>
+  <line x1="700" y1="570" x2="700" y2="596" stroke="#F59E0B" stroke-width="1"/>
+  <text x="710" y="582" font-size="11" fill="#78350F">DS4: collections/logs</text>
+
+  <!-- Flow lines (abbreviated) -->
+  <line x1="300" y1="150" x2="398" y2="150" stroke="#475569" stroke-width="1.5" marker-end="url(#a1)"/>
+  <text x="340" y="143" font-size="10" fill="#475569">Verified User</text>
+  <line x1="598" y1="150" x2="698" y2="150" stroke="#475569" stroke-width="1.5" marker-end="url(#a1)"/>
+  <text x="630" y="143" font-size="10" fill="#475569">Customer Ref</text>
+  <line x1="200" y1="195" x2="200" y2="355" stroke="#475569" stroke-width="1.5" marker-end="url(#a1)"/>
+  <text x="207" y="275" font-size="10" fill="#475569">Auth Context</text>
+  <line x1="500" y1="195" x2="500" y2="355" stroke="#475569" stroke-width="1.5" marker-end="url(#a1)"/>
+  <text x="507" y="275" font-size="10" fill="#475569">Member Data</text>
+  <line x1="800" y1="195" x2="800" y2="355" stroke="#475569" stroke-width="1.5" marker-end="url(#a1)"/>
+  <text x="807" y="275" font-size="10" fill="#475569">Loan Data</text>
+  <line x1="200" y1="445" x2="140" y2="560" stroke="#475569" stroke-width="1.5" marker-end="url(#a1)"/>
+  <line x1="300" y1="445" x2="800" y2="560" stroke="#475569" stroke-width="1.5" marker-end="url(#a1)"/>
+  <line x1="500" y1="445" x2="357" y2="560" stroke="#475569" stroke-width="1.5" marker-end="url(#a1)"/>
+  <line x1="800" y1="445" x2="562" y2="560" stroke="#475569" stroke-width="1.5" marker-end="url(#a1)"/>
+  <line x1="800" y1="445" x2="775" y2="560" stroke="#475569" stroke-width="1.5" marker-end="url(#a1)"/>
+</svg>

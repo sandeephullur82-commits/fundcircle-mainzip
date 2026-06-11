@@ -1,0 +1,62 @@
+uploads = []
+generated = []
+
+[[outputs]]
+id = "djGClz_WUGaYTzlRuXudf"
+uri = "file://outputs/report/FundCircle_Project_Report.docx"
+type = "word_document"
+title = "FundCircle Project Report (DOCX)"
+
+[[outputs]]
+id = "pvOTqPr54Nf9kfGIGqIiV"
+uri = "file://outputs/report/FundCircle_Project_Report.pdf"
+type = "pdf"
+title = "FundCircle Project Report (PDF)"
+
+[[outputs]]
+id = "awCkBAElvKBKujiovedde"
+uri = "file://outputs/report/FundCircle_TestCases.xlsx"
+type = "table"
+title = "FundCircle Test Cases — 110 Cases (Excel)"
+
+[[outputs]]
+id = "oIdmkVkymkN3kxLLev_aC"
+uri = "file://outputs/report/FundCircle_ER_Diagram.svg"
+type = "image"
+title = "FundCircle ER Diagram"
+
+[[outputs]]
+id = "1G8W2bobhFXn6jWg94F1A"
+uri = "file://outputs/report/FundCircle_Architecture_Diagram.svg"
+type = "image"
+title = "FundCircle Architecture Diagram"
+
+[[outputs]]
+id = "tZM5JRopDjPO-971nBRiT"
+uri = "file://outputs/report/FundCircle_UseCase_Diagram.svg"
+type = "image"
+title = "FundCircle Use Case Diagram"
+
+[[outputs]]
+id = "Y5ai6m3RiSUn5_XRfIfSq"
+uri = "file://outputs/report/FundCircle_DFD_Level0.svg"
+type = "image"
+title = "FundCircle DFD Level 0 (Context)"
+
+[[outputs]]
+id = "i1wIl5WLnr0eehA_jteeK"
+uri = "file://outputs/report/FundCircle_DFD_Level1.svg"
+type = "image"
+title = "FundCircle DFD Level 1"
+
+[[outputs]]
+id = "9x4rBzN7udUjeBuNypFA3"
+uri = "file://outputs/report/FundCircle_DFD_Level2.svg"
+type = "image"
+title = "FundCircle DFD Level 2 (Loan Expansion)"
+
+[[outputs]]
+id = "zZGRikTrJg85LUNKl6ntt"
+uri = "file://outputs/report/FundCircle_Sequence_Diagram.svg"
+type = "image"
+title = "FundCircle Sequence Diagram (Loan Approval)"

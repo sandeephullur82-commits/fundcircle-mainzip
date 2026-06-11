@@ -1,0 +1,69 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1000" height="680" font-family="Arial, sans-serif">
+  <defs><marker id="a2" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0,8 3,0 6" fill="#475569"/></marker></defs>
+  <rect width="1000" height="680" fill="#F8FAFC" rx="12"/>
+  <text x="500" y="34" text-anchor="middle" font-size="20" font-weight="bold" fill="#1E293B">FundCircle — DFD Level 2 (Loan Process Expansion)</text>
+
+  <!-- Loan Application -->
+  <ellipse cx="180" cy="160" rx="110" ry="45" fill="#FFF7ED" stroke="#FB923C" stroke-width="2"/>
+  <text x="180" y="156" text-anchor="middle" font-size="12" font-weight="bold" fill="#C2410C">P3.1: Receive Loan</text>
+  <text x="180" y="172" text-anchor="middle" font-size="10" fill="#EA580C">Application</text>
+
+  <ellipse cx="430" cy="160" rx="110" ry="45" fill="#FFF7ED" stroke="#FB923C" stroke-width="2"/>
+  <text x="430" y="156" text-anchor="middle" font-size="12" font-weight="bold" fill="#C2410C">P3.2: Validate &amp;</text>
+  <text x="430" y="172" text-anchor="middle" font-size="10" fill="#EA580C">Risk Assessment</text>
+
+  <ellipse cx="700" cy="160" rx="110" ry="45" fill="#FFF7ED" stroke="#FB923C" stroke-width="2"/>
+  <text x="700" y="156" text-anchor="middle" font-size="12" font-weight="bold" fill="#C2410C">P3.3: Owner Review</text>
+  <text x="700" y="172" text-anchor="middle" font-size="10" fill="#EA580C">&amp; Approval Decision</text>
+
+  <ellipse cx="250" cy="380" rx="110" ry="45" fill="#FFF7ED" stroke="#FB923C" stroke-width="2"/>
+  <text x="250" y="376" text-anchor="middle" font-size="12" font-weight="bold" fill="#C2410C">P3.4: Calculate EMI</text>
+  <text x="250" y="392" text-anchor="middle" font-size="10" fill="#EA580C">&amp; Generate Schedule</text>
+
+  <ellipse cx="550" cy="380" rx="110" ry="45" fill="#FFF7ED" stroke="#FB923C" stroke-width="2"/>
+  <text x="550" y="376" text-anchor="middle" font-size="12" font-weight="bold" fill="#C2410C">P3.5: Disburse Loan</text>
+  <text x="550" y="392" text-anchor="middle" font-size="10" fill="#EA580C">&amp; Assign Collector</text>
+
+  <ellipse cx="830" cy="380" rx="110" ry="45" fill="#FFF7ED" stroke="#FB923C" stroke-width="2"/>
+  <text x="830" y="376" text-anchor="middle" font-size="12" font-weight="bold" fill="#C2410C">P3.6: Track Repayment</text>
+  <text x="830" y="392" text-anchor="middle" font-size="10" fill="#EA580C">&amp; Closure</text>
+
+  <!-- Data stores -->
+  <rect x="30" y="530" width="170" height="36" fill="#FEF3C7" stroke="#F59E0B" stroke-width="2"/>
+  <text x="40" y="552" font-size="11" fill="#78350F">DS: loanApplications</text>
+
+  <rect x="250" y="530" width="160" height="36" fill="#FEF3C7" stroke="#F59E0B" stroke-width="2"/>
+  <text x="260" y="552" font-size="11" fill="#78350F">DS: loans (ACTIVE)</text>
+
+  <rect x="460" y="530" width="170" height="36" fill="#FEF3C7" stroke="#F59E0B" stroke-width="2"/>
+  <text x="470" y="552" font-size="11" fill="#78350F">DS: loan_installments</text>
+
+  <rect x="690" y="530" width="170" height="36" fill="#FEF3C7" stroke="#F59E0B" stroke-width="2"/>
+  <text x="700" y="552" font-size="11" fill="#78350F">DS: collections (EMI)</text>
+
+  <!-- Arrows -->
+  <line x1="290" y1="160" x2="318" y2="160" stroke="#475569" stroke-width="1.5" marker-end="url(#a2)"/>
+  <text x="295" y="153" font-size="9" fill="#475569">Application Data</text>
+  <line x1="540" y1="160" x2="588" y2="160" stroke="#475569" stroke-width="1.5" marker-end="url(#a2)"/>
+  <text x="545" y="153" font-size="9" fill="#475569">Risk Score</text>
+  <line x1="700" y1="205" x2="430" y2="335" stroke="#475569" stroke-width="1.5" marker-end="url(#a2)"/>
+  <text x="545" y="270" font-size="9" fill="#10B981">Approved</text>
+  <line x1="700" y1="205" x2="700" y2="380" stroke="#EF4444" stroke-width="1.5" stroke-dasharray="5,3" marker-end="url(#a2)"/>
+  <text x="710" y="295" font-size="9" fill="#EF4444">Rejected</text>
+  <line x1="360" y1="380" x2="438" y2="380" stroke="#475569" stroke-width="1.5" marker-end="url(#a2)"/>
+  <text x="370" y="373" font-size="9" fill="#475569">EMI Schedule</text>
+  <line x1="660" y1="380" x2="718" y2="380" stroke="#475569" stroke-width="1.5" marker-end="url(#a2)"/>
+  <text x="665" y="373" font-size="9" fill="#475569">Payments</text>
+  <line x1="180" y1="205" x2="100" y2="530" stroke="#475569" stroke-width="1.5" marker-end="url(#a2)"/>
+  <line x1="250" y1="425" x2="330" y2="530" stroke="#475569" stroke-width="1.5" marker-end="url(#a2)"/>
+  <line x1="550" y1="425" x2="545" y2="530" stroke="#475569" stroke-width="1.5" marker-end="url(#a2)"/>
+  <line x1="830" y1="425" x2="775" y2="530" stroke="#475569" stroke-width="1.5" marker-end="url(#a2)"/>
+
+  <!-- External entities -->
+  <rect x="880" y="140" width="100" height="40" fill="#D1FAE5" stroke="#10B981" stroke-width="2" rx="4"/>
+  <text x="930" y="164" text-anchor="middle" font-size="11" font-weight="bold" fill="#065F46">Customer</text>
+  <line x1="880" y1="160" x2="810" y2="160" stroke="#475569" stroke-width="1.5" marker-end="url(#a2)"/>
+  <rect x="880" y="358" width="100" height="40" fill="#DBEAFE" stroke="#3B82F6" stroke-width="2" rx="4"/>
+  <text x="930" y="382" text-anchor="middle" font-size="11" font-weight="bold" fill="#1D4ED8">Agent</text>
+  <line x1="880" y1="378" x2="942" y2="378" stroke="#475569" stroke-width="1.5" marker-end="url(#a2)"/>
+</svg>
