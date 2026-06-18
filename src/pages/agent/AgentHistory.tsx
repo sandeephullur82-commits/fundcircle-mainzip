@@ -1,4 +1,4 @@
-import { useState } from "react";
+import React, { useState } from "react";
 import { useCollectionRealtime } from "@/lib/firestore-hooks";
 import { useUser } from "@clerk/clerk-react";
 import { Collection, Membership } from "@/types";
@@ -10,6 +10,50 @@ import { where } from "firebase/firestore";
 import { toDate } from "@/components/agent/CollectDialog";
 
 type TypeFilter = "ALL" | "SAVINGS" | "EMI" | "COMBINED";
+
+function CollectionEntry({ col, getCustName }: { col: Collection; getCustName: (col: Collection) => string; key?: React.Key }) {
+  const colType = getCollectionType(col);
+  const d       = toDate(col.collectedAt || (col as any).timestamp);
+  return (
+    <div className="flex items-center justify-between px-4 py-3">
+      <div className="flex items-start gap-3">
+        <div className={`w-8 h-8 rounded-xl flex items-center justify-center shrink-0 mt-0.5 ${
+          colType === "EMI"      ? "bg-indigo-100"
+          : colType === "COMBINED" ? "bg-violet-100"
+          : "bg-emerald-100"
+        }`}>
+          {colType === "EMI"      && <CreditCard className="w-4 h-4 text-indigo-600" />}
+          {colType === "COMBINED" && <Layers     className="w-4 h-4 text-violet-600" />}
+          {colType === "SAVINGS"  && <PiggyBank  className="w-4 h-4 text-emerald-600" />}
+        </div>
+        <div>
+          <p className="font-semibold text-slate-900 text-sm">{getCustName(col)}</p>
+          <div className="flex items-center gap-2 mt-0.5">
+            <span className={`text-[10px] font-bold ${
+              colType === "EMI"      ? "text-indigo-600"
+              : colType === "COMBINED" ? "text-violet-600"
+              : "text-emerald-600"
+            }`}>
+              {colType === "EMI" ? "EMI" : colType === "COMBINED" ? "S+L" : "SAVINGS"}
+            </span>
+            <span className="text-xs text-slate-400">
+              {d.getTime() > 0 ? format(d, "h:mm a") : "—"}
+            </span>
+            {col.receiptNo && (
+              <span className="text-xs text-slate-300 font-mono hidden sm:block">{col.receiptNo}</span>
+            )}
+          </div>
+        </div>
+      </div>
+      <div className="text-right">
+        <p className="font-bold text-emerald-600 text-sm">+₹{Number(col.amount).toLocaleString()}</p>
+        {col.receiptNo && (
+          <p className="font-mono text-[10px] text-slate-300 sm:hidden">{col.receiptNo}</p>
+        )}
+      </div>
+    </div>
+  );
+}
 
 const TYPE_FILTER_TABS: { id: TypeFilter; label: string }[] = [
   { id: "ALL",      label: "All"      },
@@ -86,50 +130,6 @@ export default function AgentHistory() {
     URL.revokeObjectURL(url);
   };
 
-  const CollectionEntry = ({ col }: { col: Collection }) => {
-    const colType = getCollectionType(col);
-    const d       = toDate(col.collectedAt || (col as any).timestamp);
-    return (
-      <div className="flex items-center justify-between px-4 py-3">
-        <div className="flex items-start gap-3">
-          <div className={`w-8 h-8 rounded-xl flex items-center justify-center shrink-0 mt-0.5 ${
-            colType === "EMI"      ? "bg-indigo-100"
-            : colType === "COMBINED" ? "bg-violet-100"
-            : "bg-emerald-100"
-          }`}>
-            {colType === "EMI"      && <CreditCard className="w-4 h-4 text-indigo-600" />}
-            {colType === "COMBINED" && <Layers     className="w-4 h-4 text-violet-600" />}
-            {colType === "SAVINGS"  && <PiggyBank  className="w-4 h-4 text-emerald-600" />}
-          </div>
-          <div>
-            <p className="font-semibold text-slate-900 text-sm">{getCustName(col)}</p>
-            <div className="flex items-center gap-2 mt-0.5">
-              <span className={`text-[10px] font-bold ${
-                colType === "EMI"      ? "text-indigo-600"
-                : colType === "COMBINED" ? "text-violet-600"
-                : "text-emerald-600"
-              }`}>
-                {colType === "EMI" ? "EMI" : colType === "COMBINED" ? "S+L" : "SAVINGS"}
-              </span>
-              <span className="text-xs text-slate-400">
-                {d.getTime() > 0 ? format(d, "h:mm a") : "—"}
-              </span>
-              {col.receiptNo && (
-                <span className="text-xs text-slate-300 font-mono hidden sm:block">{col.receiptNo}</span>
-              )}
-            </div>
-          </div>
-        </div>
-        <div className="text-right">
-          <p className="font-bold text-emerald-600 text-sm">+₹{Number(col.amount).toLocaleString()}</p>
-          {col.receiptNo && (
-            <p className="font-mono text-[10px] text-slate-300 sm:hidden">{col.receiptNo}</p>
-          )}
-        </div>
-      </div>
-    );
-  };
-
   return (
     <div className="space-y-5">
       <div className="flex items-start justify-between gap-3">
@@ -198,7 +198,7 @@ export default function AgentHistory() {
               </div>
               <Card>
                 <CardContent className="p-0 divide-y divide-slate-50">
-                  {todayItems.map((col) => <CollectionEntry key={col.id} col={col} />)}
+                  {todayItems.map((col) => <CollectionEntry key={col.id} col={col} getCustName={getCustName} />)}
                 </CardContent>
               </Card>
             </div>
@@ -215,7 +215,7 @@ export default function AgentHistory() {
               </div>
               <Card>
                 <CardContent className="p-0 divide-y divide-slate-50">
-                  {yesterdayItems.map((col) => <CollectionEntry key={col.id} col={col} />)}
+                  {yesterdayItems.map((col) => <CollectionEntry key={col.id} col={col} getCustName={getCustName} />)}
                 </CardContent>
               </Card>
             </div>
@@ -232,7 +232,7 @@ export default function AgentHistory() {
               </div>
               <Card>
                 <CardContent className="p-0 divide-y divide-slate-50">
-                  {paginated.map((col) => <CollectionEntry key={col.id} col={col} />)}
+                  {paginated.map((col) => <CollectionEntry key={col.id} col={col} getCustName={getCustName} />)}
                 </CardContent>
               </Card>
               {hasMore && (
