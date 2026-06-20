@@ -13,8 +13,8 @@ import { where, doc, updateDoc, serverTimestamp, getDocs, query, collection } fr
 import { db } from "@/lib/firebase";
 import {
   Search, Plus, AlertTriangle, Crown, Users, ChevronDown, RefreshCw,
-  Loader2, KeyRound, Copy, Check, ShieldCheck, Pencil, UserX, Eye, Phone,
-  MapPin, FileText, UserCheck, Lock,
+  Loader2, KeyRound, Copy, Check, ShieldCheck, Pencil, UserX, Phone,
+  MapPin, FileText, UserCheck,
 } from "lucide-react";
 import { toast } from "sonner";
 import { fcToast } from "@/lib/toast";
@@ -61,7 +61,6 @@ export default function OrgCustomers() {
   const [phone, setPhone] = useState("");
   const [address, setAddress] = useState("");
   const [notes, setNotes] = useState("");
-  const [customerType, setCustomerType] = useState<"SAVINGS" | "LOAN" | "SAVINGS_LOAN">("SAVINGS_LOAN");
   const [selectedCollectorId, setSelectedCollectorId] = useState("");
   const [credentials, setCredentials] = useState<CreatedCredentials | null>(null);
   const [copiedField, setCopiedField] = useState<"email" | "password" | null>(null);
@@ -77,7 +76,6 @@ export default function OrgCustomers() {
   const [editNominee, setEditNominee] = useState({ name: "", relation: "", phone: "", address: "" });
   const [nomineePhoneError, setNomineePhoneError] = useState("");
   const [editCollectorId, setEditCollectorId] = useState("");
-  const [editCustomerType, setEditCustomerType] = useState<"SAVINGS" | "LOAN" | "SAVINGS_LOAN">("SAVINGS_LOAN");
   const [editNotes, setEditNotes] = useState("");
   const [savingEdit, setSavingEdit] = useState(false);
   // Nominee override reason (required when customer has an active loan)
@@ -97,8 +95,7 @@ export default function OrgCustomers() {
   const collectorsForAssignment = [...activeOwners, ...activeAgents];
   const collectorsLoading = ownersLoading || agentsLoading;
 
-  // ── Active tab filter + pagination ─────────────────────────────────────────
-  const [activeTypeTab, setActiveTypeTab] = useState<"ALL" | "SAVINGS" | "LOAN" | "SAVINGS_LOAN">("ALL");
+  // ── Pagination ─────────────────────────────────────────────────────────────
   const [currentPage, setCurrentPage] = useState(1);
   const ITEMS_PER_PAGE = 15;
 
@@ -160,10 +157,6 @@ export default function OrgCustomers() {
   const atLimit = activeCustomers >= maxCustomers;
 
   // ── Check if any customer has legacy membership-doc-ID format in assignedAgentId ──
-  // Real-time derived value: is the customer in the edit dialog loan-locked?
-  const custActiveLoansInEdit = editCustomer ? (activeLoansByCustomer[editCustomer.id] || 0) : 0;
-  const editTypeLocked = custActiveLoansInEdit > 0;
-
   const needsMigration = !migrationDone && customers.some((c: any) => {
     const aid: string = (c as any).assignedAgentId || "";
     return aid && !aid.startsWith("user_") && aid.includes("_");
@@ -187,25 +180,14 @@ export default function OrgCustomers() {
     }
   };
 
-  // ── Type filter → search filter → pagination ──────────────────────────────
-  const getCustomerType = (c: any) =>
-    ((c.customerType || "SAVINGS_LOAN") as string).toUpperCase() as "SAVINGS" | "LOAN" | "SAVINGS_LOAN";
+  // ── Search filter → pagination ────────────────────────────────────────────
+  const countAll = visibleCustomers.length;
 
-  const typeFilteredCustomers = activeTypeTab === "ALL"
-    ? visibleCustomers
-    : visibleCustomers.filter((c) => getCustomerType(c) === activeTypeTab);
-
-  const filteredCustomers = typeFilteredCustomers.filter((u) =>
+  const filteredCustomers = visibleCustomers.filter((u) =>
     ((u?.fullName || (u as any)?.name || "").toLowerCase().includes(searchTerm.toLowerCase())) ||
     ((u?.phone || "").includes(searchTerm)) ||
     ((u?.email || "").toLowerCase().includes(searchTerm.toLowerCase()))
   );
-
-  // ── Type counts (from visible, not tab-filtered) ───────────────────────────
-  const countAll = visibleCustomers.length;
-  const countSavings = visibleCustomers.filter((c) => getCustomerType(c) === "SAVINGS").length;
-  const countLoan = visibleCustomers.filter((c) => getCustomerType(c) === "LOAN").length;
-  const countSavingsLoan = visibleCustomers.filter((c) => getCustomerType(c) === "SAVINGS_LOAN").length;
 
   // ── Pagination ─────────────────────────────────────────────────────────────
   const totalPages = Math.ceil(filteredCustomers.length / ITEMS_PER_PAGE);
@@ -214,8 +196,8 @@ export default function OrgCustomers() {
     currentPage * ITEMS_PER_PAGE
   );
 
-  // Reset to page 1 when tab or search changes
-  useEffect(() => { setCurrentPage(1); }, [activeTypeTab, searchTerm]);
+  // Reset to page 1 when search changes
+  useEffect(() => { setCurrentPage(1); }, [searchTerm]);
 
   const statusClass = (status?: string) => {
     if (status === "ACTIVE")          return "bg-emerald-50 text-emerald-700 border-emerald-100";
@@ -235,7 +217,7 @@ export default function OrgCustomers() {
 
   const resetForm = () => {
     setFirstName(""); setLastName(""); setEmail(""); setPhone("");
-    setAddress(""); setNotes(""); setCustomerType("SAVINGS_LOAN");
+    setAddress(""); setNotes("");
     setSelectedCollectorId(""); setCredentials(null); setCopiedField(null);
     setFormErrors({});
   };
@@ -345,7 +327,6 @@ export default function OrgCustomers() {
         assignedAgentId: (collectorToAssign as any).clerkUserId || collectorToAssign.id,
         assignedAgentName: collectorToAssign.fullName || (collectorToAssign as any).name || "",
         assignedCollectorRole: (collectorToAssign.role as string) || "AGENT",
-        customerType,
         createdBy: user.id,
         actorName: user.fullName || user.firstName || "",
         authToken: authToken || undefined,
@@ -378,7 +359,6 @@ export default function OrgCustomers() {
       (c: any) => c.id === assignedId || c.clerkUserId === assignedId
     );
     setEditCollectorId(matchedColl?.id || "");
-    setEditCustomerType(((customer as any).customerType as any) || "SAVINGS_LOAN");
     setEditNotes((customer as any).notes || "");
     setNomineeOverrideReason("");
     setShowNomineeOverride(false);
@@ -402,13 +382,6 @@ export default function OrgCustomers() {
     const cleanNotes          = sanitizeMultiline(editNotes, 500);
 
     const custActiveLoans = activeLoansByCustomer[editCustomer.id] || 0;
-    const originalType    = (editCustomer as any).customerType || "SAVINGS_LOAN";
-
-    // ── Client-side guard: block customerType change when loans are active ──
-    if (editCustomerType !== originalType && custActiveLoans > 0) {
-      toast.error("Customer type cannot be changed while an active loan exists.");
-      return;
-    }
 
     // ── Detect nominee change — require override reason when loans active ──
     const prevNomineeName     = editCustomer.nomineeName     || editCustomer.nominee?.name     || "";
@@ -433,10 +406,8 @@ export default function OrgCustomers() {
     try {
       const authToken = await getToken();
 
-      // ── Call server endpoint — validates customerType lock server-side ──
       const body: Record<string, any> = {
         organizationId:   organization?.id,
-        customerType:     editCustomerType,
         phone:            cleanPhone || editPhone,
         address:          cleanAddress,
         nomineeName:      cleanNomineeName,
@@ -748,32 +719,6 @@ export default function OrgCustomers() {
                   </div>
 
                   <div className="space-y-1.5">
-                    <Label className="text-sm font-semibold text-slate-700">
-                      Customer Type <span className="text-red-500">*</span>
-                    </Label>
-                    <div className="grid grid-cols-3 gap-2">
-                      {(["SAVINGS", "LOAN", "SAVINGS_LOAN"] as const).map((type) => {
-                        const labels: Record<string, string> = { SAVINGS: "Savings Only", LOAN: "Loan Only", SAVINGS_LOAN: "Savings + Loan" };
-                        const colors: Record<string, string> = {
-                          SAVINGS: customerType === type ? "bg-emerald-600 text-white border-emerald-600" : "bg-white text-slate-600 border-slate-200 hover:bg-emerald-50",
-                          LOAN: customerType === type ? "bg-blue-600 text-white border-blue-600" : "bg-white text-slate-600 border-slate-200 hover:bg-blue-50",
-                          SAVINGS_LOAN: customerType === type ? "bg-violet-600 text-white border-violet-600" : "bg-white text-slate-600 border-slate-200 hover:bg-violet-50",
-                        };
-                        return (
-                          <button
-                            key={type}
-                            type="button"
-                            onClick={() => setCustomerType(type)}
-                            className={`px-2 py-2 rounded-lg border text-xs font-semibold transition-colors ${colors[type]}`}
-                          >
-                            {labels[type]}
-                          </button>
-                        );
-                      })}
-                    </div>
-                  </div>
-
-                  <div className="space-y-1.5">
                     <Label htmlFor="cust-notes" className="text-sm font-semibold text-slate-700">
                       Notes
                     </Label>
@@ -863,70 +808,10 @@ export default function OrgCustomers() {
         </div>
       )}
 
-      {/* ── Count Stat Cards ── */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-        <div
-          onClick={() => setActiveTypeTab("ALL")}
-          className={`rounded-xl border p-3 cursor-pointer transition-all ${activeTypeTab === "ALL" ? "border-slate-400 bg-slate-900 text-white shadow-sm" : "border-slate-200 bg-white hover:border-slate-300"}`}
-        >
-          <p className={`text-xs font-semibold uppercase tracking-wide ${activeTypeTab === "ALL" ? "text-slate-300" : "text-slate-500"}`}>Total Customers</p>
-          <p className={`text-2xl font-bold mt-1 ${activeTypeTab === "ALL" ? "text-white" : "text-slate-900"}`}>{countAll}</p>
-        </div>
-        <div
-          onClick={() => setActiveTypeTab("SAVINGS")}
-          className={`rounded-xl border p-3 cursor-pointer transition-all ${activeTypeTab === "SAVINGS" ? "border-emerald-400 bg-emerald-600 text-white shadow-sm" : "border-emerald-100 bg-emerald-50 hover:border-emerald-200"}`}
-        >
-          <p className={`text-xs font-semibold uppercase tracking-wide ${activeTypeTab === "SAVINGS" ? "text-emerald-100" : "text-emerald-600"}`}>Savings Only</p>
-          <p className={`text-2xl font-bold mt-1 ${activeTypeTab === "SAVINGS" ? "text-white" : "text-emerald-700"}`}>{countSavings}</p>
-        </div>
-        <div
-          onClick={() => setActiveTypeTab("LOAN")}
-          className={`rounded-xl border p-3 cursor-pointer transition-all ${activeTypeTab === "LOAN" ? "border-orange-400 bg-orange-500 text-white shadow-sm" : "border-orange-100 bg-orange-50 hover:border-orange-200"}`}
-        >
-          <p className={`text-xs font-semibold uppercase tracking-wide ${activeTypeTab === "LOAN" ? "text-orange-100" : "text-orange-600"}`}>Loan Only</p>
-          <p className={`text-2xl font-bold mt-1 ${activeTypeTab === "LOAN" ? "text-white" : "text-orange-700"}`}>{countLoan}</p>
-        </div>
-        <div
-          onClick={() => setActiveTypeTab("SAVINGS_LOAN")}
-          className={`rounded-xl border p-3 cursor-pointer transition-all ${activeTypeTab === "SAVINGS_LOAN" ? "border-violet-400 bg-violet-600 text-white shadow-sm" : "border-violet-100 bg-violet-50 hover:border-violet-200"}`}
-        >
-          <p className={`text-xs font-semibold uppercase tracking-wide ${activeTypeTab === "SAVINGS_LOAN" ? "text-violet-100" : "text-violet-600"}`}>Savings + Loan</p>
-          <p className={`text-2xl font-bold mt-1 ${activeTypeTab === "SAVINGS_LOAN" ? "text-white" : "text-violet-700"}`}>{countSavingsLoan}</p>
-        </div>
-      </div>
-
-      {/* ── Filter Tabs ── */}
-      <div className="overflow-x-auto -mx-1 px-1 pb-0.5">
-        <div className="flex gap-1.5 min-w-max">
-          {(
-            [
-              { key: "ALL", label: "All Customers", count: countAll, activeClass: "bg-slate-900 text-white border-slate-900", dotClass: "" },
-              { key: "SAVINGS", label: "Savings Only", count: countSavings, activeClass: "bg-emerald-600 text-white border-emerald-600", dotClass: "bg-emerald-400" },
-              { key: "LOAN", label: "Loan Only", count: countLoan, activeClass: "bg-orange-500 text-white border-orange-500", dotClass: "bg-orange-400" },
-              { key: "SAVINGS_LOAN", label: "Savings + Loan", count: countSavingsLoan, activeClass: "bg-violet-600 text-white border-violet-600", dotClass: "bg-violet-400" },
-            ] as const
-          ).map(({ key, label, count, activeClass, dotClass }) => (
-            <button
-              key={key}
-              onClick={() => setActiveTypeTab(key)}
-              className={`inline-flex items-center gap-1.5 px-3.5 py-2 rounded-full border text-sm font-semibold transition-all whitespace-nowrap ${
-                activeTypeTab === key
-                  ? activeClass
-                  : "bg-white text-slate-600 border-slate-200 hover:border-slate-300 hover:bg-slate-50"
-              }`}
-            >
-              {key !== "ALL" && (
-                <span className={`w-2 h-2 rounded-full ${activeTypeTab === key ? "bg-white/70" : dotClass}`} />
-              )}
-              {label}
-              <span className={`ml-0.5 text-xs px-1.5 py-0.5 rounded-full font-bold ${
-                activeTypeTab === key ? "bg-white/20" : "bg-slate-100 text-slate-500"
-              }`}>
-                {count}
-              </span>
-            </button>
-          ))}
-        </div>
+      {/* ── Count Stat Card ── */}
+      <div className="rounded-xl border border-slate-200 bg-white p-3 w-fit">
+        <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Total Customers</p>
+        <p className="text-2xl font-bold mt-1 text-slate-900">{countAll}</p>
       </div>
 
       <Card>
@@ -947,7 +832,6 @@ export default function OrgCustomers() {
               <TableHeader>
                 <TableRow>
                   <TableHead>Customer</TableHead>
-                  <TableHead>Type</TableHead>
                   <TableHead>Phone</TableHead>
                   <TableHead>Assigned Collector</TableHead>
                   <TableHead className="text-right">Savings Balance</TableHead>
@@ -960,7 +844,7 @@ export default function OrgCustomers() {
                 {loading ? (
                   [...Array(3)].map((_, i) => (
                     <TableRow key={i}>
-                      {[...Array(7)].map((_, j) => (
+                      {[...Array(6)].map((_, j) => (
                         <TableCell key={j}>
                           <div className="h-4 bg-slate-100 rounded animate-pulse w-20" />
                         </TableCell>
@@ -969,11 +853,11 @@ export default function OrgCustomers() {
                   ))
                 ) : filteredCustomers.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={7} className="py-0">
+                    <TableCell colSpan={6} className="py-0">
                       <EmptyState
                         icon={<Users className="w-8 h-8" />}
-                        title={searchTerm ? "No customers match your search." : activeTypeTab === "ALL" ? "No customers yet." : "No customers in this category."}
-                        description={!searchTerm && activeTypeTab === "ALL" ? "Click \"Add Customer\" to add your first savings member." : undefined}
+                        title={searchTerm ? "No customers match your search." : "No customers yet."}
+                        description={!searchTerm ? "Click \"Add Customer\" to add your first savings member." : undefined}
                       />
                     </TableCell>
                   </TableRow>
@@ -996,14 +880,6 @@ export default function OrgCustomers() {
                             </p>
                             <p className="text-xs text-slate-400 truncate max-w-[160px]">{customer.email || "—"}</p>
                           </div>
-                        </TableCell>
-                        <TableCell>
-                          {(() => {
-                            const ct = (customer as any).customerType as string | undefined;
-                            if (ct === "SAVINGS") return <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-100">Savings</span>;
-                            if (ct === "LOAN") return <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[10px] font-bold bg-orange-50 text-orange-700 border border-orange-100">Loan</span>;
-                            return <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[10px] font-bold bg-violet-50 text-violet-700 border border-violet-100">S+L</span>;
-                          })()}
                         </TableCell>
                         <TableCell className="text-slate-600">
                           {customer.phone || <span className="text-slate-400">—</span>}
@@ -1080,8 +956,8 @@ export default function OrgCustomers() {
             ) : filteredCustomers.length === 0 ? (
               <EmptyState
                 icon={<Users className="w-7 h-7" />}
-                title={searchTerm ? "No customers match your search." : activeTypeTab === "ALL" ? "No customers yet." : "No customers in this category."}
-                description={!searchTerm && activeTypeTab === "ALL" ? "Click \"Add Customer\" to add your first savings member." : undefined}
+                title={searchTerm ? "No customers match your search." : "No customers yet."}
+                description={!searchTerm ? "Click \"Add Customer\" to add your first savings member." : undefined}
                 compact
               />
             ) : (
@@ -1123,12 +999,6 @@ export default function OrgCustomers() {
                           <span className={`inline-flex items-center px-2 py-1 rounded-md text-xs font-medium border ${statusClass(customer.status as string)}`}>
                             {statusLabel(customer.status as string)}
                           </span>
-                          {(() => {
-                            const ct = ((customer as any).customerType || "SAVINGS_LOAN") as string;
-                            if (ct === "SAVINGS") return <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-100">Savings</span>;
-                            if (ct === "LOAN") return <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[10px] font-bold bg-orange-50 text-orange-700 border border-orange-100">Loan</span>;
-                            return <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[10px] font-bold bg-violet-50 text-violet-700 border border-violet-100">S+L</span>;
-                          })()}
                           <div className="flex gap-1">
                             <button onClick={() => handleOpenEdit(customer)} className="p-1 rounded text-slate-400 hover:text-emerald-600 transition-colors"><Pencil className="w-3.5 h-3.5" /></button>
                             {collectorsForAssignment.length > 1 && (
@@ -1232,45 +1102,6 @@ export default function OrgCustomers() {
               <div className="space-y-1.5">
                 <Label className="flex items-center gap-1.5"><MapPin className="w-3.5 h-3.5 text-slate-400" /> Address</Label>
                 <Input value={editAddress} onChange={(e) => setEditAddress(e.target.value)} placeholder="House no, street, city…" />
-              </div>
-
-              <div className="space-y-1.5">
-                <Label className="flex items-center gap-1.5">
-                  {editTypeLocked && <Lock className="w-3.5 h-3.5 text-slate-400" />}
-                  Customer Type
-                </Label>
-                {editTypeLocked ? (
-                  /* ── Locked: active loan exists ── */
-                  <div className="flex items-start gap-3 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2.5">
-                    <Lock className="w-4 h-4 text-slate-400 shrink-0 mt-0.5" />
-                    <div className="min-w-0">
-                      <p className="text-sm font-semibold text-slate-800">
-                        {editCustomerType === "SAVINGS" ? "Savings Only" : editCustomerType === "LOAN" ? "Loan Only" : "Savings + Loan"}
-                      </p>
-                      <p className="text-xs text-slate-500 mt-0.5">
-                        Customer type cannot be changed while an active loan exists.
-                      </p>
-                    </div>
-                  </div>
-                ) : (
-                  /* ── Unlocked: no active loans ── */
-                  <div className="grid grid-cols-3 gap-2">
-                    {(["SAVINGS", "LOAN", "SAVINGS_LOAN"] as const).map((type) => {
-                      const labels: Record<string, string> = { SAVINGS: "Savings Only", LOAN: "Loan Only", SAVINGS_LOAN: "Savings + Loan" };
-                      const cls = {
-                        SAVINGS:      editCustomerType === type ? "bg-emerald-600 text-white border-emerald-600" : "bg-white text-slate-600 border-slate-200",
-                        LOAN:         editCustomerType === type ? "bg-blue-600 text-white border-blue-600"       : "bg-white text-slate-600 border-slate-200",
-                        SAVINGS_LOAN: editCustomerType === type ? "bg-violet-600 text-white border-violet-600"   : "bg-white text-slate-600 border-slate-200",
-                      }[type];
-                      return (
-                        <button key={type} type="button" onClick={() => setEditCustomerType(type)}
-                          className={`px-2 py-2 rounded-lg border text-xs font-semibold transition-colors ${cls}`}>
-                          {labels[type]}
-                        </button>
-                      );
-                    })}
-                  </div>
-                )}
               </div>
 
               <div className="space-y-1.5">

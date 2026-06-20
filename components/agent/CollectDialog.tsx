@@ -19,19 +19,6 @@ import FieldError from "@/components/ui/FieldError";
 
 type CollectMode = "SAVINGS" | "LOAN" | "COMBINED" | null;
 
-export const TYPE_BADGE: Record<string, string> = {
-  SAVINGS:      "bg-emerald-100 text-emerald-700",
-  LOAN:         "bg-indigo-100 text-indigo-700",
-  SAVINGS_LOAN: "bg-violet-100 text-violet-700",
-};
-export const TYPE_LABEL: Record<string, string> = {
-  SAVINGS: "Savings", LOAN: "Loan", SAVINGS_LOAN: "S+L",
-};
-
-export function getCustomerType(c: any): "SAVINGS" | "LOAN" | "SAVINGS_LOAN" {
-  return (c?.customerType as "SAVINGS" | "LOAN" | "SAVINGS_LOAN") || "SAVINGS_LOAN";
-}
-
 export function toDate(ts: any): Date {
   if (!ts) return new Date(0);
   if (ts?.toDate) return ts.toDate();
@@ -71,7 +58,6 @@ export default function CollectDialog({
       setSavingsAccount(null); setActiveLoan(null); setNextInstallment(null);
       return;
     }
-    const cType = getCustomerType(customer);
     setLoadingDetails(true);
     setSavingsAmount(""); setEmiAmount("");
     setSavingsError(""); setEmiError("");
@@ -79,36 +65,21 @@ export default function CollectDialog({
 
     (async () => {
       try {
-        if (cType === "SAVINGS") {
-          setCollectMode("SAVINGS");
-          const acc = await getSavingsAccountByCustomer(customer.id, orgId);
-          setSavingsAccount(acc);
-        } else if (cType === "LOAN") {
-          setCollectMode("LOAN");
-          const loan = await getActiveLoanForCustomer(customer.id, orgId);
-          setActiveLoan(loan);
-          if (loan) {
-            const inst = await getNextPendingInstallment(loan.id);
-            setNextInstallment(inst);
-            if (inst) setEmiAmount(String(inst.emiAmount || ""));
-          }
-        } else {
-          const [acc, loan] = await Promise.all([
-            getSavingsAccountByCustomer(customer.id, orgId),
-            getActiveLoanForCustomer(customer.id, orgId),
-          ]);
-          setSavingsAccount(acc);
-          setActiveLoan(loan);
-          if (loan) {
-            const inst = await getNextPendingInstallment(loan.id);
-            setNextInstallment(inst);
-            if (inst) setEmiAmount(String(inst.emiAmount || ""));
-          }
-          if (acc && loan)     setCollectMode("COMBINED");
-          else if (acc)        setCollectMode("SAVINGS");
-          else if (loan)       setCollectMode("LOAN");
-          else                 setCollectMode("COMBINED");
+        const [acc, loan] = await Promise.all([
+          getSavingsAccountByCustomer(customer.id, orgId),
+          getActiveLoanForCustomer(customer.id, orgId),
+        ]);
+        setSavingsAccount(acc);
+        setActiveLoan(loan);
+        if (loan) {
+          const inst = await getNextPendingInstallment(loan.id);
+          setNextInstallment(inst);
+          if (inst) setEmiAmount(String(inst.emiAmount || ""));
         }
+        if (acc && loan)     setCollectMode("COMBINED");
+        else if (acc)        setCollectMode("SAVINGS");
+        else if (loan)       setCollectMode("LOAN");
+        else                 setCollectMode("SAVINGS");
       } catch {
         toast.error("Failed to load account details.");
       } finally {
@@ -118,7 +89,6 @@ export default function CollectDialog({
   }, [customer?.id]);
 
   const custName = customer ? (customer.fullName || customer.name || customer.email || "") : "";
-  const cType    = customer ? getCustomerType(customer) : "SAVINGS_LOAN";
 
   const handleCollectSavings = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -229,9 +199,6 @@ export default function CollectDialog({
               <div className="bg-slate-50 rounded-xl p-4 space-y-1">
                 <div className="flex items-center justify-between">
                   <p className="font-bold text-slate-900">{custName}</p>
-                  <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full ${TYPE_BADGE[cType]}`}>
-                    {TYPE_LABEL[cType]}
-                  </span>
                 </div>
                 <p className="text-xs text-slate-500">{customer.phone || customer.email}</p>
 

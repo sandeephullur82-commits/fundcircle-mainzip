@@ -108,7 +108,7 @@ async function fsUpdate(col: string, docId: string, fields: Record<string, any>)
   }
 }
 
-// Count active loans for a given customer (used for customerType lock validation)
+// Count active loans for a given customer
 const ACTIVE_LOAN_STATUSES = new Set(["ACTIVE", "OVERDUE", "PARTIALLY_PAID"]);
 async function fsCountActiveLoans(customerId: string, organizationId: string): Promise<number> {
   if (!FIREBASE_API_KEY) return 0;
@@ -497,14 +497,12 @@ app.post("/api/create-customer", authMiddleware, async (req, res) => {
     organizationId, organizationName,
     createdBy, actorName,
     assignedAgentId, assignedAgentName, assignedCollectorRole,
-    customerType,
     address, notes,
   } = req.body as {
     firstName: string; lastName: string; email: string;
     phone?: string; organizationId: string; organizationName?: string;
     createdBy?: string; actorName?: string;
     assignedAgentId?: string; assignedAgentName?: string; assignedCollectorRole?: string;
-    customerType?: string;
     address?: string; notes?: string;
   };
 
@@ -512,8 +510,6 @@ app.post("/api/create-customer", authMiddleware, async (req, res) => {
   console.log("[FC CreateCustomer]   Org ID      :", organizationId ?? "MISSING");
   console.log("[FC CreateCustomer]   createdBy   :", createdBy ?? "MISSING");
   console.log("[FC CreateCustomer]   email       :", email ?? "MISSING");
-  console.log("[FC CreateCustomer]   customerType:", customerType ?? "SAVINGS_LOAN");
-
   if (!firstName || !email || !organizationId) {
     console.warn("[FC CreateCustomer] ✗ Missing required fields");
     return res.status(400).json({ error: "firstName, email, and organizationId are required." });
@@ -525,9 +521,6 @@ app.post("/api/create-customer", authMiddleware, async (req, res) => {
   if (lastName && !srvValidName(lastName, 1, 50)) custValidErrors.lastName = "Last name is too long (max 50 chars).";
   if (!srvValidEmail(email))            custValidErrors.email     = "A valid email address is required.";
   if (phone && !srvValidPhone(phone))   custValidErrors.phone     = "Phone must be a valid 10-digit number.";
-  if (customerType && !ALLOWED_CUSTOMER_TYPES.has(customerType)) {
-    custValidErrors.customerType = "Customer type must be SAVINGS, LOAN, or SAVINGS_LOAN.";
-  }
   if (Object.keys(custValidErrors).length) {
     console.warn("[FC CreateCustomer] ✗ Validation failed:", custValidErrors);
     return res.status(400).json({ error: "Validation failed.", errors: custValidErrors });
@@ -549,7 +542,6 @@ app.post("/api/create-customer", authMiddleware, async (req, res) => {
   const sanitizedLastCust  = srvSanitize(lastName || "", 50);
   const generatedPassword = generatePassword();
   const fullName = `${sanitizedFirstCust} ${sanitizedLastCust}`.trim();
-  const effectiveCustomerType = ALLOWED_CUSTOMER_TYPES.has(customerType || "") ? customerType! : "SAVINGS_LOAN";
 
   let userId: string;
   let isNewUser = false;
@@ -633,7 +625,6 @@ app.post("/api/create-customer", authMiddleware, async (req, res) => {
       assignedAgentId:       sv(assignedAgentId || ""),
       assignedAgentName:     sv(assignedAgentName || ""),
       assignedCollectorRole: sv(assignedCollectorRole || ""),
-      customerType: sv(effectiveCustomerType),
       profileCompleted: bv(false),
       status:       sv("PENDING_SETUP"),
       createdBy:    sv(createdBy || ""),
@@ -654,34 +645,7 @@ app.post("/api/create-customer", authMiddleware, async (req, res) => {
     });
     console.log("[FC CreateCustomer] ✓ customers written — accountNumber:", accountNumber);
 
-    // 3c. savings_accounts (skip for LOAN-only customers)
-    const needsSavings = effectiveCustomerType !== "LOAN";
-    if (needsSavings) {
-      await fsAdd("savings_accounts", {
-        customerId:       sv(membershipDocId),
-        organizationId:   sv(organizationId),
-        accountNumber:    sv(accountNumber),
-        balance:          iv(0),
-        totalDeposited:   iv(0),
-        totalWithdrawn:   iv(0),
-        status:           sv("ACTIVE"),
-        planId:           sv(""),
-        planName:         sv(""),
-        monthlyAmount:    iv(0),
-        tenure:           iv(0),
-        interestRate:     iv(0),
-        maturityAmount:   iv(0),
-        startDate:        sv(""),
-        maturityDate:     sv(""),
-        createdAt:        tv(now),
-        updatedAt:        tv(now),
-      });
-      console.log("[FC CreateCustomer] ✓ savings_accounts written");
-    } else {
-      console.log("[FC CreateCustomer] LOAN-only customer — skipping savings_accounts");
-    }
-
-    // 3d. users
+    // 3c. users
     await fsSet("users", userId, {
       clerkUserId: sv(userId),
       id:          sv(userId),
@@ -711,7 +675,6 @@ app.post("/api/create-customer", authMiddleware, async (req, res) => {
             email:         sv(emailKey),
             fullName:      sv(fullName),
             role:          sv("CUSTOMER"),
-            customerType:  sv(effectiveCustomerType),
             accountNumber: sv(accountNumber),
           },
         },
@@ -775,14 +738,12 @@ app.put("/api/update-customer/:customerId", authMiddleware, async (req, res) => 
   const { customerId } = req.params;
   const {
     organizationId,
-    customerType,
     phone, address,
     nomineeName, nomineeRelation, nomineePhone, nomineeAddress,
     assignedAgentId, assignedAgentName,
     notes,
   } = req.body as {
     organizationId?: string;
-    customerType?: string;
     phone?: string; address?: string;
     nomineeName?: string; nomineeRelation?: string;
     nomineePhone?: string; nomineeAddress?: string;
@@ -799,9 +760,6 @@ app.put("/api/update-customer/:customerId", authMiddleware, async (req, res) => 
   if (phone !== undefined && phone !== null && phone.trim() && !srvValidPhone(phone)) {
     updValidErrors.phone = "Phone must be a valid 10-digit number.";
   }
-  if (customerType !== undefined && customerType !== null && !ALLOWED_CUSTOMER_TYPES.has(customerType)) {
-    updValidErrors.customerType = "Customer type must be SAVINGS, LOAN, or SAVINGS_LOAN.";
-  }
   if (nomineeRelation !== undefined && nomineeRelation !== null &&
       nomineeRelation.trim() && !ALLOWED_NOMINEE_RELS.has(nomineeRelation.trim())) {
     updValidErrors.nomineeRelation = "Select a valid nominee relationship.";
@@ -813,37 +771,9 @@ app.put("/api/update-customer/:customerId", authMiddleware, async (req, res) => 
     return res.status(400).json({ error: "Validation failed.", errors: updValidErrors });
   }
 
-  console.log("[FC UpdateCustomer] customerId:", customerId, "orgId:", organizationId, "newType:", customerType ?? "(unchanged)");
+  console.log("[FC UpdateCustomer] customerId:", customerId, "orgId:", organizationId);
 
-  // ── 1. Fetch current doc to check existing customerType ──────────────────
-  if (!FIREBASE_API_KEY) return res.status(500).json({ error: "Server misconfigured: missing API key" });
-
-  const currentDocUrl = `${FS_BASE}/organizationMembers/${encodeURIComponent(customerId)}?key=${FIREBASE_API_KEY}`;
-  let currentDoc: any;
-  try {
-    const r = await fetch(currentDocUrl);
-    if (!r.ok) return res.status(404).json({ error: "Customer not found." });
-    currentDoc = await r.json();
-  } catch (e: any) {
-    return res.status(500).json({ error: "Failed to fetch customer: " + e.message });
-  }
-
-  const currentType: string = currentDoc.fields?.customerType?.stringValue || "SAVINGS_LOAN";
-  const typeChanging = customerType != null && customerType !== currentType;
-
-  // ── 2. Block customerType change if active loans exist ───────────────────
-  if (typeChanging) {
-    const activeLoanCount = await fsCountActiveLoans(customerId, organizationId);
-    console.log("[FC UpdateCustomer] typeChanging:", currentType, "→", customerType, "| activeLoans:", activeLoanCount);
-    if (activeLoanCount > 0) {
-      return res.status(409).json({
-        error: "Customer type cannot be changed while an active loan exists.",
-        activeLoanCount,
-      });
-    }
-  }
-
-  // ── 3. Build partial-update payload ─────────────────────────────────────
+  // ── Build partial-update payload ─────────────────────────────────────────
   const now = new Date();
   const fields: Record<string, any> = { updatedAt: tv(now) };
 
@@ -856,7 +786,6 @@ app.put("/api/update-customer/:customerId", authMiddleware, async (req, res) => 
   const cleanNomineeAddress  = nomineeAddress ? srvSanitize(nomineeAddress, 500) : null;
   const cleanNotes           = notes          ? srvSanitize(notes, 500)          : null;
 
-  if (customerType         != null) fields.customerType    = sv(customerType);
   if (cleanPhone           != null) fields.phone           = sv(cleanPhone);
   if (cleanAddress         != null) fields.address         = sv(cleanAddress);
   if (cleanNomineeName     != null) fields.nomineeName     = sv(cleanNomineeName);

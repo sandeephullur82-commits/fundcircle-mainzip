@@ -4,14 +4,12 @@ import { Membership, Collection, Loan } from "@/types";
 import { Card, CardContent } from "@/components/ui/card";
 import {
   ChevronDown, ChevronUp, PiggyBank, CreditCard, IndianRupee, Users,
-  Phone, MapPin, UserCheck, Layers,
+  Phone, MapPin, UserCheck,
 } from "lucide-react";
 import { format, startOfDay } from "date-fns";
 import { useUser, useOrganization } from "@clerk/clerk-react";
 import { where } from "firebase/firestore";
-import CollectDialog, { TYPE_BADGE, TYPE_LABEL, getCustomerType, toDate } from "@/components/agent/CollectDialog";
-
-type TypeFilter = "ALL" | "SAVINGS" | "LOAN" | "SAVINGS_LOAN";
+import CollectDialog, { toDate } from "@/components/agent/CollectDialog";
 
 interface AgentCustomersProps {
   onCollect?: () => void;
@@ -36,7 +34,6 @@ export default function AgentCustomers({ onCollect }: AgentCustomersProps) {
     where("agentId", "==", agentId || "NONE"),
   ]);
 
-  const [typeFilter, setTypeFilter]       = useState<TypeFilter>("ALL");
   const [expandedId, setExpandedId]       = useState<string | null>(null);
   const [collectCustomer, setCollectCustomer] = useState<any | null>(null);
 
@@ -45,10 +42,6 @@ export default function AgentCustomers({ onCollect }: AgentCustomersProps) {
   const activeCustomers = allCustomers.filter((c) => (c as any).status === "ACTIVE");
 
   const filtered = activeCustomers
-    .filter((c) => {
-      if (typeFilter === "ALL") return true;
-      return getCustomerType(c) === typeFilter;
-    })
     .sort((a, b) => a.id.localeCompare(b.id));
 
   const getSavingsAccount = (customer: Membership) =>
@@ -71,13 +64,6 @@ export default function AgentCustomers({ onCollect }: AgentCustomersProps) {
 
   const shortId = (id: string) => `FC-${id.slice(-6).toUpperCase()}`;
 
-  const FILTER_TABS: { id: TypeFilter; label: string; icon: any }[] = [
-    { id: "ALL",          label: "All",     icon: Users },
-    { id: "SAVINGS",      label: "Savings", icon: PiggyBank },
-    { id: "LOAN",         label: "Loan",    icon: CreditCard },
-    { id: "SAVINGS_LOAN", label: "S+L",     icon: Layers },
-  ];
-
   return (
     <div className="space-y-5">
       <div className="flex items-center justify-between">
@@ -85,23 +71,6 @@ export default function AgentCustomers({ onCollect }: AgentCustomersProps) {
           <h2 className="text-xl font-bold text-slate-900">My Customers</h2>
           <p className="text-sm text-slate-500">{activeCustomers.length} assigned · sorted by ID</p>
         </div>
-      </div>
-
-      {/* Type filter */}
-      <div className="flex gap-1.5 overflow-x-auto pb-0.5 scrollbar-hide">
-        {FILTER_TABS.map(({ id, label, icon: Icon }) => (
-          <button
-            key={id}
-            onClick={() => setTypeFilter(id)}
-            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold border whitespace-nowrap transition-colors ${
-              typeFilter === id
-                ? "bg-emerald-600 text-white border-emerald-600"
-                : "bg-white text-slate-600 border-slate-200 hover:bg-slate-50"
-            }`}
-          >
-            <Icon className="w-3.5 h-3.5" /> {label}
-          </button>
-        ))}
       </div>
 
       {/* Customer list */}
@@ -113,16 +82,13 @@ export default function AgentCustomers({ onCollect }: AgentCustomersProps) {
         <div className="text-center py-14 text-slate-400">
           <Users className="w-10 h-10 mx-auto mb-3 opacity-30" />
           <p className="font-medium text-slate-500">No customers found</p>
-          <p className="text-xs mt-1">
-            {typeFilter !== "ALL" ? "Try a different filter." : "No customers assigned yet."}
-          </p>
+          <p className="text-xs mt-1">No customers assigned yet.</p>
         </div>
       ) : (
         <div className="space-y-2.5">
           {filtered.map((customer) => {
             const c            = customer as any;
             const name         = c.fullName || c.name || c.email || "";
-            const cType        = getCustomerType(customer);
             const isExpanded   = expandedId === customer.id;
             const savAcc       = getSavingsAccount(customer);
             const loan         = getActiveLoan(customer);
@@ -144,9 +110,6 @@ export default function AgentCustomers({ onCollect }: AgentCustomersProps) {
                       <div className="min-w-0 flex-1">
                         <div className="flex items-center gap-2 mb-1">
                           <p className="font-bold text-slate-900 truncate">{name}</p>
-                          <span className={`shrink-0 text-[9px] font-bold px-1.5 py-0.5 rounded-full ${TYPE_BADGE[cType]}`}>
-                            {TYPE_LABEL[cType]}
-                          </span>
                           {isDoneToday && (
                             <span className="shrink-0 text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-emerald-100 text-emerald-700">
                               ✓ Done
@@ -268,30 +231,23 @@ export default function AgentCustomers({ onCollect }: AgentCustomersProps) {
 
                     {/* Action buttons */}
                     <div className="flex gap-2 pt-1">
-                      {(cType === "SAVINGS" || cType === "SAVINGS_LOAN") && (
-                        <button
-                          onClick={() => setCollectCustomer(customer)}
-                          className="flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-semibold transition-colors"
-                        >
-                          <PiggyBank className="w-4 h-4" /> Savings Entry
-                        </button>
-                      )}
-                      {(cType === "LOAN" || cType === "SAVINGS_LOAN") && (
-                        <button
-                          onClick={() => setCollectCustomer(customer)}
-                          className="flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-semibold transition-colors"
-                        >
-                          <CreditCard className="w-4 h-4" /> EMI Entry
-                        </button>
-                      )}
-                      {cType !== "SAVINGS" && cType !== "LOAN" && cType !== "SAVINGS_LOAN" && (
-                        <button
-                          onClick={() => setCollectCustomer(customer)}
-                          className="flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-semibold transition-colors"
-                        >
-                          <IndianRupee className="w-4 h-4" /> Collect
-                        </button>
-                      )}
+                      <button
+                        onClick={() => setCollectCustomer(customer)}
+                        className={`flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-xl text-white text-sm font-semibold transition-colors ${
+                          savAcc && loan ? "bg-violet-600 hover:bg-violet-700"
+                          : loan ? "bg-indigo-600 hover:bg-indigo-700"
+                          : "bg-emerald-600 hover:bg-emerald-700"
+                        }`}
+                      >
+                        {savAcc && loan
+                          ? <><IndianRupee className="w-4 h-4" /> Collect Both</>
+                          : loan
+                          ? <><CreditCard className="w-4 h-4" /> EMI Entry</>
+                          : savAcc
+                          ? <><PiggyBank className="w-4 h-4" /> Savings Entry</>
+                          : <><IndianRupee className="w-4 h-4" /> Collect</>
+                        }
+                      </button>
                     </div>
                   </div>
                 )}
