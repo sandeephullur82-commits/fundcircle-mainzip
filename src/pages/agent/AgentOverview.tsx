@@ -8,7 +8,7 @@ import {
 import { startOfDay } from "date-fns";
 import { useUser, useOrganization } from "@clerk/clerk-react";
 import { where } from "firebase/firestore";
-import CollectDialog, { TYPE_BADGE, TYPE_LABEL, getCustomerType, toDate } from "@/components/agent/CollectDialog";
+import CollectDialog, { toDate } from "@/components/agent/CollectDialog";
 
 interface AgentOverviewProps {
   onSwitchTab: (tab: string) => void;
@@ -161,7 +161,6 @@ export default function AgentOverview({ onSwitchTab }: AgentOverviewProps) {
                 (c) => c.customerId === customer.id || c.customerId === customer.clerkUserId
               );
               const name  = (customer as any).fullName || (customer as any).name || customer.email || "";
-              const cType = getCustomerType(customer);
               return (
                 <div
                   key={customer.id}
@@ -175,9 +174,6 @@ export default function AgentOverview({ onSwitchTab }: AgentOverviewProps) {
                     <div className="min-w-0 flex-1">
                       <div className="flex items-center gap-2 mb-0.5">
                         <p className="font-bold text-slate-900 text-sm truncate">{name}</p>
-                        <span className={`shrink-0 text-[9px] font-bold px-1.5 py-0.5 rounded-full ${TYPE_BADGE[cType]}`}>
-                          {TYPE_LABEL[cType]}
-                        </span>
                       </div>
                       <p className="text-xs text-slate-400">{shortId(customer.id)} · {customer.phone || customer.email || "—"}</p>
                     </div>

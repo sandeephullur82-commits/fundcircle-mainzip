@@ -8,7 +8,7 @@ import {
 import { startOfDay } from "date-fns";
 import { useUser, useOrganization } from "@clerk/clerk-react";
 import { where } from "firebase/firestore";
-import CollectDialog, { TYPE_BADGE, TYPE_LABEL, getCustomerType, toDate } from "@/components/agent/CollectDialog";
+import CollectDialog, { toDate } from "@/components/agent/CollectDialog";
 
 type TabId = "ALL" | "SAVINGS" | "EMI" | "PENDING";
 
@@ -70,10 +70,7 @@ export default function AgentCollections() {
   const getFilteredCustomers = () => {
     switch (activeTab) {
       case "SAVINGS":
-        return activeCustomers.filter((c) => {
-          const t = getCustomerType(c);
-          return t === "SAVINGS" || t === "SAVINGS_LOAN";
-        });
+        return activeCustomers.filter((c) => !!getSavingsAccount(c));
       case "EMI":
         return customersWithLoans;
       case "PENDING":
@@ -124,7 +121,7 @@ export default function AgentCollections() {
         {COLLECTION_TABS.map(({ id, label, icon: Icon }) => {
           const count = id === "PENDING" ? pendingCount
             : id === "EMI" ? customersWithLoans.length
-            : id === "SAVINGS" ? activeCustomers.filter((c) => { const t = getCustomerType(c); return t === "SAVINGS" || t === "SAVINGS_LOAN"; }).length
+            : id === "SAVINGS" ? activeCustomers.filter((c) => !!getSavingsAccount(c)).length
             : activeCustomers.length;
 
           return (
@@ -172,7 +169,6 @@ export default function AgentCollections() {
           {filtered.map((customer) => {
             const c           = customer as any;
             const name        = c.fullName || c.name || c.email || "";
-            const cType       = getCustomerType(customer);
             const done        = hasDoneToday(customer);
             const savAcc      = getSavingsAccount(customer);
             const loan        = getActiveLoan(customer);
@@ -190,9 +186,6 @@ export default function AgentCollections() {
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center gap-2 mb-1">
                       <p className="font-bold text-slate-900 text-sm truncate">{name}</p>
-                      <span className={`shrink-0 text-[9px] font-bold px-1.5 py-0.5 rounded-full ${TYPE_BADGE[cType]}`}>
-                        {TYPE_LABEL[cType]}
-                      </span>
                     </div>
                     <p className="text-xs text-slate-400 mb-1.5">{shortId(customer.id)} · {c.phone || c.email || "—"}</p>
 
