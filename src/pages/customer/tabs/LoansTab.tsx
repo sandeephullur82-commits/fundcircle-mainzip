@@ -14,6 +14,11 @@ function toDate(ts: any): Date {
   return new Date(ts);
 }
 
+function safeN(v: any): number {
+  const n = Number(v);
+  return isFinite(n) ? n : 0;
+}
+
 interface Props {
   loans: Loan[];
   installments: LoanInstallment[];
@@ -38,7 +43,7 @@ export default function LoansTab({ loans, installments, loanApplications, onAppl
   const activeLoans = loans.filter((l) => (l.status || "").toUpperCase() === "ACTIVE");
   const closedLoans = loans.filter((l) => (l.status || "").toUpperCase() === "CLOSED");
   const totalOutstanding = activeLoans.reduce(
-    (s, l) => s + (l.outstandingBalance ?? (l as any).balanceRemaining ?? 0), 0
+    (s, l) => s + safeN(l.outstandingBalance ?? (l as any).balanceRemaining), 0
   );
 
   const statusIcon = (status: string) => {
@@ -106,7 +111,7 @@ export default function LoansTab({ loans, installments, loanApplications, onAppl
                   <div key={app.id} className="px-4 py-3">
                     <div className="flex items-center justify-between">
                       <p className="text-sm font-semibold text-slate-900 dark:text-white">
-                        ₹{Number(app.loanAmount).toLocaleString()} · {app.tenureMonths}m
+                        ₹{safeN(app.loanAmount).toLocaleString()} · {app.tenureMonths ?? 0}m
                       </p>
                       <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${appStatusStyles[app.status] ?? appStatusStyles.PENDING}`}>
                         {app.status}
@@ -219,16 +224,16 @@ export default function LoansTab({ loans, installments, loanApplications, onAppl
                   <div className="grid grid-cols-2 gap-2">
                     <div className="bg-slate-50 dark:bg-slate-800 rounded-xl p-3">
                       <p className="text-[10px] text-slate-500">Principal</p>
-                      <p className="font-bold text-slate-900 dark:text-white">₹{Number(principal).toLocaleString()}</p>
+                      <p className="font-bold text-slate-900 dark:text-white">₹{safeN(principal).toLocaleString()}</p>
                     </div>
                     <div className="bg-slate-50 dark:bg-slate-800 rounded-xl p-3">
                       <p className="text-[10px] text-slate-500">EMI / Month</p>
-                      <p className="font-bold text-slate-900 dark:text-white">₹{Number(loan.emiAmount ?? 0).toLocaleString()}</p>
+                      <p className="font-bold text-slate-900 dark:text-white">₹{safeN(loan.emiAmount).toLocaleString()}</p>
                     </div>
                     <div className={`rounded-xl p-3 ${outstanding > 0 ? "bg-orange-50 dark:bg-orange-950/30" : "bg-emerald-50 dark:bg-emerald-950/30"}`}>
                       <p className={`text-[10px] ${outstanding > 0 ? "text-orange-600" : "text-emerald-600"}`}>Outstanding</p>
                       <p className={`font-bold ${outstanding > 0 ? "text-orange-700 dark:text-orange-400" : "text-emerald-700 dark:text-emerald-400"}`}>
-                        {outstanding > 0 ? `₹${Number(outstanding).toLocaleString()}` : "Fully Paid ✓"}
+                        {outstanding > 0 ? `₹${safeN(outstanding).toLocaleString()}` : "Fully Paid ✓"}
                       </p>
                     </div>
                     <div className="bg-slate-50 dark:bg-slate-800 rounded-xl p-3">
@@ -257,7 +262,7 @@ export default function LoansTab({ loans, installments, loanApplications, onAppl
                       <Calendar className="w-4 h-4 text-blue-500 shrink-0" />
                       <p className="text-xs text-blue-700 dark:text-blue-400">
                         Next EMI #{nextInstall.installmentNo}: <span className="font-bold">
-                          ₹{Number(nextInstall.emiAmount).toLocaleString()}
+                          ₹{safeN(nextInstall.emiAmount).toLocaleString()}
                         </span> · {toDate(nextInstall.dueDate).getTime() > 0
                           ? format(toDate(nextInstall.dueDate), "MMM d, yyyy")
                           : "—"}
@@ -291,7 +296,7 @@ export default function LoansTab({ loans, installments, loanApplications, onAppl
                       <div className="flex items-center justify-between text-sm">
                         <span className="text-slate-500">Amount Repaid</span>
                         <span className="font-semibold text-emerald-600">
-                          ₹{Math.max(0, Number(principal) - Number(outstanding)).toLocaleString()}
+                          ₹{Math.max(0, safeN(principal) - safeN(outstanding)).toLocaleString()}
                         </span>
                       </div>
                       {/* Installment mini list */}
@@ -320,7 +325,7 @@ export default function LoansTab({ loans, installments, loanApplications, onAppl
                                       {isPaid ? "PAID" : isOv ? "OVERDUE" : "DUE"}
                                     </span>
                                     <span className="text-xs font-semibold text-slate-900 dark:text-white">
-                                      ₹{Number(inst.emiAmount).toLocaleString()}
+                                      ₹{safeN(inst.emiAmount).toLocaleString()}
                                     </span>
                                   </div>
                                 );

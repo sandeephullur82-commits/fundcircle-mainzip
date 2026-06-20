@@ -21,6 +21,11 @@ function toDate(ts: any): Date {
   return new Date(ts);
 }
 
+function safeN(v: any): number {
+  const n = Number(v);
+  return isFinite(n) ? n : 0;
+}
+
 interface Props {
   savingsAccount: SavingsAccount | null;
   savingsTxs: SavingsTransaction[];
@@ -36,13 +41,13 @@ export default function DashboardTab({
 }: Props) {
   const today = startOfDay(new Date());
 
-  const totalSavings = savingsAccount?.totalBalance ?? 0;
-  const totalDeposits = savingsTxs.reduce((s, t) => s + t.amount, 0);
+  const totalSavings = safeN(savingsAccount?.totalBalance);
+  const totalDeposits = savingsTxs.reduce((s, t) => s + safeN(t.amount), 0);
   const totalReceipts = collections.length;
 
   const activeLoans = loans.filter((l) => (l.status || "").toUpperCase() === "ACTIVE");
   const totalOutstanding = activeLoans.reduce(
-    (s, l) => s + (l.outstandingBalance ?? (l as any).balanceRemaining ?? 0), 0
+    (s, l) => s + safeN(l.outstandingBalance ?? (l as any).balanceRemaining), 0
   );
 
   const allInstallmentsSorted = [...installments].sort((a, b) => a.installmentNo - b.installmentNo);
@@ -65,14 +70,14 @@ export default function DashboardTab({
           const ts = toDate(t.collectedAt).getTime();
           return ts >= start && ts <= end;
         })
-        .reduce((s, t) => s + t.amount, 0);
+        .reduce((s, t) => s + safeN(t.amount), 0);
       const lastTxInMonth = [...savingsTxs]
         .filter((t) => toDate(t.collectedAt).getTime() <= end)
         .sort((a, b) => toDate(b.collectedAt).getTime() - toDate(a.collectedAt).getTime())[0];
       months.push({
         month: format(d, "MMM"),
         amount,
-        balance: lastTxInMonth?.balanceAfter ?? 0,
+        balance: safeN(lastTxInMonth?.balanceAfter),
       });
     }
     return months;
@@ -107,7 +112,7 @@ export default function DashboardTab({
     },
     {
       label: "Next EMI",
-      value: nextDue ? `₹${Number(nextDue.emiAmount).toLocaleString()}` : "None due",
+      value: nextDue ? `₹${safeN(nextDue.emiAmount).toLocaleString()}` : "None due",
       sub: nextDue
         ? (overdueInstallments.length > 0
             ? `${overdueInstallments.length} overdue!`
@@ -154,7 +159,7 @@ export default function DashboardTab({
       return (
         <div className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl shadow-lg px-3 py-2 text-xs">
           <p className="font-bold text-slate-700 dark:text-slate-200">{label}</p>
-          <p className="text-emerald-600 font-semibold">₹{payload[0]?.value?.toLocaleString()}</p>
+          <p className="text-emerald-600 font-semibold">₹{safeN(payload[0]?.value).toLocaleString()}</p>
         </div>
       );
     }
@@ -273,15 +278,15 @@ export default function DashboardTab({
               <div className="grid grid-cols-3 gap-2 mt-4">
                 <div className="bg-slate-50 dark:bg-slate-800 rounded-xl p-2.5 text-center">
                   <p className="text-[10px] text-slate-500">Principal</p>
-                  <p className="font-bold text-slate-900 dark:text-white text-sm">₹{Number(principal).toLocaleString()}</p>
+                  <p className="font-bold text-slate-900 dark:text-white text-sm">₹{safeN(principal).toLocaleString()}</p>
                 </div>
                 <div className="bg-slate-50 dark:bg-slate-800 rounded-xl p-2.5 text-center">
                   <p className="text-[10px] text-slate-500">EMI/mo</p>
-                  <p className="font-bold text-slate-900 dark:text-white text-sm">₹{Number(loan.emiAmount ?? 0).toLocaleString()}</p>
+                  <p className="font-bold text-slate-900 dark:text-white text-sm">₹{safeN(loan.emiAmount).toLocaleString()}</p>
                 </div>
                 <div className="bg-orange-50 dark:bg-orange-950/40 rounded-xl p-2.5 text-center">
                   <p className="text-[10px] text-orange-500">Outstanding</p>
-                  <p className="font-bold text-orange-700 dark:text-orange-400 text-sm">₹{Number(outstanding).toLocaleString()}</p>
+                  <p className="font-bold text-orange-700 dark:text-orange-400 text-sm">₹{safeN(outstanding).toLocaleString()}</p>
                 </div>
               </div>
             </CardContent>
@@ -342,8 +347,8 @@ export default function DashboardTab({
                       </div>
                     </div>
                     <div className="text-right">
-                      <p className="font-bold text-emerald-600 text-sm">+₹{tx.amount.toLocaleString()}</p>
-                      <p className="text-xs text-slate-400">₹{tx.balanceAfter.toLocaleString()}</p>
+                      <p className="font-bold text-emerald-600 text-sm">+₹{safeN(tx.amount).toLocaleString()}</p>
+                      <p className="text-xs text-slate-400">₹{safeN(tx.balanceAfter).toLocaleString()}</p>
                     </div>
                   </div>
                 );
@@ -383,7 +388,7 @@ export default function DashboardTab({
                       </div>
                     </div>
                     <div className="text-right">
-                      <p className="font-bold text-emerald-600 text-sm">₹{Number(col.amount).toLocaleString()}</p>
+                      <p className="font-bold text-emerald-600 text-sm">₹{safeN(col.amount).toLocaleString()}</p>
                       <p className="text-xs text-slate-400">{d.getTime() > 0 ? format(d, "MMM d") : "—"}</p>
                     </div>
                   </div>

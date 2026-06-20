@@ -15,6 +15,9 @@ import LandingPage from "./pages/LandingPage";
 import AuthCallbackPage from "./pages/AuthCallback";
 import CompleteProfilePage from "./pages/CompleteProfilePage";
 import NotFoundPage from "./pages/NotFoundPage";
+import PrivacyPolicyPage from "./pages/legal/PrivacyPolicyPage";
+import TermsPage from "./pages/legal/TermsPage";
+import DataUsagePage from "./pages/legal/DataUsagePage";
 
 import CustomSignInPage from "./pages/auth/SignInPage";
 import CustomSignUpPage from "./pages/auth/SignUpPage";
@@ -466,6 +469,11 @@ export default function App() {
               <Route path="/dashboard/*"           element={<Navigate to="/router" replace />} />
 
               <Route path="/debug-user" element={<ProtectedRoute><DebugUserDoc /></ProtectedRoute>} />
+
+              {/* Legal pages — public, no auth required */}
+              <Route path="/privacy-policy" element={<PrivacyPolicyPage />} />
+              <Route path="/terms-and-conditions" element={<TermsPage />} />
+              <Route path="/data-usage-policy" element={<DataUsagePage />} />
 
               <Route path="*" element={<NotFoundPage />} />
             </Routes>

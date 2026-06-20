@@ -20,6 +20,11 @@ function toDate(ts: any): Date {
   return new Date(ts);
 }
 
+function safeN(v: any): number {
+  const n = Number(v);
+  return isFinite(n) ? n : 0;
+}
+
 interface Props {
   savingsAccount: SavingsAccount | null;
   savingsTxs: SavingsTransaction[];
@@ -91,8 +96,8 @@ export default function SavingsTab({
     } finally { setApplying(false); }
   };
 
-  const totalBalance = savingsAccount?.totalBalance ?? 0;
-  const totalDeposits = savingsTxs.reduce((s, t) => s + t.amount, 0);
+  const totalBalance = safeN(savingsAccount?.totalBalance);
+  const totalDeposits = savingsTxs.reduce((s, t) => s + safeN(t.amount), 0);
 
   const sortedTxs = useMemo(() => {
     return [...savingsTxs].sort(
@@ -142,7 +147,7 @@ export default function SavingsTab({
       .slice(-30)
       .map((tx, i) => ({
         day: i + 1,
-        balance: tx.balanceAfter,
+        balance: safeN(tx.balanceAfter),
         date: format(toDate(tx.collectedAt), "MMM d"),
       }));
   }, [sortedTxs]);
@@ -156,8 +161,8 @@ export default function SavingsTab({
           d.getTime() > 0 ? format(d, "yyyy-MM-dd") : "—",
           d.getTime() > 0 ? format(d, "HH:mm") : "—",
           tx.receiptNo || "",
-          tx.amount.toString(),
-          tx.balanceAfter.toString(),
+          safeN(tx.amount).toString(),
+          safeN(tx.balanceAfter).toString(),
           tx.collectedByName || "Agent",
         ];
       }),
@@ -177,7 +182,7 @@ export default function SavingsTab({
       return (
         <div className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl shadow-lg px-3 py-2 text-xs">
           <p className="font-bold text-slate-700 dark:text-slate-200">{label || payload[0]?.payload?.date}</p>
-          <p className="text-emerald-600 font-semibold">₹{payload[0]?.value?.toLocaleString()}</p>
+          <p className="text-emerald-600 font-semibold">₹{safeN(payload[0]?.value).toLocaleString()}</p>
         </div>
       );
     }
@@ -536,8 +541,8 @@ export default function SavingsTab({
                             </div>
                           </div>
                           <div className="text-right">
-                            <p className="font-bold text-emerald-600">+₹{tx.amount.toLocaleString()}</p>
-                            <p className="text-xs text-slate-400">Bal: ₹{tx.balanceAfter.toLocaleString()}</p>
+                            <p className="font-bold text-emerald-600">+₹{safeN(tx.amount).toLocaleString()}</p>
+                            <p className="text-xs text-slate-400">Bal: ₹{safeN(tx.balanceAfter).toLocaleString()}</p>
                           </div>
                         </div>
                       );
@@ -546,7 +551,7 @@ export default function SavingsTab({
                   <div className="border-t border-slate-100 dark:border-slate-800 px-4 py-2.5 flex justify-between items-center">
                     <p className="text-xs text-slate-500">{filteredTxs.length} records</p>
                     <p className="text-sm font-black text-emerald-700">
-                      Total: ₹{filteredTxs.reduce((s, t) => s + t.amount, 0).toLocaleString()}
+                      Total: ₹{filteredTxs.reduce((s, t) => s + safeN(t.amount), 0).toLocaleString()}
                     </p>
                   </div>
                 </>
@@ -682,7 +687,7 @@ function CustomTooltip({ active, payload, label }: any) {
     return (
       <div className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl shadow-lg px-3 py-2 text-xs">
         <p className="font-bold text-slate-700 dark:text-slate-200">{label || payload[0]?.payload?.date}</p>
-        <p className="text-emerald-600 font-semibold">₹{payload[0]?.value?.toLocaleString()}</p>
+        <p className="text-emerald-600 font-semibold">₹{safeN(payload[0]?.value).toLocaleString()}</p>
       </div>
     );
   }

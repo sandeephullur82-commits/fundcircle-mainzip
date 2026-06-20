@@ -268,8 +268,6 @@ export default function CustomerDashboard() {
       case "support":
         return (
           <SupportTab
-            org={orgDoc ?? null}
-            orgName={orgName}
             collectorDoc={collectorDoc ?? null}
             membershipDoc={membershipDoc ?? null}
             user={user}
