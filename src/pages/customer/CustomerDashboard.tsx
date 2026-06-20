@@ -9,7 +9,7 @@ import { where } from "firebase/firestore";
 import { useCollectionRealtimeRaw, useDocumentRealtime } from "@/lib/firestore-hooks";
 import type {
   Collection, Loan, LoanApplication, LoanInstallment,
-  Membership, SavingsAccount, SavingsApplication, SavingsPlan, SavingsTransaction, Notification, SupportTicket,
+  Membership, SavingsAccount, SavingsApplication, SavingsPlan, SavingsTransaction, Notification, Organization,
 } from "@/types";
 
 // Tab components
@@ -139,9 +139,17 @@ export default function CustomerDashboard() {
     [_allNotifications, orgId]
   );
 
-  const { data: supportTickets } = useCollectionRealtimeRaw<SupportTicket>(
-    "supportTickets",
-    membershipId ? [where("customerId", "==", membershipId)] : []
+  const { data: orgDoc } = useDocumentRealtime<Organization>(
+    "organizations",
+    orgId || undefined
+  );
+
+  const agentMembershipId = orgId && (membershipDoc as any)?.assignedAgentId
+    ? `${orgId}_${(membershipDoc as any).assignedAgentId}`
+    : undefined;
+  const { data: collectorDoc } = useDocumentRealtime<Membership>(
+    "organizationMembers",
+    agentMembershipId
   );
 
   // ── Derived values ────────────────────────────────────────────────────────────
@@ -181,7 +189,6 @@ export default function CustomerDashboard() {
     const insts = installments ?? [];
     const apps = loanApplications ?? [];
     const notifs = notifications ?? [];
-    const tickets = supportTickets ?? [];
 
     switch (activeTab) {
       case "dashboard":
@@ -261,9 +268,10 @@ export default function CustomerDashboard() {
       case "support":
         return (
           <SupportTab
-            tickets={tickets}
-            orgId={orgId}
-            membershipId={membershipId}
+            org={orgDoc ?? null}
+            orgName={orgName}
+            collectorDoc={collectorDoc ?? null}
+            membershipDoc={membershipDoc ?? null}
             user={user}
           />
         );

@@ -1,306 +1,323 @@
 import React, { useState } from "react";
 import {
-  HelpCircle, Plus, Clock, CheckCircle, MessageCircle,
-  XCircle, ChevronDown, ChevronUp, Send,
+  Phone, MessageCircle, Mail, MapPin, ChevronDown, ChevronUp,
+  HelpCircle, Building2, User, Info, FileText, Shield, ExternalLink,
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { addDoc, collection as fsCol, serverTimestamp } from "firebase/firestore";
-import { db } from "@/lib/firebase";
-import { toast } from "sonner";
-import { format } from "date-fns";
-import type { SupportTicket } from "@/types";
-
-function toDate(ts: any): Date {
-  if (!ts) return new Date(0);
-  if (ts?.toDate) return ts.toDate();
-  if (ts instanceof Date) return ts;
-  return new Date(ts);
-}
-
-const CATEGORIES = [
-  { value: "SAVINGS", label: "Savings Account" },
-  { value: "LOAN", label: "Loan" },
-  { value: "EMI", label: "EMI / Payment" },
-  { value: "ACCOUNT", label: "Account" },
-  { value: "TECHNICAL", label: "Technical Issue" },
-  { value: "COMPLAINT", label: "Complaint" },
-  { value: "GENERAL", label: "General Query" },
-];
-
-const STATUS_CONFIG: Record<string, { label: string; color: string; icon: React.ReactNode }> = {
-  OPEN: { label: "Open", color: "bg-blue-100 text-blue-700 dark:bg-blue-950/40 dark:text-blue-400", icon: <Clock className="w-3 h-3" /> },
-  IN_PROGRESS: { label: "In Progress", color: "bg-amber-100 text-amber-700 dark:bg-amber-950/40 dark:text-amber-400", icon: <MessageCircle className="w-3 h-3" /> },
-  RESOLVED: { label: "Resolved", color: "bg-emerald-100 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-400", icon: <CheckCircle className="w-3 h-3" /> },
-  CLOSED: { label: "Closed", color: "bg-slate-100 text-slate-500 dark:bg-slate-700 dark:text-slate-400", icon: <XCircle className="w-3 h-3" /> },
-};
+import type { Membership } from "@/types";
 
 interface Props {
-  tickets: SupportTicket[];
-  orgId: string;
-  membershipId: string | null;
+  org: any | null;
+  orgName: string;
+  collectorDoc: Membership | null;
+  membershipDoc: Membership | null;
   user: any;
 }
 
-export default function SupportTab({ tickets, orgId, membershipId, user }: Props) {
-  const [showForm, setShowForm] = useState(false);
-  const [expandedTicket, setExpandedTicket] = useState<string | null>(null);
-  const [subject, setSubject] = useState("");
-  const [description, setDescription] = useState("");
-  const [category, setCategory] = useState("");
-  const [priority, setPriority] = useState("MEDIUM");
-  const [submitting, setSubmitting] = useState(false);
+const FAQS = [
+  {
+    q: "How do I check my savings balance?",
+    a: "Go to the Savings tab from the bottom navigation or sidebar. Your current balance, transaction history, and plan details are displayed there.",
+  },
+  {
+    q: "How do I see my loan details?",
+    a: "Tap the Loans tab to view your active loans, outstanding balance, EMI schedule, and loan terms.",
+  },
+  {
+    q: "How do I download receipts?",
+    a: "Open the Receipts tab to view and download all your collection receipts and savings transactions.",
+  },
+  {
+    q: "How do I contact my collector?",
+    a: "Use the 'Contact Your Collector' section on this page to call or send a WhatsApp message to your assigned collector directly.",
+  },
+  {
+    q: "How do I reset my password?",
+    a: "Go to the Security tab and tap 'Reset Password'. A reset link will be sent to your registered email address.",
+  },
+];
 
-  const sorted = [...tickets].sort(
-    (a, b) => toDate(b.createdAt).getTime() - toDate(a.createdAt).getTime()
-  );
-  const openTickets = sorted.filter((t) => t.status === "OPEN" || t.status === "IN_PROGRESS");
+export default function SupportTab({ org, orgName, collectorDoc, membershipDoc, user }: Props) {
+  const [openFaq, setOpenFaq] = useState<number | null>(null);
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!orgId || !membershipId || !user) return toast.error("Not authenticated.");
-    if (!subject.trim()) return toast.error("Please enter a subject.");
-    if (!description.trim()) return toast.error("Please describe your issue.");
-    if (!category) return toast.error("Please select a category.");
+  const collectorName = collectorDoc?.fullName
+    || collectorDoc?.firstName && `${collectorDoc.firstName} ${collectorDoc.lastName || ""}`.trim()
+    || (membershipDoc as any)?.assignedAgentName
+    || "Your Collector";
+  const collectorPhone = collectorDoc?.phone || null;
+  const collectorStatus = collectorDoc?.status === "ACTIVE" ? "Active" : collectorDoc ? "Inactive" : null;
 
-    setSubmitting(true);
-    try {
-      await addDoc(fsCol(db, "supportTickets"), {
-        organizationId: orgId,
-        customerId: membershipId,
-        customerName: user?.fullName || user?.firstName || "Customer",
-        customerEmail: user?.primaryEmailAddress?.emailAddress || "",
-        subject: subject.trim(),
-        description: description.trim(),
-        category,
-        priority,
-        status: "OPEN",
-        createdAt: serverTimestamp(),
-        updatedAt: serverTimestamp(),
-      });
-      toast.success("Support ticket raised! We'll get back to you shortly.");
-      setSubject(""); setDescription(""); setCategory(""); setPriority("MEDIUM");
-      setShowForm(false);
-    } catch (err: any) {
-      toast.error(err.message || "Failed to raise ticket");
-    } finally {
-      setSubmitting(false);
-    }
-  };
+  const orgPhone   = org?.phone      || null;
+  const orgEmail   = org?.ownerEmail || null;
+  const orgAddress = org?.address    || null;
 
   return (
-    <div className="space-y-4">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h2 className="font-bold text-slate-900 dark:text-white flex items-center gap-2">
-            <HelpCircle className="w-5 h-5 text-blue-600" />
-            Support Center
-          </h2>
-          <p className="text-xs text-slate-500 mt-0.5">Raise and track support tickets</p>
-        </div>
-        <button
-          onClick={() => setShowForm(!showForm)}
-          className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold transition-colors"
-        >
-          <Plus className="w-3.5 h-3.5" />
-          {showForm ? "Cancel" : "New Ticket"}
-        </button>
+    <div className="space-y-5">
+
+      {/* ── Header ── */}
+      <div>
+        <h2 className="font-bold text-slate-900 dark:text-white flex items-center gap-2 text-lg">
+          <HelpCircle className="w-5 h-5 text-blue-600" />
+          Help & Contact
+        </h2>
+        <p className="text-xs text-slate-500 mt-0.5">
+          Get assistance from your collector or organization.
+        </p>
       </div>
 
-      {/* Open tickets alert */}
-      {openTickets.length > 0 && (
-        <div className="bg-blue-50 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-800 rounded-2xl p-3 flex items-center gap-3">
-          <MessageCircle className="w-5 h-5 text-blue-500 shrink-0" />
-          <p className="text-sm text-blue-700 dark:text-blue-300">
-            <span className="font-bold">{openTickets.length} ticket{openTickets.length > 1 ? "s" : ""}</span> currently being reviewed
-          </p>
-        </div>
-      )}
+      {/* ── Contact Your Collector ── */}
+      <Card>
+        <CardHeader className="pb-3 border-b border-slate-100 dark:border-slate-800">
+          <CardTitle className="text-sm flex items-center gap-2">
+            <User className="w-4 h-4 text-emerald-600" />
+            Contact Your Collector
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="pt-4 space-y-4">
+          {/* Collector info row */}
+          <div className="flex items-center gap-3">
+            <div className="w-12 h-12 rounded-2xl bg-emerald-100 dark:bg-emerald-950/40 flex items-center justify-center shrink-0">
+              <User className="w-6 h-6 text-emerald-600" />
+            </div>
+            <div className="min-w-0 flex-1">
+              <p className="font-semibold text-slate-900 dark:text-white text-sm truncate">{collectorName}</p>
+              {collectorPhone ? (
+                <p className="text-xs text-slate-500 mt-0.5">{collectorPhone}</p>
+              ) : (
+                <p className="text-xs text-slate-400 mt-0.5 italic">Phone not available</p>
+              )}
+            </div>
+            {collectorStatus && (
+              <span className={`shrink-0 text-[10px] font-bold px-2 py-1 rounded-full ${
+                collectorStatus === "Active"
+                  ? "bg-emerald-100 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-400"
+                  : "bg-slate-100 text-slate-500"
+              }`}>
+                {collectorStatus}
+              </span>
+            )}
+          </div>
 
-      {/* New ticket form */}
-      {showForm && (
-        <Card>
-          <CardHeader className="pb-0">
-            <CardTitle className="text-sm flex items-center gap-2">
-              <Send className="w-4 h-4 text-blue-600" />
-              Raise a Support Ticket
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="pt-4">
-            <form onSubmit={handleSubmit} className="space-y-4">
-              <Field label="Category *">
-                <select required value={category} onChange={(e) => setCategory(e.target.value)} className="fc-input">
-                  <option value="">Select category…</option>
-                  {CATEGORIES.map((c) => <option key={c.value} value={c.value}>{c.label}</option>)}
-                </select>
-              </Field>
-
-              <Field label="Priority">
-                <div className="flex gap-2">
-                  {["LOW", "MEDIUM", "HIGH"].map((p) => (
-                    <button
-                      key={p} type="button"
-                      onClick={() => setPriority(p)}
-                      className={`flex-1 py-1.5 rounded-xl text-xs font-bold border transition-colors ${
-                        priority === p
-                          ? p === "HIGH" ? "bg-red-500 text-white border-red-500"
-                            : p === "MEDIUM" ? "bg-amber-500 text-white border-amber-500"
-                            : "bg-slate-500 text-white border-slate-500"
-                          : "bg-slate-50 dark:bg-slate-800 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-700"
-                      }`}
-                    >
-                      {p}
-                    </button>
-                  ))}
-                </div>
-              </Field>
-
-              <Field label="Subject *">
-                <input
-                  type="text" required value={subject}
-                  onChange={(e) => setSubject(e.target.value)}
-                  placeholder="Brief description of your issue"
-                  className="fc-input"
-                />
-              </Field>
-
-              <Field label="Description *">
-                <textarea
-                  required value={description}
-                  onChange={(e) => setDescription(e.target.value)}
-                  placeholder="Please describe your issue in detail…"
-                  rows={4}
-                  className="fc-input resize-none"
-                />
-              </Field>
-
-              <button
-                type="submit" disabled={submitting}
-                className="w-full h-11 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white rounded-xl font-semibold text-sm transition-colors flex items-center justify-center gap-2"
+          {/* Action buttons */}
+          {collectorPhone ? (
+            <div className="grid grid-cols-2 gap-3">
+              <a
+                href={`tel:${collectorPhone}`}
+                className="flex items-center justify-center gap-2 h-11 rounded-xl bg-emerald-600 hover:bg-emerald-700 active:scale-[0.98] text-white text-sm font-semibold transition-all"
+                aria-label={`Call ${collectorName}`}
               >
-                {submitting ? (
-                  <><span className="w-4 h-4 border-2 border-white/40 border-t-white rounded-full animate-spin" /> Submitting…</>
-                ) : (
-                  <><Send className="w-4 h-4" /> Submit Ticket</>
-                )}
+                <Phone className="w-4 h-4" />
+                Call Collector
+              </a>
+              <a
+                href={`https://wa.me/${collectorPhone.replace(/\D/g, "")}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex items-center justify-center gap-2 h-11 rounded-xl bg-[#25D366] hover:bg-[#20b857] active:scale-[0.98] text-white text-sm font-semibold transition-all"
+                aria-label={`WhatsApp ${collectorName}`}
+              >
+                <MessageCircle className="w-4 h-4" />
+                WhatsApp
+              </a>
+            </div>
+          ) : (
+            <div className="bg-slate-50 dark:bg-slate-800/60 rounded-xl p-3 text-center">
+              <p className="text-xs text-slate-400">
+                Collector contact details will appear once assigned by your organization.
+              </p>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* ── Organization Contact ── */}
+      <Card>
+        <CardHeader className="pb-3 border-b border-slate-100 dark:border-slate-800">
+          <CardTitle className="text-sm flex items-center gap-2">
+            <Building2 className="w-4 h-4 text-blue-600" />
+            Organization Contact
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="pt-4 space-y-4">
+          {/* Org info */}
+          <div className="space-y-3">
+            <div className="flex items-start gap-3">
+              <div className="w-9 h-9 rounded-xl bg-blue-50 dark:bg-blue-950/40 flex items-center justify-center shrink-0 mt-0.5">
+                <Building2 className="w-4.5 h-4.5 text-blue-600" />
+              </div>
+              <div className="min-w-0">
+                <p className="text-xs text-slate-500">Organization</p>
+                <p className="font-semibold text-slate-900 dark:text-white text-sm">{orgName}</p>
+              </div>
+            </div>
+
+            {orgPhone && (
+              <div className="flex items-center gap-3">
+                <div className="w-9 h-9 rounded-xl bg-slate-100 dark:bg-slate-800 flex items-center justify-center shrink-0">
+                  <Phone className="w-4 h-4 text-slate-500" />
+                </div>
+                <div>
+                  <p className="text-xs text-slate-500">Phone</p>
+                  <p className="font-semibold text-slate-900 dark:text-white text-sm">{orgPhone}</p>
+                </div>
+              </div>
+            )}
+
+            {orgEmail && (
+              <div className="flex items-center gap-3">
+                <div className="w-9 h-9 rounded-xl bg-slate-100 dark:bg-slate-800 flex items-center justify-center shrink-0">
+                  <Mail className="w-4 h-4 text-slate-500" />
+                </div>
+                <div>
+                  <p className="text-xs text-slate-500">Email</p>
+                  <p className="font-semibold text-slate-900 dark:text-white text-sm">{orgEmail}</p>
+                </div>
+              </div>
+            )}
+
+            {orgAddress && (
+              <div className="flex items-start gap-3">
+                <div className="w-9 h-9 rounded-xl bg-slate-100 dark:bg-slate-800 flex items-center justify-center shrink-0 mt-0.5">
+                  <MapPin className="w-4 h-4 text-slate-500" />
+                </div>
+                <div>
+                  <p className="text-xs text-slate-500">Office Address</p>
+                  <p className="font-semibold text-slate-900 dark:text-white text-sm leading-relaxed">{orgAddress}</p>
+                </div>
+              </div>
+            )}
+
+            {!orgPhone && !orgEmail && !orgAddress && (
+              <p className="text-xs text-slate-400 text-center py-2 italic">
+                Organization contact details not configured yet.
+              </p>
+            )}
+          </div>
+
+          {/* Action buttons */}
+          {(orgPhone || orgEmail) && (
+            <div className="grid grid-cols-2 gap-3">
+              {orgPhone && (
+                <a
+                  href={`tel:${orgPhone}`}
+                  className="flex items-center justify-center gap-2 h-11 rounded-xl bg-blue-600 hover:bg-blue-700 active:scale-[0.98] text-white text-sm font-semibold transition-all"
+                  aria-label="Call office"
+                >
+                  <Phone className="w-4 h-4" />
+                  Call Office
+                </a>
+              )}
+              {orgEmail && (
+                <a
+                  href={`mailto:${orgEmail}`}
+                  className={`flex items-center justify-center gap-2 h-11 rounded-xl bg-slate-700 hover:bg-slate-800 active:scale-[0.98] text-white text-sm font-semibold transition-all ${!orgPhone ? "col-span-2" : ""}`}
+                  aria-label="Email support"
+                >
+                  <Mail className="w-4 h-4" />
+                  Email Support
+                </a>
+              )}
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* ── FAQ ── */}
+      <Card>
+        <CardHeader className="pb-3 border-b border-slate-100 dark:border-slate-800">
+          <CardTitle className="text-sm flex items-center gap-2">
+            <HelpCircle className="w-4 h-4 text-violet-600" />
+            Frequently Asked Questions
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="pt-2 divide-y divide-slate-100 dark:divide-slate-800">
+          {FAQS.map((faq, i) => (
+            <div key={i}>
+              <button
+                onClick={() => setOpenFaq(openFaq === i ? null : i)}
+                className="w-full flex items-center justify-between gap-3 py-3.5 text-left focus:outline-none focus-visible:ring-2 focus-visible:ring-violet-400 rounded"
+                aria-expanded={openFaq === i}
+              >
+                <span className="text-sm font-semibold text-slate-800 dark:text-slate-200 pr-2">
+                  {faq.q}
+                </span>
+                {openFaq === i
+                  ? <ChevronUp className="w-4 h-4 text-slate-400 shrink-0" />
+                  : <ChevronDown className="w-4 h-4 text-slate-400 shrink-0" />}
               </button>
-            </form>
-          </CardContent>
-        </Card>
-      )}
-
-      {/* Tickets list */}
-      {sorted.length === 0 ? (
-        <Card>
-          <CardContent className="py-16 text-center">
-            <HelpCircle className="w-10 h-10 mx-auto mb-3 text-slate-200" />
-            <p className="font-semibold text-slate-700 dark:text-slate-300">No support tickets yet</p>
-            <p className="text-sm text-slate-400 mt-1">Raise a ticket if you need help with your account.</p>
-          </CardContent>
-        </Card>
-      ) : (
-        <div className="space-y-3">
-          {sorted.map((ticket) => {
-            const status = STATUS_CONFIG[ticket.status] ?? STATUS_CONFIG.OPEN;
-            const isExpanded = expandedTicket === ticket.id;
-            const cat = CATEGORIES.find((c) => c.value === ticket.category);
-            return (
-              <Card key={ticket.id}>
-                <CardContent className="p-4">
-                  <button
-                    onClick={() => setExpandedTicket(isExpanded ? null : ticket.id)}
-                    className="w-full text-left"
-                  >
-                    <div className="flex items-start justify-between gap-2">
-                      <div className="flex-1 min-w-0">
-                        <p className="text-sm font-semibold text-slate-900 dark:text-white truncate">
-                          {ticket.subject}
-                        </p>
-                        <div className="flex items-center gap-2 mt-1 flex-wrap">
-                          <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full flex items-center gap-1 ${status.color}`}>
-                            {status.icon} {status.label}
-                          </span>
-                          {cat && (
-                            <span className="text-[10px] text-slate-400 bg-slate-100 dark:bg-slate-800 px-2 py-0.5 rounded-full">
-                              {cat.label}
-                            </span>
-                          )}
-                          <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full ${
-                            ticket.priority === "HIGH" ? "bg-red-100 text-red-600"
-                            : ticket.priority === "MEDIUM" ? "bg-amber-100 text-amber-600"
-                            : "bg-slate-100 text-slate-500"
-                          }`}>{ticket.priority}</span>
-                        </div>
-                      </div>
-                      <div className="flex items-center gap-2 shrink-0">
-                        <span className="text-[10px] text-slate-400">
-                          {toDate(ticket.createdAt).getTime() > 0
-                            ? format(toDate(ticket.createdAt), "MMM d")
-                            : "—"}
-                        </span>
-                        {isExpanded
-                          ? <ChevronUp className="w-4 h-4 text-slate-400" />
-                          : <ChevronDown className="w-4 h-4 text-slate-400" />}
-                      </div>
-                    </div>
-                  </button>
-
-                  {isExpanded && (
-                    <div className="mt-3 border-t border-slate-100 dark:border-slate-800 pt-3 space-y-2">
-                      <p className="text-xs text-slate-600 dark:text-slate-300">{ticket.description}</p>
-                      {ticket.agentResponse && (
-                        <div className="bg-emerald-50 dark:bg-emerald-950/30 rounded-xl p-3">
-                          <p className="text-[10px] font-bold text-emerald-700 dark:text-emerald-400 uppercase mb-1">Response from team</p>
-                          <p className="text-xs text-emerald-800 dark:text-emerald-200">{ticket.agentResponse}</p>
-                        </div>
-                      )}
-                      {ticket.resolvedAt && (
-                        <p className="text-[10px] text-slate-400">
-                          Resolved: {format(toDate(ticket.resolvedAt), "MMM d, yyyy")}
-                        </p>
-                      )}
-                    </div>
-                  )}
-                </CardContent>
-              </Card>
-            );
-          })}
-        </div>
-      )}
-
-      {/* Info */}
-      <div className="bg-slate-50 dark:bg-slate-800/50 rounded-2xl p-4 space-y-3">
-        <p className="text-xs font-bold text-slate-700 dark:text-slate-300">Need urgent help?</p>
-        <div className="space-y-2">
-          <div className="flex items-center gap-3 p-2.5 bg-white dark:bg-slate-800 rounded-xl">
-            <div className="w-7 h-7 bg-emerald-50 dark:bg-emerald-950/40 rounded-lg flex items-center justify-center">
-              <MessageCircle className="w-3.5 h-3.5 text-emerald-600" />
+              {openFaq === i && (
+                <p className="text-sm text-slate-500 dark:text-slate-400 pb-3.5 leading-relaxed">
+                  {faq.a}
+                </p>
+              )}
             </div>
-            <div>
-              <p className="text-xs font-semibold text-slate-800 dark:text-slate-200">Contact your Collector</p>
-              <p className="text-[10px] text-slate-400">Reach out to your assigned field agent</p>
-            </div>
+          ))}
+        </CardContent>
+      </Card>
+
+      {/* ── App Information ── */}
+      <Card>
+        <CardHeader className="pb-3 border-b border-slate-100 dark:border-slate-800">
+          <CardTitle className="text-sm flex items-center gap-2">
+            <Info className="w-4 h-4 text-slate-500" />
+            App Information
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="pt-4">
+          <div className="space-y-2.5">
+            <InfoRow label="App Name" value="FundCircle" />
+            <InfoRow label="Version" value="1.0.0" />
+            <InfoRow label="Build" value="stable" />
+            <InfoRow label="Last Updated" value="June 2025" />
+            <InfoRow label="Platform" value={
+              typeof navigator !== "undefined" && navigator.userAgent.includes("Mobile")
+                ? "Mobile Web"
+                : "Web"
+            } />
           </div>
-          <div className="flex items-center gap-3 p-2.5 bg-white dark:bg-slate-800 rounded-xl">
-            <div className="w-7 h-7 bg-blue-50 dark:bg-blue-950/40 rounded-lg flex items-center justify-center">
-              <HelpCircle className="w-3.5 h-3.5 text-blue-600" />
-            </div>
-            <div>
-              <p className="text-xs font-semibold text-slate-800 dark:text-slate-200">Branch Support</p>
-              <p className="text-[10px] text-slate-400">Visit or call the organization branch</p>
-            </div>
-          </div>
-        </div>
-      </div>
+        </CardContent>
+      </Card>
+
+      {/* ── Legal ── */}
+      <Card>
+        <CardHeader className="pb-3 border-b border-slate-100 dark:border-slate-800">
+          <CardTitle className="text-sm flex items-center gap-2">
+            <Shield className="w-4 h-4 text-slate-500" />
+            Legal
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="pt-2 divide-y divide-slate-100 dark:divide-slate-800">
+          {[
+            { label: "Privacy Policy", icon: Shield },
+            { label: "Terms & Conditions", icon: FileText },
+            { label: "Data Usage Policy", icon: FileText },
+          ].map(({ label, icon: Icon }) => (
+            <button
+              key={label}
+              className="w-full flex items-center justify-between py-3.5 text-left focus:outline-none focus-visible:ring-2 focus-visible:ring-slate-400 rounded"
+              aria-label={label}
+            >
+              <div className="flex items-center gap-3">
+                <div className="w-8 h-8 bg-slate-100 dark:bg-slate-800 rounded-xl flex items-center justify-center">
+                  <Icon className="w-3.5 h-3.5 text-slate-500" />
+                </div>
+                <span className="text-sm font-medium text-slate-700 dark:text-slate-300">{label}</span>
+              </div>
+              <ExternalLink className="w-3.5 h-3.5 text-slate-300 dark:text-slate-600" />
+            </button>
+          ))}
+        </CardContent>
+      </Card>
+
     </div>
   );
 }
 
-function Field({ label, children }: { label: string; children: React.ReactNode }) {
+function InfoRow({ label, value }: { label: string; value: string }) {
   return (
-    <div className="space-y-1.5">
-      <label className="text-xs font-bold text-slate-600 dark:text-slate-400 uppercase tracking-wider">{label}</label>
-      {children}
+    <div className="flex items-center justify-between text-sm">
+      <span className="text-slate-500">{label}</span>
+      <span className="font-semibold text-slate-800 dark:text-slate-200">{value}</span>
     </div>
   );
 }

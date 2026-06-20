@@ -1,24 +1,22 @@
-import React, { useState } from "react";
+import React from "react";
 import {
   Shield, Smartphone, Clock, LogOut, AlertTriangle,
-  CheckCircle, Monitor,
+  CheckCircle, Monitor, KeyRound,
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { SignOutButton } from "@clerk/clerk-react";
+import { useNavigate } from "react-router-dom";
 import { format } from "date-fns";
-import ChangePasswordForm from "./ChangePasswordForm";
 
 interface Props {
   user: any;
 }
 
 export default function SecurityTab({ user }: Props) {
-  const [showPwForm, setShowPwForm] = useState(false);
+  const navigate = useNavigate();
 
   const lastSignIn = user?.lastSignInAt ? new Date(user.lastSignInAt) : null;
   const createdAt = user?.createdAt ? new Date(user.createdAt) : null;
-  const userEmail = user?.primaryEmailAddress?.emailAddress ?? "";
-
   const emailVerified = user?.primaryEmailAddress?.verification?.status === "verified";
 
   return (
@@ -28,7 +26,7 @@ export default function SecurityTab({ user }: Props) {
         <h2 className="font-bold text-slate-900 dark:text-white">Security Center</h2>
       </div>
 
-      {/* Security Status */}
+      {/* Account Security */}
       <Card>
         <CardHeader className="pb-0">
           <CardTitle className="text-sm">Account Security</CardTitle>
@@ -69,7 +67,7 @@ export default function SecurityTab({ user }: Props) {
             Login Information
           </CardTitle>
         </CardHeader>
-        <CardContent className="pt-4 space-y-3">
+        <CardContent className="pt-4">
           <div className="bg-slate-50 dark:bg-slate-800 rounded-xl p-4 space-y-2.5">
             <div className="flex justify-between text-sm">
               <span className="text-slate-500">Account ID</span>
@@ -99,7 +97,7 @@ export default function SecurityTab({ user }: Props) {
         </CardContent>
       </Card>
 
-      {/* Device Info */}
+      {/* Current Session */}
       <Card>
         <CardHeader className="pb-0">
           <CardTitle className="text-sm flex items-center gap-2">
@@ -131,34 +129,30 @@ export default function SecurityTab({ user }: Props) {
         </CardContent>
       </Card>
 
-      {/* Change Password */}
+      {/* Password & Security */}
       <Card>
         <CardContent className="p-5">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="font-semibold text-slate-900 dark:text-white text-sm">Change Password</p>
-              <p className="text-xs text-slate-500 mt-0.5">Update your login password</p>
+          <div className="flex items-start justify-between gap-4">
+            <div className="min-w-0">
+              <div className="flex items-center gap-2 mb-1">
+                <KeyRound className="w-4 h-4 text-slate-500 shrink-0" />
+                <p className="font-semibold text-slate-900 dark:text-white text-sm">Password & Security</p>
+              </div>
+              <p className="text-xs text-slate-500 leading-relaxed">
+                Manage your account password and account security. A reset link will be sent to your registered email.
+              </p>
             </div>
-            {!showPwForm && (
-              <button
-                onClick={() => setShowPwForm(true)}
-                className="px-3 py-1.5 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 text-sm font-semibold transition-colors"
-              >
-                Change
-              </button>
-            )}
+            <button
+              onClick={() => navigate("/auth/forgot-password")}
+              className="shrink-0 px-4 py-2 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 text-sm font-semibold transition-colors"
+            >
+              Reset Password
+            </button>
           </div>
-          {showPwForm && (
-            <ChangePasswordForm
-              userEmail={userEmail}
-              onSuccess={() => setShowPwForm(false)}
-              onCancel={() => setShowPwForm(false)}
-            />
-          )}
         </CardContent>
       </Card>
 
-      {/* Danger Zone */}
+      {/* Sign Out */}
       <Card className="border-red-100 dark:border-red-900/50">
         <CardHeader className="pb-0">
           <CardTitle className="text-sm flex items-center gap-2 text-red-600 dark:text-red-400">
@@ -166,7 +160,7 @@ export default function SecurityTab({ user }: Props) {
             Sign Out
           </CardTitle>
         </CardHeader>
-        <CardContent className="pt-4 space-y-3">
+        <CardContent className="pt-4">
           <SignOutButton>
             <button className="w-full h-11 border border-red-200 dark:border-red-800 bg-red-50 dark:bg-red-950/30 hover:bg-red-100 dark:hover:bg-red-950/50 text-red-600 dark:text-red-400 rounded-xl font-semibold text-sm transition-colors flex items-center justify-center gap-2">
               <LogOut className="w-4 h-4" /> Sign Out of This Device
@@ -204,4 +198,3 @@ function SecurityRow({ icon, label, value, status }: {
     </div>
   );
 }
-
