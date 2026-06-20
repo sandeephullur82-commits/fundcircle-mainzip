@@ -1,7 +1,7 @@
-import React, { useState, useEffect, useMemo } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import {
   User, Edit3, Save, X, Phone, MapPin, Shield, CheckCircle2,
-  LogOut, RefreshCw, CreditCard, AlertTriangle, Lock,
+  LogOut, RefreshCw, CreditCard, AlertTriangle, Lock, Camera,
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { SignOutButton, useUser } from "@clerk/clerk-react";
@@ -53,14 +53,21 @@ function ReadOnlyField({ label, value }: { label: string; value: string }) {
   );
 }
 
+// Allowed file types for Clerk profile image upload
+const AVATAR_ALLOWED = ["image/jpeg", "image/png", "image/webp"];
+const AVATAR_MAX_BYTES = 5 * 1024 * 1024; // 5 MB
+
 export default function ProfileTab({ user, membershipId, membershipDoc, nomineeLocked = false }: Props) {
   const { user: clerkUser } = useUser();
 
-  const [editMode, setEditMode]   = useState(false);
-  const [saving, setSaving]       = useState(false);
-  const [savedOk, setSavedOk]     = useState(false);
-  const [isDirty, setIsDirty]     = useState(false);
-  const [errors, setErrors]       = useState<Record<string, string>>({});
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const [editMode, setEditMode]         = useState(false);
+  const [saving, setSaving]             = useState(false);
+  const [savedOk, setSavedOk]           = useState(false);
+  const [isDirty, setIsDirty]           = useState(false);
+  const [errors, setErrors]             = useState<Record<string, string>>({});
+  const [avatarUploading, setAvatarUploading] = useState(false);
 
   // ── Editable fields ─────────────────────────────────────────────────────────
   const [firstName,      setFirstName]      = useState("");
@@ -114,6 +121,35 @@ export default function ProfileTab({ user, membershipId, membershipDoc, nomineeL
   }, [firstName, lastName, phone, address, city, stateName, pincode,
       dateOfBirth, gender, aadhaarLast4, nomineeName, nomineeRelation,
       nomineePhone, nomineeAddress]);
+
+  // ── Clerk avatar upload ──────────────────────────────────────────────────
+  // Uploads to Clerk CDN via setProfileImage(); user.imageUrl auto-updates
+  // everywhere (header, sidebar, profile card) without any manual sync.
+  const handleAvatarUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (fileInputRef.current) fileInputRef.current.value = "";
+    if (!file || !clerkUser) return;
+
+    if (!AVATAR_ALLOWED.includes(file.type)) {
+      toast.error("Only JPG, PNG, or WEBP images are allowed.");
+      return;
+    }
+    if (file.size > AVATAR_MAX_BYTES) {
+      toast.error("Image must be smaller than 5 MB.");
+      return;
+    }
+
+    setAvatarUploading(true);
+    try {
+      await clerkUser.setProfileImage({ file });
+      toast.success("Profile photo updated! It may take a moment to refresh.");
+    } catch (err: any) {
+      console.error("[ProfileAvatar] Clerk upload error:", err);
+      toast.error(err?.errors?.[0]?.longMessage || err?.message || "Upload failed. Please try again.");
+    } finally {
+      setAvatarUploading(false);
+    }
+  };
 
   // ── Setters that enforce input rules ─────────────────────────────────────
   const setNameField = (setter: React.Dispatch<React.SetStateAction<string>>) =>
@@ -246,19 +282,52 @@ export default function ProfileTab({ user, membershipId, membershipDoc, nomineeL
       <Card>
         <CardContent className="p-5">
           <div className="flex items-start gap-4">
-            {/* Avatar — always Clerk user.imageUrl */}
-            <div className="shrink-0">
+            {/* ── Avatar — Clerk user.imageUrl (single source of truth) ─── */}
+            {/* Camera icon opens file picker → clerkUser.setProfileImage()  */}
+            {/* After upload, user.imageUrl propagates to ALL avatars         */}
+            {/* (header, sidebars, profile card) with no manual sync.        */}
+            <div className="relative shrink-0">
+              {/* Hidden file input — JPG/PNG/WEBP, ≤5 MB */}
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept="image/jpeg,image/png,image/webp"
+                className="hidden"
+                onChange={handleAvatarUpload}
+              />
+
+              {/* Avatar circle */}
               {clerkAvatar ? (
                 <img
                   src={clerkAvatar}
                   alt="Profile"
+                  loading="lazy"
                   className="w-16 h-16 rounded-2xl object-cover ring-2 ring-emerald-200 dark:ring-emerald-700"
                 />
               ) : (
-                <div className="w-16 h-16 rounded-2xl bg-emerald-600 flex items-center justify-center text-white text-xl font-black">
+                <div className="w-16 h-16 rounded-2xl bg-emerald-600 flex items-center justify-center text-white text-xl font-black select-none">
                   {initials}
                 </div>
               )}
+
+              {/* Uploading spinner overlay */}
+              {avatarUploading && (
+                <div className="absolute inset-0 rounded-2xl bg-black/60 flex items-center justify-center">
+                  <RefreshCw className="w-5 h-5 text-white animate-spin" />
+                </div>
+              )}
+
+              {/* Camera button — always visible (not gated on editMode) */}
+              <button
+                type="button"
+                onClick={() => fileInputRef.current?.click()}
+                disabled={avatarUploading}
+                title="Change profile photo (JPG, PNG, WEBP · max 5 MB)"
+                aria-label="Change profile photo"
+                className="absolute -bottom-1.5 -right-1.5 w-7 h-7 bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-full flex items-center justify-center shadow-md ring-2 ring-white dark:ring-slate-900 transition-colors"
+              >
+                <Camera className="w-3.5 h-3.5" />
+              </button>
             </div>
 
             <div className="flex-1 min-w-0">
