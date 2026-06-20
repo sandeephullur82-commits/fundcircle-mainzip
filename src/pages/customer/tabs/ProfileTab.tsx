@@ -1,13 +1,12 @@
-import React, { useState, useEffect, useRef, useCallback } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import {
-  User, Edit3, Save, X, Phone, MapPin, Shield, Camera,
+  User, Edit3, Save, X, Phone, MapPin, Shield, CheckCircle2,
   LogOut, RefreshCw, CreditCard, AlertTriangle, Lock,
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { SignOutButton, useClerk } from "@clerk/clerk-react";
+import { SignOutButton, useUser } from "@clerk/clerk-react";
 import { doc, updateDoc, serverTimestamp } from "firebase/firestore";
-import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
-import { db, storage } from "@/lib/firebase";
+import { db } from "@/lib/firebase";
 import { toast } from "sonner";
 import type { Membership } from "@/types";
 
@@ -18,100 +17,65 @@ interface Props {
   nomineeLocked?: boolean;
 }
 
-// ── Canvas image compressor ─────────────────────────────────────────────────
-async function compressImage(file: File, maxDim = 512, maxBytes = 300 * 1024): Promise<File> {
-  return new Promise((resolve) => {
-    const img = new Image();
-    img.onload = () => {
-      let w = img.width, h = img.height;
-      if (w > maxDim || h > maxDim) {
-        if (w > h) { h = Math.round((h * maxDim) / w); w = maxDim; }
-        else        { w = Math.round((w * maxDim) / h); h = maxDim; }
-      }
-      const canvas = document.createElement("canvas");
-      canvas.width = w; canvas.height = h;
-      canvas.getContext("2d")!.drawImage(img, 0, 0, w, h);
+// ── Validation helpers ───────────────────────────────────────────────────────
+const nameRx   = /^[A-Za-z\s]*$/;
+const phone10Rx = /^\d{10}$/;
+const pin6Rx    = /^\d{6}$/;
+const todayStr  = () => new Date().toISOString().split("T")[0];
 
-      canvas.toBlob((blob) => {
-        if (!blob) { resolve(file); return; }
-        if (blob.size <= maxBytes) {
-          resolve(new File([blob], "profile.webp", { type: "image/webp" }));
-        } else {
-          canvas.toBlob(
-            (b2) => resolve(b2 ? new File([b2], "profile.jpg", { type: "image/jpeg" }) : file),
-            "image/jpeg",
-            0.75,
-          );
-        }
-      }, "image/webp", 0.85);
-    };
-    img.onerror = () => resolve(file);
-    img.src = URL.createObjectURL(file);
-  });
+// ── Styled input ─────────────────────────────────────────────────────────────
+const inputCls = (err?: string) =>
+  `w-full h-10 pl-3 pr-3 rounded-xl border text-sm transition-colors focus:outline-none focus:ring-2 ` +
+  (err
+    ? "border-red-400 bg-red-50 dark:bg-red-950/20 text-slate-900 dark:text-white focus:ring-red-400/30"
+    : "border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-white focus:ring-emerald-400/30 focus:border-emerald-400");
+
+const iconInputCls = (err?: string) =>
+  `w-full h-10 pl-9 pr-3 rounded-xl border text-sm transition-colors focus:outline-none focus:ring-2 ` +
+  (err
+    ? "border-red-400 bg-red-50 dark:bg-red-950/20 text-slate-900 dark:text-white focus:ring-red-400/30"
+    : "border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-white focus:ring-emerald-400/30 focus:border-emerald-400");
+
+const labelCls = "text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider";
+const valueCls = "text-slate-900 dark:text-white text-sm min-h-[20px]";
+
+function FieldError({ msg }: { msg?: string }) {
+  if (!msg) return null;
+  return <p className="text-[11px] text-red-500 mt-1">{msg}</p>;
 }
 
-// ── Field component ─────────────────────────────────────────────────────────
-const Field = React.memo(function Field({
-  label, value, editMode, onChange, placeholder, icon, type = "text",
-}: {
-  label: string; value: string; editMode: boolean;
-  onChange: (v: string) => void; placeholder?: string;
-  icon?: React.ReactNode; type?: string;
-}) {
+function ReadOnlyField({ label, value }: { label: string; value: string }) {
   return (
     <div className="space-y-1">
-      <p className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">{label}</p>
-      {editMode ? (
-        <div className="relative">
-          {icon && <span className="absolute left-3 top-1/2 -translate-y-1/2">{icon}</span>}
-          <input
-            type={type} value={value} onChange={(e) => onChange(e.target.value)}
-            placeholder={placeholder}
-            className={`w-full h-10 ${icon ? "pl-9" : "pl-3"} pr-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-white text-sm focus:outline-none focus:ring-2 focus:ring-emerald-400/30 focus:border-emerald-400`}
-          />
-        </div>
-      ) : (
-        <p className="text-slate-900 dark:text-white text-sm min-h-[20px]">
-          {value ? value : <span className="text-slate-400">—</span>}
-        </p>
-      )}
+      <p className={labelCls}>{label}</p>
+      <p className={`${valueCls} text-slate-400`}>{value || "—"}</p>
     </div>
   );
-});
-
-const ACCEPTED_TYPES = ["image/jpeg", "image/png", "image/webp"];
+}
 
 export default function ProfileTab({ user, membershipId, membershipDoc, nomineeLocked = false }: Props) {
-  const { signOut } = useClerk();
-  const fileInputRef = useRef<HTMLInputElement>(null);
+  const { user: clerkUser } = useUser();
 
-  const [editMode, setEditMode] = useState(false);
-  const [saving, setSaving] = useState(false);
-  const [uploading, setUploading] = useState(false);
-  const [uploadProgress, setUploadProgress] = useState(0);
-  const [uploadLabel, setUploadLabel] = useState("Uploading…");
+  const [editMode, setEditMode]   = useState(false);
+  const [saving, setSaving]       = useState(false);
+  const [savedOk, setSavedOk]     = useState(false);
+  const [isDirty, setIsDirty]     = useState(false);
+  const [errors, setErrors]       = useState<Record<string, string>>({});
 
-  /*
-   * PROFILE AVATAR — completely separate from Clerk / header avatar.
-   * Source: Firestore organizationMembers.profileImage (Firebase Storage URL).
-   * The header avatar in CustomerDashboard reads user.imageUrl (Clerk) — never this field.
-   */
-  const [profileAvatar, setProfileAvatar] = useState<string>(membershipDoc?.profileImage || "");
-
-  const [firstName, setFirstName] = useState("");
-  const [lastName, setLastName] = useState("");
-  const [phone, setPhone] = useState("");
-  const [address, setAddress] = useState("");
-  const [city, setCity] = useState("");
-  const [state, setState] = useState("");
-  const [pincode, setPincode] = useState("");
-  const [dateOfBirth, setDateOfBirth] = useState("");
-  const [gender, setGender] = useState("");
-  const [aadhaarLast4, setAadhaarLast4] = useState("");
-
-  const [nomineeName, setNomineeName] = useState("");
-  const [nomineeRelation, setNomineeRelation] = useState("");
-  const [nomineePhone, setNomineePhone] = useState("");
+  // ── Editable fields ─────────────────────────────────────────────────────────
+  const [firstName,      setFirstName]      = useState("");
+  const [lastName,       setLastName]       = useState("");
+  const [phone,          setPhone]          = useState("");
+  const [address,        setAddress]        = useState("");
+  const [city,           setCity]           = useState("");
+  const [stateName,      setStateName]      = useState("");
+  const [pincode,        setPincode]        = useState("");
+  const [dateOfBirth,    setDateOfBirth]    = useState("");
+  const [gender,         setGender]         = useState("");
+  const [aadhaarLast4,   setAadhaarLast4]   = useState("");
+  const [nomineeName,    setNomineeName]    = useState("");
+  const [nomineeRelation,setNomineeRelation]= useState("");
+  const [nomineePhone,   setNomineePhone]   = useState("");
   const [nomineeAddress, setNomineeAddress] = useState("");
 
   const mem = membershipDoc;
@@ -120,22 +84,17 @@ export default function ProfileTab({ user, membershipId, membershipDoc, nomineeL
   const resolvedNomineeRelation = mem?.nomineeRelation || mem?.nominee?.relation || "";
   const resolvedNomineePhone    = mem?.nomineePhone    || mem?.nominee?.phone    || "";
   const resolvedNomineeAddress  = mem?.nomineeAddress  || mem?.nominee?.address  || "";
+  const nomineeComplete         = !!(resolvedNomineeName && resolvedNomineeRelation);
 
-  const nomineeComplete = !!(resolvedNomineeName && resolvedNomineeRelation);
-
-  // Sync profile avatar from Firestore whenever membershipDoc changes
-  useEffect(() => {
-    setProfileAvatar(mem?.profileImage || "");
-  }, [mem?.profileImage]);
-
+  // Seed fields when edit opens
   useEffect(() => {
     if (!editMode) return;
     setFirstName(mem?.firstName || user?.firstName || "");
-    setLastName(mem?.lastName  || user?.lastName  || "");
+    setLastName(mem?.lastName   || user?.lastName  || "");
     setPhone(mem?.phone || "");
     setAddress(mem?.address || "");
     setCity(mem?.city || "");
-    setState(mem?.state || "");
+    setStateName(mem?.state || "");
     setPincode(mem?.pincode || "");
     setDateOfBirth(mem?.dateOfBirth || "");
     setGender(mem?.gender || "");
@@ -144,78 +103,79 @@ export default function ProfileTab({ user, membershipId, membershipDoc, nomineeL
     setNomineeRelation(resolvedNomineeRelation);
     setNomineePhone(resolvedNomineePhone);
     setNomineeAddress(resolvedNomineeAddress);
+    setErrors({});
+    setIsDirty(false);
+    setSavedOk(false);
   }, [editMode]);
 
-  // ── Profile Image Upload → Firebase Storage ONLY (never touches Clerk) ───────
-  // This keeps the profile photo completely separate from the Clerk/header avatar.
-  const handleAvatarUpload = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file || !membershipId) return;
-    if (fileInputRef.current) fileInputRef.current.value = "";
+  // Mark dirty whenever any editable field changes (only while in editMode)
+  useEffect(() => {
+    if (editMode) setIsDirty(true);
+  }, [firstName, lastName, phone, address, city, stateName, pincode,
+      dateOfBirth, gender, aadhaarLast4, nomineeName, nomineeRelation,
+      nomineePhone, nomineeAddress]);
 
-    if (!ACCEPTED_TYPES.includes(file.type)) {
-      toast.error("Only JPG, PNG, and WEBP images are allowed.");
-      return;
+  // ── Setters that enforce input rules ─────────────────────────────────────
+  const setNameField = (setter: React.Dispatch<React.SetStateAction<string>>) =>
+    (v: string) => setter(v.replace(/[^A-Za-z\s]/g, ""));
+
+  const setPhoneField = (setter: React.Dispatch<React.SetStateAction<string>>) =>
+    (v: string) => setter(v.replace(/\D/g, "").slice(0, 10));
+
+  const setPincodeField = (v: string) => setPincode(v.replace(/\D/g, "").slice(0, 6));
+
+  // ── Validation ────────────────────────────────────────────────────────────
+  function validate() {
+    const e: Record<string, string> = {};
+
+    if (!firstName.trim()) {
+      e.firstName = "First name is required.";
+    } else if (!nameRx.test(firstName)) {
+      e.firstName = "Only letters and spaces allowed.";
     }
-    if (file.size > 5 * 1024 * 1024) {
-      toast.error("Image must be smaller than 5 MB.");
-      return;
+
+    if (!lastName.trim()) {
+      e.lastName = "Last name is required.";
+    } else if (!nameRx.test(lastName)) {
+      e.lastName = "Only letters and spaces allowed.";
     }
 
-    const prevAvatar = profileAvatar;
-
-    // Instant local preview
-    const objectUrl = URL.createObjectURL(file);
-    setProfileAvatar(objectUrl);
-    setUploading(true);
-    setUploadProgress(15);
-    setUploadLabel("Compressing…");
-
-    try {
-      // 1. Compress: max 512×512, WebP ≤300 KB
-      const compressed = await compressImage(file, 512, 300 * 1024);
-      setUploadProgress(40);
-      setUploadLabel("Uploading…");
-
-      // 2. Upload to Firebase Storage (not Clerk — header avatar is unaffected)
-      const storagePath = `profileImages/${membershipId}/${Date.now()}.webp`;
-      const storageRef = ref(storage, storagePath);
-      await uploadBytes(storageRef, compressed);
-      setUploadProgress(75);
-      setUploadLabel("Processing…");
-
-      // 3. Get the download URL
-      const downloadUrl = await getDownloadURL(storageRef);
-      setUploadProgress(90);
-
-      // 4. Persist to Firestore: profileImage field (separate from avatarUrl/Clerk)
-      await updateDoc(doc(db, "organizationMembers", membershipId), {
-        profileImage: downloadUrl,
-        updatedAt: serverTimestamp(),
-      });
-
-      setUploadProgress(100);
-      setUploadLabel("Done!");
-      setProfileAvatar(downloadUrl);
-      URL.revokeObjectURL(objectUrl);
-      toast.success("Profile photo updated!");
-    } catch (err: any) {
-      console.error("[ProfileAvatar] upload error:", err);
-      URL.revokeObjectURL(objectUrl);
-      setProfileAvatar(prevAvatar); // rollback
-      toast.error(err?.message || "Upload failed. Please try again.");
-    } finally {
-      setTimeout(() => {
-        setUploading(false);
-        setUploadProgress(0);
-        setUploadLabel("Uploading…");
-      }, 600);
+    if (phone.trim() && !phone10Rx.test(phone.trim())) {
+      e.phone = "Enter valid 10 digit mobile number.";
     }
-  }, [membershipId, profileAvatar]);
+
+    if (pincode.trim() && !pin6Rx.test(pincode.trim())) {
+      e.pincode = "Enter valid 6 digit pincode.";
+    }
+
+    if (dateOfBirth && dateOfBirth > todayStr()) {
+      e.dateOfBirth = "Date of birth cannot be in the future.";
+    }
+
+    if (nomineeName.trim() && !nameRx.test(nomineeName)) {
+      e.nomineeName = "Only letters and spaces allowed.";
+    }
+    if (nomineeName.trim() && !nomineeRelation) {
+      e.nomineeRelation = "Please select a relationship.";
+    }
+    if (nomineePhone.trim() && !phone10Rx.test(nomineePhone.trim())) {
+      e.nomineePhone = "Enter valid 10 digit mobile number.";
+    }
+
+    return e;
+  }
 
   const handleSave = async () => {
+    const e = validate();
+    if (Object.keys(e).length > 0) {
+      setErrors(e);
+      toast.error("Please fix the errors before saving.");
+      return;
+    }
     if (!membershipId) return toast.error("Not authenticated.");
+
     setSaving(true);
+    setErrors({});
     try {
       await updateDoc(doc(db, "organizationMembers", membershipId), {
         firstName:        firstName.trim(),
@@ -224,7 +184,7 @@ export default function ProfileTab({ user, membershipId, membershipDoc, nomineeL
         phone:            phone.trim(),
         address:          address.trim(),
         city:             city.trim(),
-        state:            state.trim(),
+        state:            stateName.trim(),
         pincode:          pincode.trim(),
         dateOfBirth:      dateOfBirth.trim(),
         gender:           gender.trim(),
@@ -242,6 +202,8 @@ export default function ProfileTab({ user, membershipId, membershipDoc, nomineeL
         updatedAt: serverTimestamp(),
       });
       toast.success("Profile updated successfully");
+      setIsDirty(false);
+      setSavedOk(true);
       setEditMode(false);
     } catch (err: any) {
       toast.error(err.message || "Failed to update profile");
@@ -250,8 +212,16 @@ export default function ProfileTab({ user, membershipId, membershipDoc, nomineeL
     }
   };
 
+  const handleCancel = () => {
+    setEditMode(false);
+    setErrors({});
+    setIsDirty(false);
+  };
+
+  // ── Display values ────────────────────────────────────────────────────────
   const displayName  = mem?.fullName || `${mem?.firstName || ""} ${mem?.lastName || ""}`.trim() || user?.fullName || "Customer";
   const displayEmail = mem?.email || user?.primaryEmailAddress?.emailAddress || "";
+  const clerkAvatar  = clerkUser?.imageUrl || user?.imageUrl || "";
   const initials     = (displayName[0] || "C").toUpperCase();
 
   return (
@@ -272,58 +242,22 @@ export default function ProfileTab({ user, membershipId, membershipDoc, nomineeL
         </div>
       )}
 
-      {/* Profile Header */}
+      {/* ── Profile Header Card ──────────────────────────────────────────── */}
       <Card>
         <CardContent className="p-5">
           <div className="flex items-start gap-4">
-            {/* Profile Avatar — reads from Firestore profileImage, never from Clerk */}
-            <div className="relative shrink-0">
-              <input
-                ref={fileInputRef}
-                type="file"
-                accept="image/jpeg,image/png,image/webp"
-                className="hidden"
-                onChange={handleAvatarUpload}
-              />
-              {profileAvatar ? (
+            {/* Avatar — always Clerk user.imageUrl */}
+            <div className="shrink-0">
+              {clerkAvatar ? (
                 <img
-                  src={profileAvatar}
+                  src={clerkAvatar}
                   alt="Profile"
                   className="w-16 h-16 rounded-2xl object-cover ring-2 ring-emerald-200 dark:ring-emerald-700"
-                  onError={() => setProfileAvatar("")}
                 />
               ) : (
                 <div className="w-16 h-16 rounded-2xl bg-emerald-600 flex items-center justify-center text-white text-xl font-black">
                   {initials}
                 </div>
-              )}
-
-              {/* Upload progress overlay */}
-              {uploading && (
-                <div className="absolute inset-0 rounded-2xl bg-black/65 flex flex-col items-center justify-center gap-1">
-                  <p className="text-white text-[9px] font-bold leading-tight">{uploadLabel}</p>
-                  <p className="text-emerald-300 text-[11px] font-black">{uploadProgress}%</p>
-                  <div className="w-10 h-1 bg-white/30 rounded-full overflow-hidden">
-                    <div
-                      className="h-full bg-emerald-400 rounded-full transition-all duration-300"
-                      style={{ width: `${uploadProgress}%` }}
-                    />
-                  </div>
-                </div>
-              )}
-
-              {/* Camera button — only visible in edit mode */}
-              {editMode && (
-                <button
-                  onClick={() => fileInputRef.current?.click()}
-                  disabled={uploading}
-                  title="Change profile photo"
-                  className="absolute -bottom-1 -right-1 w-6 h-6 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white rounded-full flex items-center justify-center shadow-sm transition-colors"
-                >
-                  {uploading
-                    ? <RefreshCw className="w-3 h-3 animate-spin" />
-                    : <Camera className="w-3 h-3" />}
-                </button>
               )}
             </div>
 
@@ -344,7 +278,7 @@ export default function ProfileTab({ user, membershipId, membershipDoc, nomineeL
             </div>
 
             <button
-              onClick={() => setEditMode(!editMode)}
+              onClick={() => editMode ? handleCancel() : setEditMode(true)}
               className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold transition-colors shrink-0 ${
                 editMode
                   ? "bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300"
@@ -354,21 +288,10 @@ export default function ProfileTab({ user, membershipId, membershipDoc, nomineeL
               {editMode ? <><X className="w-3.5 h-3.5" /> Cancel</> : <><Edit3 className="w-3.5 h-3.5" /> Edit</>}
             </button>
           </div>
-
-          {editMode && (
-            <button
-              onClick={handleSave}
-              disabled={saving}
-              className="mt-4 w-full h-10 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white rounded-xl font-semibold text-sm transition-colors flex items-center justify-center gap-2"
-            >
-              {saving ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
-              {saving ? "Saving…" : "Save Changes"}
-            </button>
-          )}
         </CardContent>
       </Card>
 
-      {/* Personal Information */}
+      {/* ── Personal Information ─────────────────────────────────────────── */}
       <Card>
         <CardHeader className="pb-0">
           <CardTitle className="text-sm flex items-center gap-2">
@@ -377,39 +300,114 @@ export default function ProfileTab({ user, membershipId, membershipDoc, nomineeL
           </CardTitle>
         </CardHeader>
         <CardContent className="pt-4 space-y-4">
+          {/* Name row */}
           <div className="grid grid-cols-2 gap-4">
-            <Field label="First Name" value={editMode ? firstName : (mem?.firstName || user?.firstName || "")}
-              editMode={editMode} onChange={setFirstName} placeholder="First name" />
-            <Field label="Last Name" value={editMode ? lastName : (mem?.lastName || user?.lastName || "")}
-              editMode={editMode} onChange={setLastName} placeholder="Last name" />
-          </div>
-          <Field label="Phone Number" value={editMode ? phone : (mem?.phone || "")}
-            editMode={editMode} onChange={setPhone} placeholder="+91 98765 43210"
-            icon={<Phone className="w-4 h-4 text-slate-400" />} />
-          <div className="grid grid-cols-2 gap-4">
-            <Field label="Date of Birth" value={editMode ? dateOfBirth : (mem?.dateOfBirth || "")}
-              editMode={editMode} onChange={setDateOfBirth} type="date" />
             <div className="space-y-1">
-              <p className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Gender</p>
+              <p className={labelCls}>First Name</p>
               {editMode ? (
-                <select value={gender} onChange={(e) => setGender(e.target.value)}
-                  className="w-full h-10 px-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-white text-sm focus:outline-none focus:ring-2 focus:ring-emerald-400/30">
-                  <option value="">Select…</option>
-                  <option value="Male">Male</option>
-                  <option value="Female">Female</option>
-                  <option value="Other">Other</option>
-                </select>
+                <>
+                  <input
+                    type="text" value={firstName}
+                    onChange={e => setNameField(setFirstName)(e.target.value)}
+                    placeholder="First name"
+                    className={inputCls(errors.firstName)}
+                  />
+                  <FieldError msg={errors.firstName} />
+                </>
               ) : (
-                <p className="text-slate-900 dark:text-white text-sm">
-                  {mem?.gender ? mem.gender : <span className="text-slate-400">—</span>}
-                </p>
+                <p className={valueCls}>{mem?.firstName || user?.firstName || <span className="text-slate-400">—</span>}</p>
+              )}
+            </div>
+            <div className="space-y-1">
+              <p className={labelCls}>Last Name</p>
+              {editMode ? (
+                <>
+                  <input
+                    type="text" value={lastName}
+                    onChange={e => setNameField(setLastName)(e.target.value)}
+                    placeholder="Last name"
+                    className={inputCls(errors.lastName)}
+                  />
+                  <FieldError msg={errors.lastName} />
+                </>
+              ) : (
+                <p className={valueCls}>{mem?.lastName || user?.lastName || <span className="text-slate-400">—</span>}</p>
               )}
             </div>
           </div>
+
+          {/* Phone */}
+          <div className="space-y-1">
+            <p className={labelCls}>Phone Number</p>
+            {editMode ? (
+              <>
+                <div className="relative">
+                  <Phone className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                  <input
+                    type="tel"
+                    inputMode="numeric"
+                    maxLength={10}
+                    value={phone}
+                    onChange={e => setPhoneField(setPhone)(e.target.value)}
+                    placeholder="10 digit mobile number"
+                    className={iconInputCls(errors.phone)}
+                  />
+                </div>
+                <FieldError msg={errors.phone} />
+              </>
+            ) : (
+              <p className={valueCls}>{mem?.phone || <span className="text-slate-400">—</span>}</p>
+            )}
+          </div>
+
+          {/* DOB + Gender */}
+          <div className="grid grid-cols-2 gap-4">
+            <div className="space-y-1">
+              <p className={labelCls}>Date of Birth</p>
+              {editMode ? (
+                <>
+                  <input
+                    type="date"
+                    value={dateOfBirth}
+                    max={todayStr()}
+                    onChange={e => setDateOfBirth(e.target.value)}
+                    className={inputCls(errors.dateOfBirth)}
+                  />
+                  <FieldError msg={errors.dateOfBirth} />
+                </>
+              ) : (
+                <p className={valueCls}>{mem?.dateOfBirth || <span className="text-slate-400">—</span>}</p>
+              )}
+            </div>
+            <div className="space-y-1">
+              <p className={labelCls}>Gender</p>
+              {editMode ? (
+                <>
+                  <select
+                    value={gender}
+                    onChange={e => setGender(e.target.value)}
+                    className={inputCls(errors.gender)}
+                  >
+                    <option value="">Select…</option>
+                    <option value="Male">Male</option>
+                    <option value="Female">Female</option>
+                    <option value="Other">Other</option>
+                  </select>
+                  <FieldError msg={errors.gender} />
+                </>
+              ) : (
+                <p className={valueCls}>{mem?.gender || <span className="text-slate-400">—</span>}</p>
+              )}
+            </div>
+          </div>
+
+          {/* Read-only fields */}
+          <ReadOnlyField label="Email" value={displayEmail} />
+          {mem?.id && <ReadOnlyField label="Member ID" value={mem.id} />}
         </CardContent>
       </Card>
 
-      {/* Address */}
+      {/* ── Address ──────────────────────────────────────────────────────── */}
       <Card>
         <CardHeader className="pb-0">
           <CardTitle className="text-sm flex items-center gap-2">
@@ -418,21 +416,69 @@ export default function ProfileTab({ user, membershipId, membershipDoc, nomineeL
           </CardTitle>
         </CardHeader>
         <CardContent className="pt-4 space-y-4">
-          <Field label="Street Address" value={editMode ? address : (mem?.address || "")}
-            editMode={editMode} onChange={setAddress} placeholder="Door no, Street name"
-            icon={<MapPin className="w-4 h-4 text-slate-400" />} />
-          <div className="grid grid-cols-2 gap-4">
-            <Field label="City" value={editMode ? city : (mem?.city || "")}
-              editMode={editMode} onChange={setCity} placeholder="City" />
-            <Field label="State" value={editMode ? state : (mem?.state || "")}
-              editMode={editMode} onChange={setState} placeholder="State" />
+          {/* Street */}
+          <div className="space-y-1">
+            <p className={labelCls}>Street Address</p>
+            {editMode ? (
+              <div className="relative">
+                <MapPin className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                <input
+                  type="text" value={address}
+                  onChange={e => setAddress(e.target.value)}
+                  placeholder="Door no, Street name"
+                  className={iconInputCls()}
+                />
+              </div>
+            ) : (
+              <p className={valueCls}>{mem?.address || <span className="text-slate-400">—</span>}</p>
+            )}
           </div>
-          <Field label="Pincode" value={editMode ? pincode : (mem?.pincode || "")}
-            editMode={editMode} onChange={setPincode} placeholder="6-digit pincode" />
+
+          <div className="grid grid-cols-2 gap-4">
+            <div className="space-y-1">
+              <p className={labelCls}>City</p>
+              {editMode ? (
+                <input type="text" value={city} onChange={e => setCity(e.target.value)}
+                  placeholder="City" className={inputCls()} />
+              ) : (
+                <p className={valueCls}>{mem?.city || <span className="text-slate-400">—</span>}</p>
+              )}
+            </div>
+            <div className="space-y-1">
+              <p className={labelCls}>State</p>
+              {editMode ? (
+                <input type="text" value={stateName} onChange={e => setStateName(e.target.value)}
+                  placeholder="State" className={inputCls()} />
+              ) : (
+                <p className={valueCls}>{mem?.state || <span className="text-slate-400">—</span>}</p>
+              )}
+            </div>
+          </div>
+
+          {/* Pincode */}
+          <div className="space-y-1">
+            <p className={labelCls}>Pincode</p>
+            {editMode ? (
+              <>
+                <input
+                  type="text"
+                  inputMode="numeric"
+                  maxLength={6}
+                  value={pincode}
+                  onChange={e => setPincodeField(e.target.value)}
+                  placeholder="6 digit pincode"
+                  className={inputCls(errors.pincode)}
+                />
+                <FieldError msg={errors.pincode} />
+              </>
+            ) : (
+              <p className={valueCls}>{mem?.pincode || <span className="text-slate-400">—</span>}</p>
+            )}
+          </div>
         </CardContent>
       </Card>
 
-      {/* Nominee */}
+      {/* ── Nominee ──────────────────────────────────────────────────────── */}
       <Card className={
         nomineeLocked ? "ring-1 ring-blue-300 dark:ring-blue-700" :
         !nomineeComplete ? "ring-1 ring-amber-300 dark:ring-amber-700" : ""
@@ -465,39 +511,95 @@ export default function ProfileTab({ user, membershipId, membershipDoc, nomineeL
               </p>
             </div>
           )}
-          <Field label="Nominee Name" value={editMode ? nomineeName : resolvedNomineeName}
-            editMode={editMode && !nomineeLocked} onChange={setNomineeName} placeholder="Full name of nominee" />
+
+          {/* Nominee Name */}
+          <div className="space-y-1">
+            <p className={labelCls}>Nominee Name</p>
+            {editMode && !nomineeLocked ? (
+              <>
+                <input
+                  type="text" value={nomineeName}
+                  onChange={e => setNameField(setNomineeName)(e.target.value)}
+                  placeholder="Full name of nominee"
+                  className={inputCls(errors.nomineeName)}
+                />
+                <FieldError msg={errors.nomineeName} />
+              </>
+            ) : (
+              <p className={valueCls}>{resolvedNomineeName || <span className="text-slate-400">—</span>}</p>
+            )}
+          </div>
+
           <div className="grid grid-cols-2 gap-4">
+            {/* Relationship */}
             <div className="space-y-1">
-              <p className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Relationship</p>
+              <p className={labelCls}>Relationship</p>
               {editMode && !nomineeLocked ? (
-                <select value={nomineeRelation} onChange={(e) => setNomineeRelation(e.target.value)}
-                  className="w-full h-10 px-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-white text-sm focus:outline-none focus:ring-2 focus:ring-emerald-400/30">
-                  <option value="">Select…</option>
-                  <option value="Spouse">Spouse</option>
-                  <option value="Father">Father</option>
-                  <option value="Mother">Mother</option>
-                  <option value="Son">Son</option>
-                  <option value="Daughter">Daughter</option>
-                  <option value="Sibling">Sibling</option>
-                  <option value="Other">Other</option>
-                </select>
+                <>
+                  <select
+                    value={nomineeRelation}
+                    onChange={e => setNomineeRelation(e.target.value)}
+                    className={inputCls(errors.nomineeRelation)}
+                  >
+                    <option value="">Select…</option>
+                    <option value="Spouse">Spouse</option>
+                    <option value="Father">Father</option>
+                    <option value="Mother">Mother</option>
+                    <option value="Son">Son</option>
+                    <option value="Daughter">Daughter</option>
+                    <option value="Sibling">Sibling</option>
+                    <option value="Other">Other</option>
+                  </select>
+                  <FieldError msg={errors.nomineeRelation} />
+                </>
               ) : (
-                <p className="text-slate-900 dark:text-white text-sm">
-                  {resolvedNomineeRelation ? resolvedNomineeRelation : <span className="text-slate-400">—</span>}
-                </p>
+                <p className={valueCls}>{resolvedNomineeRelation || <span className="text-slate-400">—</span>}</p>
               )}
             </div>
-            <Field label="Nominee Phone" value={editMode ? nomineePhone : resolvedNomineePhone}
-              editMode={editMode && !nomineeLocked} onChange={setNomineePhone} placeholder="+91 ..." />
+
+            {/* Nominee Phone */}
+            <div className="space-y-1">
+              <p className={labelCls}>Nominee Phone</p>
+              {editMode && !nomineeLocked ? (
+                <>
+                  <input
+                    type="tel"
+                    inputMode="numeric"
+                    maxLength={10}
+                    value={nomineePhone}
+                    onChange={e => setPhoneField(setNomineePhone)(e.target.value)}
+                    placeholder="10 digits"
+                    className={inputCls(errors.nomineePhone)}
+                  />
+                  <FieldError msg={errors.nomineePhone} />
+                </>
+              ) : (
+                <p className={valueCls}>{resolvedNomineePhone || <span className="text-slate-400">—</span>}</p>
+              )}
+            </div>
           </div>
-          <Field label="Nominee Address" value={editMode ? nomineeAddress : resolvedNomineeAddress}
-            editMode={editMode && !nomineeLocked} onChange={setNomineeAddress} placeholder="Nominee's residential address"
-            icon={<MapPin className="w-4 h-4 text-slate-400" />} />
+
+          {/* Nominee Address */}
+          <div className="space-y-1">
+            <p className={labelCls}>Nominee Address</p>
+            {editMode && !nomineeLocked ? (
+              <div className="relative">
+                <MapPin className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                <input
+                  type="text" value={nomineeAddress}
+                  onChange={e => setNomineeAddress(e.target.value)}
+                  placeholder="Nominee's residential address"
+                  className={iconInputCls()}
+                />
+              </div>
+            ) : (
+              <p className={valueCls}>{resolvedNomineeAddress || <span className="text-slate-400">—</span>}</p>
+            )}
+          </div>
         </CardContent>
       </Card>
 
-      {/* Identity */}
+      {/* ── Identity Document ─────────────────────────────────────────────── */}
       <Card>
         <CardHeader className="pb-0">
           <CardTitle className="text-sm flex items-center gap-2">
@@ -506,28 +608,55 @@ export default function ProfileTab({ user, membershipId, membershipDoc, nomineeL
           </CardTitle>
         </CardHeader>
         <CardContent className="pt-4 space-y-2">
-          <p className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
-            Aadhaar (Last 4 digits)
-          </p>
+          <p className={labelCls}>Aadhaar (Last 4 digits)</p>
           {editMode ? (
-            <input
-              type="text" maxLength={4} value={aadhaarLast4}
-              onChange={(e) => setAadhaarLast4(e.target.value.replace(/\D/g, "").slice(0, 4))}
-              placeholder="XXXX"
-              className="w-full h-10 px-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-white text-sm focus:outline-none focus:ring-2 focus:ring-emerald-400/30 font-mono tracking-widest"
-            />
+            <>
+              <input
+                type="text" maxLength={4} value={aadhaarLast4}
+                inputMode="numeric"
+                onChange={e => setAadhaarLast4(e.target.value.replace(/\D/g, "").slice(0, 4))}
+                placeholder="XXXX"
+                className={`${inputCls()} font-mono tracking-widest`}
+              />
+              <p className="text-[10px] text-slate-400">Only the last 4 digits are stored for security.</p>
+            </>
           ) : (
-            <p className="text-slate-900 dark:text-white font-mono text-sm">
-              {mem?.aadhaarLast4 ? `XXXX XXXX XXXX ${mem.aadhaarLast4}` : "—"}
+            <p className={`${valueCls} font-mono`}>
+              {mem?.aadhaarLast4 ? `XXXX XXXX XXXX ${mem.aadhaarLast4}` : <span className="text-slate-400">—</span>}
             </p>
-          )}
-          {editMode && (
-            <p className="text-[10px] text-slate-400">Only the last 4 digits are stored for security.</p>
           )}
         </CardContent>
       </Card>
 
-      {/* Logout */}
+      {/* ── Save Changes — bottom of form, shown only in editMode ─────────── */}
+      {editMode && (
+        <div className="space-y-2">
+          <button
+            onClick={handleSave}
+            disabled={saving || !isDirty}
+            className="w-full h-12 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-40 disabled:cursor-not-allowed text-white rounded-2xl font-semibold text-sm transition-colors flex items-center justify-center gap-2"
+          >
+            {saving ? (
+              <><RefreshCw className="w-4 h-4 animate-spin" /> Saving…</>
+            ) : (
+              <><Save className="w-4 h-4" /> Save Changes</>
+            )}
+          </button>
+          {!isDirty && !saving && (
+            <p className="text-center text-xs text-slate-400">Edit a field above to enable Save.</p>
+          )}
+        </div>
+      )}
+
+      {/* ── Saved confirmation ────────────────────────────────────────────── */}
+      {savedOk && !editMode && (
+        <div className="flex items-center gap-2 px-4 py-3 rounded-xl bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-800">
+          <CheckCircle2 className="w-4 h-4 text-emerald-500 shrink-0" />
+          <p className="text-sm font-semibold text-emerald-700 dark:text-emerald-400">Changes saved successfully</p>
+        </div>
+      )}
+
+      {/* ── Sign Out ──────────────────────────────────────────────────────── */}
       <SignOutButton>
         <button className="w-full h-12 border border-red-200 dark:border-red-800 bg-red-50 dark:bg-red-950/30 hover:bg-red-100 dark:hover:bg-red-950/50 text-red-600 dark:text-red-400 rounded-2xl font-semibold text-sm transition-colors flex items-center justify-center gap-2">
           <LogOut className="w-4 h-4" /> Sign Out
