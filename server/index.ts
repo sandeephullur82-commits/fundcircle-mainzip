@@ -932,6 +932,37 @@ app.get("/health", (_req, res) => {
   });
 });
 
+// ─── Clerk User Profile (read-only, for agent viewing customer) ───────────────
+app.get("/api/clerk-user/:userId", authMiddleware, async (req: Request, res: Response) => {
+  const { userId } = req.params;
+  if (!userId || !userId.startsWith("user_")) {
+    return res.status(400).json({ error: "Invalid Clerk user ID" });
+  }
+  try {
+    const u = await clerkClient.users.getUser(userId);
+    const primary = u.emailAddresses.find(e => e.id === u.primaryEmailAddressId);
+    const primaryPhone = u.phoneNumbers.find(p => p.id === u.primaryPhoneNumberId);
+    return res.json({
+      id:                  u.id,
+      imageUrl:            u.imageUrl || null,
+      firstName:           u.firstName || null,
+      lastName:            u.lastName  || null,
+      fullName:            [u.firstName, u.lastName].filter(Boolean).join(" ") || null,
+      email:               primary?.emailAddress || null,
+      emailVerified:       primary?.verification?.status === "verified",
+      phone:               primaryPhone?.phoneNumber || null,
+      phoneVerified:       primaryPhone?.verification?.status === "verified",
+      lastSignInAt:        u.lastSignInAt  ? new Date(u.lastSignInAt).toISOString()  : null,
+      createdAt:           u.createdAt     ? new Date(u.createdAt).toISOString()     : null,
+      banned:              u.banned,
+      locked:              u.locked,
+    });
+  } catch (err: any) {
+    const status = err?.status || err?.clerkError ? 404 : 500;
+    return res.status(status).json({ error: err?.message || "Failed to fetch Clerk user" });
+  }
+});
+
 // ─── 404 catch-all ────────────────────────────────────────────────────────────
 app.use((req: Request, res: Response) => {
   console.warn(`[FC API] 404 — unmatched route: ${req.method} ${req.path}`);

@@ -1,19 +1,34 @@
 import { useState, useEffect, useMemo } from "react";
-import { useOrganization, useUser } from "@clerk/clerk-react";
+import { useOrganization, useUser, useAuth } from "@clerk/clerk-react";
 import { where } from "firebase/firestore";
-import { format, startOfDay } from "date-fns";
+import { format, startOfDay, formatDistanceToNow } from "date-fns";
 import {
   ArrowLeft, Phone, MessageCircle, PiggyBank, ReceiptText,
+  ShieldCheck, ShieldAlert, Clock, BadgeCheck,
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { toast } from "sonner";
 import { Membership, Collection } from "@/types";
 import { useCollectionRealtime } from "@/lib/firestore-hooks";
-import {
-  getSavingsAccountByCustomer,
-  getActiveLoanForCustomer,
-} from "@/lib/services";
+import { getSavingsAccountByCustomer, getActiveLoanForCustomer } from "@/lib/services";
 import CollectDialog, { toDate } from "@/components/agent/CollectDialog";
+
+// ── Types ─────────────────────────────────────────────────────────────────────
+interface ClerkProfile {
+  id: string;
+  imageUrl: string | null;
+  firstName: string | null;
+  lastName: string | null;
+  fullName: string | null;
+  email: string | null;
+  emailVerified: boolean;
+  phone: string | null;
+  phoneVerified: boolean;
+  lastSignInAt: string | null;
+  createdAt: string | null;
+  banned: boolean;
+  locked: boolean;
+}
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 function safeN(v: any): number { const n = Number(v); return isFinite(n) ? n : 0; }
@@ -30,8 +45,7 @@ function cleanPhone(phone: string): string {
   return phone.replace(/[\s\-().+]/g, "").replace(/^0+/, "");
 }
 function isValidPhone(phone: string): boolean {
-  const p = cleanPhone(phone);
-  return /^\d{10,12}$/.test(p);
+  return /^\d{10,12}$/.test(cleanPhone(phone));
 }
 
 const AVATAR_COLORS = [
@@ -44,6 +58,13 @@ const AVATAR_COLORS = [
 function avatarGradient(id: string) {
   const code = id.split("").reduce((s, c) => s + c.charCodeAt(0), 0);
   return AVATAR_COLORS[code % AVATAR_COLORS.length];
+}
+
+function accountStatusLabel(profile: ClerkProfile): { label: string; color: string } {
+  if (profile.banned)  return { label: "Banned",   color: "bg-red-100 text-red-700" };
+  if (profile.locked)  return { label: "Locked",   color: "bg-orange-100 text-orange-700" };
+  if (!profile.lastSignInAt) return { label: "Invited", color: "bg-blue-100 text-blue-700" };
+  return { label: "Active", color: "bg-emerald-100 text-emerald-700" };
 }
 
 // ── Progress Ring ─────────────────────────────────────────────────────────────
@@ -69,23 +90,18 @@ function ProgressRing({ pct }: { pct: number }) {
 // ── Call Sheet ────────────────────────────────────────────────────────────────
 function CallSheet({ name, phone, onClose }: { name: string; phone: string; onClose: () => void }) {
   const handleCall = () => {
-    const p = cleanPhone(phone);
     if (!isValidPhone(phone)) { toast.error("Invalid phone number"); onClose(); return; }
-    window.location.href = `tel:${p}`;
+    window.location.href = `tel:${cleanPhone(phone)}`;
     onClose();
   };
   return (
     <motion.div
-      initial={{ opacity: 0 }}
-      animate={{ opacity: 1 }}
-      exit={{ opacity: 0 }}
+      initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
       className="fixed inset-0 z-50 bg-black/40 backdrop-blur-sm flex items-end justify-center"
       onClick={onClose}
     >
       <motion.div
-        initial={{ y: 200 }}
-        animate={{ y: 0 }}
-        exit={{ y: 200 }}
+        initial={{ y: 200 }} animate={{ y: 0 }} exit={{ y: 200 }}
         transition={{ type: "spring", stiffness: 380, damping: 32 }}
         onClick={e => e.stopPropagation()}
         className="w-full max-w-sm bg-white rounded-t-3xl p-6 pb-10 shadow-2xl"
@@ -99,16 +115,10 @@ function CallSheet({ name, phone, onClose }: { name: string; phone: string; onCl
           Do you want to call <span className="font-bold text-slate-800">{name}</span>?
         </p>
         <div className="space-y-3">
-          <button
-            onClick={handleCall}
-            className="w-full py-3.5 bg-emerald-600 text-white font-bold rounded-2xl text-sm active:scale-95 transition-transform"
-          >
+          <button onClick={handleCall} className="w-full py-3.5 bg-emerald-600 text-white font-bold rounded-2xl text-sm active:scale-95 transition-transform">
             Call Now
           </button>
-          <button
-            onClick={onClose}
-            className="w-full py-3.5 bg-slate-100 text-slate-700 font-bold rounded-2xl text-sm active:scale-95 transition-transform"
-          >
+          <button onClick={onClose} className="w-full py-3.5 bg-slate-100 text-slate-700 font-bold rounded-2xl text-sm active:scale-95 transition-transform">
             Cancel
           </button>
         </div>
@@ -117,7 +127,7 @@ function CallSheet({ name, phone, onClose }: { name: string; phone: string; onCl
   );
 }
 
-// ── Section Wrapper ───────────────────────────────────────────────────────────
+// ── Section + Row ─────────────────────────────────────────────────────────────
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
     <div className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
@@ -138,6 +148,52 @@ function DetailRow({ label, value, mono }: { label: string; value: string; mono?
   );
 }
 
+// ── Customer Avatar (image priority: Clerk → Firestore → initials) ────────────
+function CustomerAvatar({ clerkImageUrl, firestoreImageUrl, name, id }: {
+  clerkImageUrl?: string | null;
+  firestoreImageUrl?: string | null;
+  name: string;
+  id: string;
+}) {
+  const [imgSrc, setImgSrc] = useState<string | null>(clerkImageUrl || firestoreImageUrl || null);
+  const [imgFailed, setImgFailed] = useState(false);
+
+  useEffect(() => {
+    setImgSrc(clerkImageUrl || firestoreImageUrl || null);
+    setImgFailed(false);
+  }, [clerkImageUrl, firestoreImageUrl]);
+
+  if (imgSrc && !imgFailed) {
+    return (
+      <img
+        src={imgSrc}
+        alt={name}
+        onError={() => setImgFailed(true)}
+        className="w-16 h-16 rounded-2xl object-cover shrink-0 shadow-md"
+      />
+    );
+  }
+  return (
+    <div className={`w-16 h-16 rounded-2xl bg-gradient-to-br ${avatarGradient(id)} flex items-center justify-center text-white text-xl font-black shrink-0 shadow-md`}>
+      {initials(name)}
+    </div>
+  );
+}
+
+// ── Verification Badge ────────────────────────────────────────────────────────
+function VerBadge({ label, verified }: { label: string; verified: boolean }) {
+  return (
+    <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold ${
+      verified ? "bg-emerald-50 text-emerald-700" : "bg-amber-50 text-amber-600"
+    }`}>
+      {verified
+        ? <ShieldCheck className="w-3 h-3" />
+        : <ShieldAlert className="w-3 h-3" />}
+      {verified ? `${label} Verified` : `${label} Pending`}
+    </span>
+  );
+}
+
 // ── Main Component ────────────────────────────────────────────────────────────
 interface CustomerDetailPageProps {
   customer: Membership;
@@ -148,6 +204,7 @@ interface CustomerDetailPageProps {
 export default function CustomerDetailPage({ customer, onBack, onSwitchTab }: CustomerDetailPageProps) {
   const { organization } = useOrganization();
   const { user }         = useUser();
+  const { getToken }     = useAuth();
 
   const orgId     = organization?.id || "";
   const orgName   = organization?.name || "FundCircle";
@@ -159,15 +216,18 @@ export default function CustomerDetailPage({ customer, onBack, onSwitchTab }: Cu
   const phone= c.phone || "";
   const cid  = custId(customer.id);
 
+  // ── State ───────────────────────────────────────────────────────────────────
   const [savingsAccount,  setSavingsAccount]  = useState<any>(null);
   const [activeLoan,      setActiveLoan]      = useState<any>(null);
   const [loadingAccounts, setLoadingAccounts] = useState(true);
+  const [clerkProfile,    setClerkProfile]    = useState<ClerkProfile | null>(null);
+  const [clerkLoading,    setClerkLoading]    = useState(false);
   const [collectTarget,   setCollectTarget]   = useState<Membership | null>(null);
   const [callSheetOpen,   setCallSheetOpen]   = useState(false);
 
   const today = useMemo(() => startOfDay(new Date()), []);
 
-  // Fetch savings + loan once
+  // ── Fetch savings + loan ────────────────────────────────────────────────────
   useEffect(() => {
     setLoadingAccounts(true);
     Promise.all([
@@ -176,37 +236,64 @@ export default function CustomerDetailPage({ customer, onBack, onSwitchTab }: Cu
     ]).then(([acc, loan]) => {
       setSavingsAccount(acc);
       setActiveLoan(loan);
-    }).catch(() => {
-      // silent
-    }).finally(() => setLoadingAccounts(false));
+    }).catch(() => {}).finally(() => setLoadingAccounts(false));
   }, [customer.id, orgId]);
 
-  // Real-time collections for this customer
+  // ── Fetch Clerk profile for this customer ───────────────────────────────────
+  useEffect(() => {
+    const clerkId = customer.clerkUserId;
+    if (!clerkId || !clerkId.startsWith("user_")) return;
+    setClerkLoading(true);
+    (async () => {
+      try {
+        const token = await getToken();
+        if (!token) return;
+        const res = await fetch(`/api/clerk-user/${clerkId}`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        if (!res.ok) return;
+        const data: ClerkProfile = await res.json();
+        setClerkProfile(data);
+      } catch {
+        // silently skip — profile image falls back to initials
+      } finally {
+        setClerkLoading(false);
+      }
+    })();
+  }, [customer.clerkUserId, getToken]);
+
+  // ── Real-time collections ───────────────────────────────────────────────────
+  const customerIds = useMemo(() => {
+    const ids = [customer.id];
+    if (customer.clerkUserId && customer.clerkUserId !== customer.id) ids.push(customer.clerkUserId);
+    return ids;
+  }, [customer.id, customer.clerkUserId]);
+
   const { data: allCollections } = useCollectionRealtime<Collection>("collections", [
-    where("customerId", "in", [customer.id, customer.clerkUserId || customer.id]),
+    where("customerId", "==", customer.id),
   ]);
 
-  // Aggregate stats
+  // ── Derived stats ───────────────────────────────────────────────────────────
   const totalPaid = useMemo(
-    () => allCollections.reduce((sum, c) => sum + safeN(c.amount), 0),
+    () => allCollections.reduce((sum, col) => sum + safeN(col.amount), 0),
     [allCollections]
   );
-  const isDoneToday = useMemo(() => {
-    return allCollections.some(c => toDate(c.collectedAt || (c as any).timestamp) >= today);
-  }, [allCollections, today]);
-
-  const pendingAmt = useMemo(() => {
-    if (isDoneToday) return 0;
-    return safeN(savingsAccount?.scheduledAmount);
-  }, [isDoneToday, savingsAccount]);
-
+  const isDoneToday = useMemo(
+    () => allCollections.some(col => toDate(col.collectedAt || (col as any).timestamp) >= today),
+    [allCollections, today]
+  );
+  const pendingAmt = useMemo(
+    () => isDoneToday ? 0 : safeN(savingsAccount?.scheduledAmount),
+    [isDoneToday, savingsAccount]
+  );
   const progressPct = useMemo(() => {
-    const target = safeN(savingsAccount?.scheduledAmount) * 100; // rough: 100 days goal
-    if (!target) return 0;
-    return Math.min((totalPaid / target) * 100, 100);
-  }, [totalPaid, savingsAccount]);
+    const dailyTarget = safeN(savingsAccount?.scheduledAmount);
+    if (!dailyTarget) return 0;
+    const days = allCollections.length || 1;
+    return Math.min((totalPaid / (dailyTarget * Math.max(days, 30))) * 100, 100);
+  }, [totalPaid, savingsAccount, allCollections.length]);
 
-  // Group collections by date
+  // ── Grouped transaction history ─────────────────────────────────────────────
   const groupedCollections = useMemo(() => {
     const sorted = [...allCollections].sort((a, b) =>
       toDate(b.collectedAt || (b as any).timestamp).valueOf() -
@@ -214,7 +301,7 @@ export default function CustomerDetailPage({ customer, onBack, onSwitchTab }: Cu
     );
     const groups = new Map<string, Collection[]>();
     for (const col of sorted) {
-      const d = toDate(col.collectedAt || (col as any).timestamp);
+      const d   = toDate(col.collectedAt || (col as any).timestamp);
       const key = d.getTime() > 0 ? format(d, "d MMM yyyy") : "Unknown";
       if (!groups.has(key)) groups.set(key, []);
       groups.get(key)!.push(col);
@@ -222,12 +309,21 @@ export default function CustomerDetailPage({ customer, onBack, onSwitchTab }: Cu
     return Array.from(groups.entries());
   }, [allCollections]);
 
+  // ── Derived display values ──────────────────────────────────────────────────
+  const displayName  = clerkProfile?.fullName || name;
+  const displayEmail = clerkProfile?.email    || c.email || null;
+  const displayPhone = clerkProfile?.phone    || phone;
+  const clerkImgUrl  = clerkProfile?.imageUrl || null;
+  const fsImgUrl     = c.profilePhotoUrl || c.profileImage || c.avatarUrl || null;
+
   const handleWhatsApp = () => {
-    const p = cleanPhone(phone);
-    if (!isValidPhone(phone)) { toast.error("WhatsApp not available — invalid number"); return; }
-    const msg = encodeURIComponent(`Hi ${name}, this is your FundCircle collector.`);
+    const p = cleanPhone(displayPhone);
+    if (!isValidPhone(displayPhone)) { toast.error("WhatsApp not available — invalid number"); return; }
+    const msg = encodeURIComponent(`Hi ${displayName}, this is your FundCircle collector.`);
     window.open(`https://wa.me/${p.length === 10 ? `91${p}` : p}?text=${msg}`, "_blank");
   };
+
+  const statusInfo = clerkProfile ? accountStatusLabel(clerkProfile) : null;
 
   return (
     <div className="pb-10">
@@ -241,30 +337,57 @@ export default function CustomerDetailPage({ customer, onBack, onSwitchTab }: Cu
         </button>
         <div>
           <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Customer Details</p>
-          <p className="text-sm font-bold text-slate-800 truncate max-w-[220px]">{name}</p>
+          <p className="text-sm font-bold text-slate-800 truncate max-w-[220px]">{displayName}</p>
         </div>
       </div>
 
       <div className="space-y-3">
-        {/* Profile Card */}
+
+        {/* ── Profile Card ─────────────────────────────────────────────────── */}
         <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-5">
-          <div className="flex items-center gap-4">
-            {/* Avatar */}
-            <div className={`w-16 h-16 rounded-2xl bg-gradient-to-br ${avatarGradient(customer.id)} flex items-center justify-center text-white text-xl font-black shrink-0 shadow-md`}>
-              {initials(name)}
-            </div>
-            {/* Name + ID + status */}
+          <div className="flex items-start gap-4">
+            <CustomerAvatar
+              clerkImageUrl={clerkImgUrl}
+              firestoreImageUrl={fsImgUrl}
+              name={displayName}
+              id={customer.id}
+            />
             <div className="flex-1 min-w-0">
-              <p className="text-base font-black text-slate-900 truncate">{name}</p>
+              <p className="text-base font-black text-slate-900 truncate">{displayName}</p>
               <p className="text-xs font-mono text-slate-400 mt-0.5">{cid}</p>
-              {phone && <p className="text-xs text-slate-500 mt-0.5">{phone}</p>}
-              <span className={`inline-flex items-center mt-1.5 px-2 py-0.5 rounded-full text-[10px] font-bold ${
-                isDoneToday
-                  ? "bg-emerald-50 text-emerald-700"
-                  : "bg-amber-50 text-amber-700"
-              }`}>
-                {isDoneToday ? "✓ Collected Today" : "Pending Today"}
-              </span>
+              {displayPhone && <p className="text-xs text-slate-500 mt-0.5">{displayPhone}</p>}
+              {displayEmail && <p className="text-xs text-slate-400 truncate mt-0.5">{displayEmail}</p>}
+
+              {/* Status badges */}
+              <div className="flex flex-wrap gap-1.5 mt-2">
+                <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                  isDoneToday ? "bg-emerald-50 text-emerald-700" : "bg-amber-50 text-amber-700"
+                }`}>
+                  {isDoneToday ? "✓ Collected Today" : "Pending Today"}
+                </span>
+                {statusInfo && (
+                  <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold ${statusInfo.color}`}>
+                    <BadgeCheck className="w-3 h-3" />
+                    {statusInfo.label}
+                  </span>
+                )}
+              </div>
+
+              {/* Verification badges */}
+              {clerkProfile && (
+                <div className="flex flex-wrap gap-1.5 mt-1.5">
+                  {clerkProfile.email  && <VerBadge label="Email" verified={clerkProfile.emailVerified} />}
+                  {clerkProfile.phone  && <VerBadge label="Phone" verified={clerkProfile.phoneVerified} />}
+                </div>
+              )}
+
+              {/* Last login */}
+              {clerkProfile?.lastSignInAt && (
+                <p className="flex items-center gap-1 text-[10px] text-slate-400 mt-1.5">
+                  <Clock className="w-3 h-3" />
+                  Last login {formatDistanceToNow(new Date(clerkProfile.lastSignInAt), { addSuffix: true })}
+                </p>
+              )}
             </div>
           </div>
 
@@ -277,22 +400,22 @@ export default function CustomerDetailPage({ customer, onBack, onSwitchTab }: Cu
                 <span className="text-[8px] text-slate-400">Paid</span>
               </div>
             </div>
-            <div className="flex-1 grid grid-cols-2 gap-3">
-              <div className="bg-amber-50 rounded-xl p-3">
+            <div className="flex-1 grid grid-cols-2 gap-2.5">
+              <div className="bg-amber-50 rounded-xl p-2.5">
                 <p className="text-[9px] font-bold uppercase tracking-wider text-amber-500 mb-0.5">Pending</p>
                 <p className="text-sm font-black text-amber-700">{pendingAmt > 0 ? formatINR(pendingAmt) : "—"}</p>
               </div>
-              <div className="bg-emerald-50 rounded-xl p-3">
+              <div className="bg-emerald-50 rounded-xl p-2.5">
                 <p className="text-[9px] font-bold uppercase tracking-wider text-emerald-600 mb-0.5">Total Paid</p>
                 <p className="text-sm font-black text-emerald-700">{totalPaid > 0 ? formatINR(totalPaid) : "₹0"}</p>
               </div>
               {savingsAccount && (
-                <div className="bg-slate-50 rounded-xl p-3">
+                <div className="bg-slate-50 rounded-xl p-2.5">
                   <p className="text-[9px] font-bold uppercase tracking-wider text-slate-400 mb-0.5">Balance</p>
                   <p className="text-sm font-black text-slate-700">{formatINR(safeN(savingsAccount.totalBalance))}</p>
                 </div>
               )}
-              <div className="bg-slate-50 rounded-xl p-3">
+              <div className="bg-slate-50 rounded-xl p-2.5">
                 <p className="text-[9px] font-bold uppercase tracking-wider text-slate-400 mb-0.5">Collections</p>
                 <p className="text-sm font-black text-slate-700">{allCollections.length}</p>
               </div>
@@ -300,34 +423,37 @@ export default function CustomerDetailPage({ customer, onBack, onSwitchTab }: Cu
           </div>
         </div>
 
-        {/* Account Details */}
-        {!loadingAccounts && (savingsAccount || activeLoan) && (
+        {/* ── Account Details ───────────────────────────────────────────────── */}
+        {!loadingAccounts && (savingsAccount || activeLoan || displayPhone) && (
           <Section title="Account Details">
-            {phone && <DetailRow label="Phone" value={phone} />}
-            {savingsAccount && (
-              <>
-                {savingsAccount.accountNumber && (
-                  <DetailRow label="Account No." value={savingsAccount.accountNumber} mono />
-                )}
-                {savingsAccount.planName && (
-                  <DetailRow label="Savings Plan" value={savingsAccount.planName} />
-                )}
-                {savingsAccount.scheduledAmount && (
-                  <DetailRow label="Daily Amount" value={formatINR(safeN(savingsAccount.scheduledAmount))} />
-                )}
-                {savingsAccount.startDate && (
-                  <DetailRow
-                    label="Start Date"
-                    value={format(toDate(savingsAccount.startDate), "d MMM yyyy")}
-                  />
-                )}
-                {savingsAccount.endDate && (
-                  <DetailRow
-                    label="End Date"
-                    value={format(toDate(savingsAccount.endDate), "d MMM yyyy")}
-                  />
-                )}
-              </>
+            {displayPhone && <DetailRow label="Phone" value={displayPhone} />}
+            {displayEmail && <DetailRow label="Email" value={displayEmail} />}
+            {clerkProfile?.lastSignInAt && (
+              <DetailRow
+                label="Last Sign In"
+                value={format(new Date(clerkProfile.lastSignInAt), "d MMM yyyy · h:mm a")}
+              />
+            )}
+            {clerkProfile?.createdAt && (
+              <DetailRow
+                label="Account Created"
+                value={format(new Date(clerkProfile.createdAt), "d MMM yyyy")}
+              />
+            )}
+            {savingsAccount?.accountNumber && (
+              <DetailRow label="Account No." value={savingsAccount.accountNumber} mono />
+            )}
+            {savingsAccount?.planName && (
+              <DetailRow label="Savings Plan" value={savingsAccount.planName} />
+            )}
+            {savingsAccount?.scheduledAmount && (
+              <DetailRow label="Daily Amount" value={formatINR(safeN(savingsAccount.scheduledAmount))} />
+            )}
+            {savingsAccount?.startDate && (
+              <DetailRow label="Start Date" value={format(toDate(savingsAccount.startDate), "d MMM yyyy")} />
+            )}
+            {savingsAccount?.endDate && (
+              <DetailRow label="End Date" value={format(toDate(savingsAccount.endDate), "d MMM yyyy")} />
             )}
             {activeLoan && (
               <>
@@ -339,17 +465,14 @@ export default function CustomerDetailPage({ customer, onBack, onSwitchTab }: Cu
                   <DetailRow label="Interest Rate" value={`${activeLoan.interestRate}% p.a.`} />
                 )}
                 {activeLoan.startDate && (
-                  <DetailRow
-                    label="Loan Start"
-                    value={format(toDate(activeLoan.startDate), "d MMM yyyy")}
-                  />
+                  <DetailRow label="Loan Start" value={format(toDate(activeLoan.startDate), "d MMM yyyy")} />
                 )}
               </>
             )}
           </Section>
         )}
 
-        {/* Transaction History */}
+        {/* ── Transaction History ───────────────────────────────────────────── */}
         <Section title={`Transaction History (${allCollections.length})`}>
           {allCollections.length === 0 ? (
             <div className="flex flex-col items-center py-6 text-slate-400">
@@ -358,7 +481,7 @@ export default function CustomerDetailPage({ customer, onBack, onSwitchTab }: Cu
             </div>
           ) : (
             <div className="space-y-3">
-              {groupedCollections.slice(0, 30).map(([date, cols]) => (
+              {groupedCollections.slice(0, 40).map(([date, cols]) => (
                 <div key={date}>
                   <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1.5">{date}</p>
                   <div className="space-y-1.5">
@@ -377,7 +500,7 @@ export default function CustomerDetailPage({ customer, onBack, onSwitchTab }: Cu
                         <div className="text-right">
                           <p className="text-sm font-black text-emerald-600">+{formatINR(safeN(col.amount))}</p>
                           {(col as any).paymentMethod && (
-                            <p className="text-[9px] text-slate-400 uppercase">{(col as any).paymentMethod}</p>
+                            <p className="text-[9px] text-slate-400 uppercase font-medium">{(col as any).paymentMethod}</p>
                           )}
                         </div>
                       </div>
@@ -389,7 +512,7 @@ export default function CustomerDetailPage({ customer, onBack, onSwitchTab }: Cu
           )}
         </Section>
 
-        {/* Collection Actions */}
+        {/* ── Collection Actions ────────────────────────────────────────────── */}
         <div className="grid grid-cols-2 gap-2">
           <button
             onClick={() => setCollectTarget(customer)}
@@ -423,7 +546,7 @@ export default function CustomerDetailPage({ customer, onBack, onSwitchTab }: Cu
 
       </div>
 
-      {/* Dialogs */}
+      {/* ── Dialogs ──────────────────────────────────────────────────────────── */}
       <CollectDialog
         customer={collectTarget}
         orgId={orgId}
@@ -435,8 +558,8 @@ export default function CustomerDetailPage({ customer, onBack, onSwitchTab }: Cu
       <AnimatePresence>
         {callSheetOpen && (
           <CallSheet
-            name={name}
-            phone={phone}
+            name={displayName}
+            phone={displayPhone}
             onClose={() => setCallSheetOpen(false)}
           />
         )}
