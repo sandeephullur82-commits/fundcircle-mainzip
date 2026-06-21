@@ -1,11 +1,10 @@
 import { useUser, useOrganization, useOrganizationList, SignOutButton } from "@clerk/clerk-react";
 import {
   LayoutDashboard, Users, PiggyBank, ReceiptText, MoreHorizontal,
-  Menu, Check, Building2, ChevronDown, LogOut,
+  Bell, Check, Building2, ChevronDown, LogOut,
 } from "lucide-react";
 import { Tabs, TabsContent } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
-import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useState, useRef, useEffect } from "react";
@@ -70,27 +69,30 @@ export default function AgentDashboard() {
 
   return (
     <div className="flex flex-col md:flex-row md:h-screen min-h-screen bg-slate-50">
-      {/* Mobile Header */}
-      <div className="md:hidden bg-white border-b border-slate-100 px-4 py-3 flex items-center justify-between sticky top-0 z-20 shadow-sm">
+      {/* Mobile Header — compact fintech style */}
+      <div className="md:hidden bg-white border-b border-slate-100 px-4 py-2.5 flex items-center justify-between sticky top-0 z-20">
         <div className="flex items-center gap-2 min-w-0">
           <BrandMark size="sm" />
           {organization && (
-            <>
-              <span className="text-slate-300 font-light">·</span>
-              <span className="text-xs font-semibold text-slate-500 truncate max-w-[110px]">{organization.name}</span>
-            </>
+            <div className="min-w-0">
+              <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400 leading-none">Collection</p>
+              <p className="text-xs font-bold text-slate-700 truncate max-w-[130px] leading-tight mt-0.5">{organization.name}</p>
+            </div>
           )}
         </div>
-        <Sheet>
-          <SheetTrigger render={
-            <Button variant="ghost" size="icon" className="h-8 w-8">
-              <Menu className="w-4 h-4" />
-            </Button>
-          } />
-          <SheetContent side="left" className="w-[280px] p-0">
-            <AgentSidebar activeTab={activeTab} setActiveTab={setActiveTab} user={user} organization={organization} />
-          </SheetContent>
-        </Sheet>
+        <div className="flex items-center gap-2">
+          <button className="w-8 h-8 rounded-full bg-slate-100 flex items-center justify-center relative">
+            <Bell className="w-4 h-4 text-slate-500" />
+          </button>
+          <button onClick={() => setActiveTab("more")} className="shrink-0">
+            <Avatar className="h-8 w-8 ring-2 ring-emerald-500/30">
+              <AvatarImage src={user?.imageUrl} />
+              <AvatarFallback className="bg-emerald-100 text-emerald-700 text-xs font-bold">
+                {user?.firstName?.charAt(0) || "A"}
+              </AvatarFallback>
+            </Avatar>
+          </button>
+        </div>
       </div>
 
       {/* Desktop Sidebar */}
