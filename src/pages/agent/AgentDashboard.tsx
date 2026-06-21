@@ -108,7 +108,7 @@ export default function AgentDashboard() {
             <AgentOverview onSwitchTab={setActiveTab} />
           </TabsContent>
           <TabsContent value="customers" className="mt-0">
-            <AgentCustomers onCollect={() => setActiveTab("collect")} />
+            <AgentCustomers onCollect={() => setActiveTab("collect")} onSwitchTab={setActiveTab} />
           </TabsContent>
           <TabsContent value="collect" className="mt-0">
             <AgentCollections />
