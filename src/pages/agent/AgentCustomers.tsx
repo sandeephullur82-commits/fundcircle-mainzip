@@ -2,8 +2,8 @@ import { useState, useMemo, useRef, useCallback, memo } from "react";
 import { useCollectionRealtime } from "@/lib/firestore-hooks";
 import { Membership, Collection } from "@/types";
 import {
-  Users, Search, X, Phone, MessageCircle, Plus,
-  ChevronDown, ArrowUp, ArrowDown, CheckCircle2,
+  Users, Search, X, Phone, MessageCircle,
+  ArrowUp, ArrowDown, CheckCircle2,
 } from "lucide-react";
 import { startOfDay } from "date-fns";
 import { useUser, useOrganization } from "@clerk/clerk-react";
@@ -400,16 +400,6 @@ export default function AgentCustomers({ onViewCustomer, onSwitchTab }: AgentCus
           })}
         </div>
       )}
-
-      {/* FAB */}
-      <motion.button
-        onClick={() => toast.info("New customers are added by your organization admin.")}
-        className="fixed bottom-20 right-4 md:bottom-8 md:right-8 z-40 w-14 h-14 bg-emerald-600 rounded-full shadow-xl flex items-center justify-center text-white"
-        whileTap={{ scale: 0.9 }}
-        aria-label="Add Customer"
-      >
-        <Plus className="w-6 h-6" />
-      </motion.button>
 
       {/* Call confirmation sheet */}
       {callSheet && (

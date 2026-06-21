@@ -4,7 +4,6 @@ import { where } from "firebase/firestore";
 import { format, startOfDay } from "date-fns";
 import {
   ArrowLeft, Phone, MessageCircle, PiggyBank, ReceiptText,
-  CreditCard, Calendar, AlertTriangle, User,
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { toast } from "sonner";
@@ -422,19 +421,6 @@ export default function CustomerDetailPage({ customer, onBack, onSwitchTab }: Cu
           </button>
         </div>
 
-        {/* Danger Zone */}
-        <div className="bg-red-50 rounded-2xl border border-red-100 p-4">
-          <div className="flex items-center gap-2 mb-3">
-            <AlertTriangle className="w-4 h-4 text-red-500" />
-            <p className="text-xs font-black uppercase tracking-widest text-red-600">Danger Zone</p>
-          </div>
-          <button
-            onClick={() => toast.error("Contact your organization admin to remove a customer.")}
-            className="w-full py-3 border-2 border-red-200 text-red-600 text-sm font-bold rounded-xl bg-white active:scale-95 transition-transform"
-          >
-            Delete Customer Account
-          </button>
-        </div>
       </div>
 
       {/* Dialogs */}
