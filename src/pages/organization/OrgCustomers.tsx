@@ -87,7 +87,12 @@ export default function OrgCustomers() {
   const [selectedCustomerId, setSelectedCustomerId] = useState<string | null>(() => {
     try { return sessionStorage.getItem("fc_org_active_customer") || null; } catch { return null; }
   });
-  const [selectedCustomer, setSelectedCustomer] = useState<Membership | null>(null);
+  // Derive selectedCustomer live from the Firestore-backed customers array so
+  // profile view always reflects the latest data without a page reload.
+  const selectedCustomer = useMemo(
+    () => (selectedCustomerId ? customers.find((c) => c.id === selectedCustomerId) ?? null : null),
+    [customers, selectedCustomerId],
+  );
 
   // ── Filter / sort state ─────────────────────────────────────────────────────
   const [searchTerm, setSearchTerm] = useState("");
@@ -409,20 +414,22 @@ export default function OrgCustomers() {
     { key: "completed", label: "Paid Today" },
   ];
 
-  // Restore selected customer from persisted ID once customers load
+  // Restore view to profile when we have a persisted customer ID and customers have loaded
   useEffect(() => {
-    if (!selectedCustomerId || selectedCustomer) return;
-    const found = customers.find((c) => c.id === selectedCustomerId);
-    if (found) { setSelectedCustomer(found); setView("profile"); }
-    else if (customers.length > 0) {
-      // Customers loaded but ID not found — clear stale session
-      try { sessionStorage.removeItem("fc_org_active_customer"); sessionStorage.removeItem("fc_org_active_customer_view"); } catch {}
-      setSelectedCustomerId(null);
+    if (!selectedCustomerId || view === "profile") return;
+    if (customers.length > 0) {
+      const found = customers.find((c) => c.id === selectedCustomerId);
+      if (found) {
+        setView("profile");
+      } else {
+        // Customer ID not found once data is loaded — clear stale session
+        try { sessionStorage.removeItem("fc_org_active_customer"); sessionStorage.removeItem("fc_org_active_customer_view"); } catch {}
+        setSelectedCustomerId(null);
+      }
     }
-  }, [customers, selectedCustomerId, selectedCustomer]);
+  }, [customers, selectedCustomerId, view]);
 
   const handleSelectCustomer = (customer: Membership) => {
-    setSelectedCustomer(customer);
     setSelectedCustomerId(customer.id);
     setView("profile");
     try { sessionStorage.setItem("fc_org_active_customer", customer.id); sessionStorage.setItem("fc_org_active_customer_view", "profile"); } catch {}
@@ -430,7 +437,6 @@ export default function OrgCustomers() {
 
   const handleBackToList = () => {
     setView("list");
-    setSelectedCustomer(null);
     setSelectedCustomerId(null);
     try { sessionStorage.removeItem("fc_org_active_customer"); sessionStorage.removeItem("fc_org_active_customer_view"); } catch {}
   };

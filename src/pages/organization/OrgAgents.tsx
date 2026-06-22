@@ -166,7 +166,7 @@ export default function OrgAgents() {
     console.log("[FC CreateAgent]   Email  :", email.trim() || "MISSING");
 
     if (!organization?.id) {
-      toast.error("❌ Missing Organization ID — No active organization. Please refresh.");
+      toast.error("❌ No active organization found. Please sign out and sign back in.");
       return;
     }
     if (!user?.id) {

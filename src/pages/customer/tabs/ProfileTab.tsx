@@ -142,7 +142,7 @@ export default function ProfileTab({ user, membershipId, membershipDoc, nomineeL
     setAvatarUploading(true);
     try {
       await clerkUser.setProfileImage({ file });
-      toast.success("Profile photo updated! It may take a moment to refresh.");
+      toast.success("Profile photo updated!");
     } catch (err: any) {
       console.error("[ProfileAvatar] Clerk upload error:", err);
       toast.error(err?.errors?.[0]?.longMessage || err?.message || "Upload failed. Please try again.");
