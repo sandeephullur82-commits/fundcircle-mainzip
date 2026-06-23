@@ -22,7 +22,8 @@ import { Label } from "@/components/ui/label";
 import FieldError from "@/components/ui/FieldError";
 import { sanitizeName } from "@/lib/validation";
 import { BrandMark } from "@/components/BrandLogo";
-import OrgAvatar from "@/components/ui/OrgAvatar";
+import ProfileAvatarEditor from "@/components/ui/ProfileAvatarEditor";
+import OrgLogoEditor from "@/components/ui/OrgLogoEditor";
 
 type MoreSubPage = "list" | "profile" | "organization" | "notifications" | "support" | "about";
 
@@ -120,16 +121,15 @@ function ProfileSubPage({ onBack }: { onBack: () => void }) {
     <div>
       <SubPageHeader title="My Profile" onBack={onBack} />
 
-      {/* Avatar hero */}
+      {/* Profile photo editor */}
       <div className="flex flex-col items-center gap-3 mb-8">
-        <div className="relative">
-          <Avatar className="h-24 w-24 ring-4 ring-sky-100">
-            <AvatarImage src={user?.imageUrl} />
-            <AvatarFallback className="bg-gradient-to-br from-sky-400 to-indigo-500 text-white text-3xl font-bold">
-              {displayName.charAt(0).toUpperCase()}
-            </AvatarFallback>
-          </Avatar>
-        </div>
+        <ProfileAvatarEditor
+          fallbackLetter={displayName.charAt(0) || "O"}
+          accentColor="sky"
+          size="lg"
+          membershipId={membershipId}
+          userId={user?.id}
+        />
         <div className="text-center">
           <p className="text-xl font-bold text-slate-900">{displayName}</p>
           <p className="text-xs text-slate-400 mt-0.5">{user?.primaryEmailAddress?.emailAddress}</p>
@@ -270,9 +270,9 @@ function OrganizationSubPage({ onBack }: { onBack: () => void }) {
     <div>
       <SubPageHeader title="Organization" onBack={onBack} />
 
-      {/* Org identity */}
+      {/* Org identity — logo editor */}
       <div className="flex flex-col items-center gap-3 mb-8">
-        <OrgAvatar imageUrl={organization?.imageUrl} name={organization?.name} size="lg" className="!w-20 !h-20 !rounded-3xl !text-2xl shadow-lg" />
+        <OrgLogoEditor size="lg" />
         {editingName ? (
           <div className="flex items-center gap-2 w-full max-w-xs">
             <Input

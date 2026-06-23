@@ -72,6 +72,8 @@ export default function OrgLogoEditor({ size = "lg", className = "" }: OrgLogoEd
     try {
       const compressed = await compressImage(file);
       await organization.setLogo({ file: compressed });
+      // Reload so Clerk's in-memory org object reflects the new imageUrl immediately
+      await organization.reload();
       toast.success("Organization logo updated!", { id: t });
     } catch (err: any) {
       toast.error(err?.errors?.[0]?.longMessage || err?.message || "Upload failed.", { id: t });
