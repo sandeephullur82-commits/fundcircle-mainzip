@@ -326,6 +326,10 @@ export async function createLoan(params: {
   loanAssignedCollectorId?: string;
   loanAssignedCollectorName?: string;
   loanAssignedCollectorRole?: string;
+  loanPurpose?: string;
+  nomineeName?: string;
+  nomineeRelation?: string;
+  nomineePhone?: string;
 }): Promise<string> {
   if (params.principalAmount <= 0) throw new Error("Principal must be greater than zero.");
   if (params.interestRate < 0) throw new Error("Interest rate cannot be negative.");
@@ -354,6 +358,8 @@ export async function createLoan(params: {
     principal: params.principalAmount,
     durationMonths: params.tenureMonths,
     balanceRemaining: 0,
+    ...(params.loanPurpose ? { loanPurpose: params.loanPurpose } : {}),
+    ...(params.nomineeName ? { nomineeName: params.nomineeName, nomineeRelation: params.nomineeRelation || "", nomineePhone: params.nomineePhone || "" } : {}),
   });
 
   await createAuditLog({
@@ -529,6 +535,17 @@ export async function approveLoan(params: {
 
   // Sync nominee lock — loan is now ACTIVE, so lock the nominee
   try { await syncNomineeLock(loan.customerId, loan.organizationId); } catch (_) {}
+
+  // Notify customer of loan approval
+  try {
+    await createNotification(
+      loan.organizationId,
+      loan.customerId,
+      "Loan Approved",
+      `Your loan of ₹${Math.round(effectivePrincipal).toLocaleString("en-IN")} has been approved and is now active.`,
+      { type: "LOAN_APPROVED", category: "loans", metadata: { loanId: params.loanId, approvedAmount: effectivePrincipal } }
+    );
+  } catch (_) {}
 }
 
 export async function rejectLoan(params: {
@@ -560,6 +577,17 @@ export async function rejectLoan(params: {
     entityId: params.loanId,
     metadata: { reason: params.reason, customerId: loan.customerId },
   });
+
+  // Notify customer of rejection
+  try {
+    await createNotification(
+      loan.organizationId,
+      loan.customerId,
+      "Loan Application Rejected",
+      `Your loan application has been rejected. Reason: ${params.reason || "Not specified"}.`,
+      { type: "LOAN_REJECTED", category: "loans", metadata: { loanId: params.loanId, reason: params.reason } }
+    );
+  } catch (_) {}
 }
 
 // ── Nominee Lock Sync ─────────────────────────────────────────────────────────
@@ -773,6 +801,19 @@ export async function recordEMICollection(params: {
 
   // Sync installment statuses after payment
   try { await syncInstallmentStatuses(params.loanId); } catch (_) {}
+
+  // Notify customer of EMI receipt
+  try {
+    await createNotification(
+      params.organizationId,
+      params.customerId,
+      loanClosed ? "Loan Fully Repaid!" : "EMI Payment Received",
+      loanClosed
+        ? `Congratulations! Your loan is fully repaid. Final EMI of ₹${params.amount.toLocaleString("en-IN")} received. Receipt: ${receiptNo}.`
+        : `EMI payment of ₹${params.amount.toLocaleString("en-IN")} received. Receipt: ${receiptNo}.`,
+      { type: loanClosed ? "LOAN_CLOSED" : "EMI_COLLECTED", category: "loans", metadata: { loanId: params.loanId, amount: params.amount, receiptNo, loanClosed } }
+    );
+  } catch (_) {}
 
   return { receiptNo, loanClosed, installmentId: params.installmentId, collectionId: collRef.id };
 }

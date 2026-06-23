@@ -4,7 +4,7 @@ import { Collection, Loan, Membership, LoanInstallment, LoanApplication } from "
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   Users, CreditCard, TrendingUp, IndianRupee,
-  UserCheck, AlertTriangle,
+  UserCheck, AlertTriangle, Archive,
   Wallet, FileText, Activity, BarChart2,
 } from "lucide-react";
 import { format, startOfDay, startOfMonth, subMonths, isBefore } from "date-fns";
@@ -74,6 +74,8 @@ export default function OrgOverview() {
       .filter((inst) => inst.status !== "PAID" && isBefore(toDate(inst.dueDate), today))
       .map((inst) => inst.loanId)
   ).size;
+
+  const closedLoansCount = loans.filter((l) => (l.status || "").toUpperCase() === "CLOSED").length;
 
   const now = new Date();
 
@@ -163,6 +165,9 @@ export default function OrgOverview() {
         <MetricCard title="Overdue Loans" value={overdueLoansCount.toString()}
           icon={<AlertTriangle className="w-5 h-5 text-red-600" />}
           trend="Loans with missed EMIs" bg="bg-red-50" />
+        <MetricCard title="Closed Loans" value={closedLoansCount.toString()}
+          icon={<Archive className="w-5 h-5 text-slate-600" />}
+          trend="Fully repaid loans" bg="bg-slate-50" />
       </div>
 
       {/* Charts row 1 */}

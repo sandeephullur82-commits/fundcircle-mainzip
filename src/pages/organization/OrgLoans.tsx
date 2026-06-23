@@ -15,8 +15,9 @@ import {
   Search, Plus, Eye, Loader2, CreditCard, Inbox, Crown,
   CheckCircle, XCircle, Clock, ChevronDown, ChevronRight,
   FileText, Calendar, IndianRupee, Filter, BarChart2,
-  RefreshCw, AlertTriangle, TrendingUp, MoreVertical,
+  RefreshCw, AlertTriangle, TrendingUp, MoreVertical, Award,
 } from "lucide-react";
+import { downloadClosureCertificate } from "@/components/LoanClosureCertificate";
 import { useUser, useOrganization } from "@clerk/clerk-react";
 import { createLoan, approveLoan, calculateEMI } from "@/lib/services";
 import { sanitizeSearch, validateAmount, validateRate, validateTenure } from "@/lib/validation";
@@ -189,9 +190,10 @@ interface LoanCardProps {
   onViewSchedule: () => void;
   onApprove?: () => void;
   onReject?: () => void;
+  onDownloadCertificate?: () => void;
 }
 
-function LoanCard({ loan, customerName, collectorName, isOwnerCollector, onViewSchedule, onApprove, onReject }: LoanCardProps) {
+function LoanCard({ loan, customerName, collectorName, isOwnerCollector, onViewSchedule, onApprove, onReject, onDownloadCertificate }: LoanCardProps) {
   const [expanded, setExpanded] = useState(false);
   const status = (loan.status || "").toUpperCase();
   const badgeClass = STATUS_BADGE[status] || "bg-slate-100 text-slate-500 border-slate-200";
@@ -304,6 +306,16 @@ function LoanCard({ loan, customerName, collectorName, isOwnerCollector, onViewS
             >
               <Calendar className="w-3.5 h-3.5" /> View Repayment Schedule
             </button>
+
+            {status === "CLOSED" && onDownloadCertificate && (
+              <button
+                type="button"
+                onClick={onDownloadCertificate}
+                className="w-full flex items-center justify-center gap-2 py-2 text-xs font-semibold text-emerald-700 hover:text-emerald-800 border border-emerald-200 rounded-xl hover:bg-emerald-50 transition-colors"
+              >
+                <Award className="w-3.5 h-3.5" /> Download Closure Certificate
+              </button>
+            )}
           </div>
         )}
       </div>
@@ -357,6 +369,10 @@ export default function OrgLoans() {
   const [createCollectorId, setCreateCollectorId] = useState("");
   const [creating, setCreating]               = useState(false);
   const [loanErrors, setLoanErrors]           = useState<Record<string, string>>({});
+  const [loanPurpose, setLoanPurpose]         = useState("");
+  const [nomineeName, setNomineeName]         = useState("");
+  const [nomineeRelation, setNomineeRelation] = useState("");
+  const [nomineePhone, setNomineePhone]       = useState("");
 
   const actorName = user?.fullName || user?.primaryEmailAddress?.emailAddress || "Owner";
 
@@ -468,6 +484,7 @@ export default function OrgLoans() {
   const resetCreate = () => {
     setPrincipal(""); setCustomerId(""); setInterestRate("12"); setTenureMonths("12");
     setCreateCollectorId(""); setLoanErrors({});
+    setLoanPurpose(""); setNomineeName(""); setNomineeRelation(""); setNomineePhone("");
   };
 
   const handleCreate = async (e: React.FormEvent) => {
@@ -501,6 +518,10 @@ export default function OrgLoans() {
         loanAssignedCollectorId: (collector as any)?.clerkUserId || collector?.id || "",
         loanAssignedCollectorName: collector ? ((collector as any).fullName || (collector as any).name || "") : "",
         loanAssignedCollectorRole: collector ? ((collector.role as string) || "AGENT") : "",
+        loanPurpose: loanPurpose || undefined,
+        nomineeName: nomineeName || undefined,
+        nomineeRelation: nomineeRelation || undefined,
+        nomineePhone: nomineePhone || undefined,
       });
       const firstEmi = new Date(); firstEmi.setMonth(firstEmi.getMonth() + 1);
       await approveLoan({
@@ -663,6 +684,24 @@ export default function OrgLoans() {
                   onViewSchedule={() => setScheduleTarget({ loan, name })}
                   onApprove={loanStatus === "PENDING" ? () => setApproveLoanItem(loan) : undefined}
                   onReject={loanStatus === "PENDING" ? () => setRejectTarget({ item: loan, type: "loan" }) : undefined}
+                  onDownloadCertificate={loanStatus === "CLOSED" ? () => {
+                    const lPrincipal = loan.principalAmount ?? (loan as any).principal ?? 0;
+                    const lEmi = loan.emiAmount ?? 0;
+                    const lTenure = loan.tenureMonths ?? (loan as any).durationMonths ?? 0;
+                    downloadClosureCertificate({
+                      loanAccountNumber: loan.loanAccountNumber || loan.id.slice(-8).toUpperCase(),
+                      customerName: name,
+                      organizationName: organization?.name || "",
+                      principalAmount: lPrincipal,
+                      approvedAmount: (loan as any).approvedAmount || lPrincipal,
+                      totalAmountPaid: Math.round(lEmi * lTenure * 100) / 100,
+                      interestRate: loan.interestRate,
+                      tenureMonths: lTenure,
+                      disbursedAt: (loan as any).disbursedAt ? toDate((loan as any).disbursedAt) : undefined,
+                      closedAt: (loan as any).closedAt ? toDate((loan as any).closedAt) : undefined,
+                      collectorName: loan.loanAssignedCollectorName || undefined,
+                    });
+                  } : undefined}
                 />
               );
             })
@@ -807,6 +846,54 @@ export default function OrgLoans() {
                 <FieldError error={loanErrors.collector} />
               </div>
             )}
+
+            {/* Loan Purpose */}
+            <div className="space-y-1.5">
+              <Label className="text-sm font-semibold text-slate-700">Loan Purpose</Label>
+              <select
+                value={loanPurpose}
+                onChange={(e) => setLoanPurpose(e.target.value)}
+                className="fc-input text-sm"
+              >
+                <option value="">Select purpose (optional)</option>
+                <option value="Personal Loan">Personal Loan</option>
+                <option value="Business Loan">Business Loan</option>
+                <option value="Emergency Loan">Emergency Loan</option>
+                <option value="Education Loan">Education Loan</option>
+                <option value="Agriculture Loan">Agriculture Loan</option>
+                <option value="Consumer Loan">Consumer Loan</option>
+                <option value="Other">Other</option>
+              </select>
+            </div>
+
+            {/* Nominee */}
+            <div className="space-y-1.5">
+              <Label className="text-sm font-semibold text-slate-700">
+                Nominee <span className="text-slate-400 font-normal text-xs">(optional)</span>
+              </Label>
+              <Input
+                value={nomineeName}
+                onChange={(e) => setNomineeName(e.target.value.replace(/[^a-zA-Z\s.]/g, ""))}
+                placeholder="Nominee full name"
+                className="text-sm"
+              />
+              <div className="grid grid-cols-2 gap-2">
+                <Input
+                  value={nomineeRelation}
+                  onChange={(e) => setNomineeRelation(e.target.value)}
+                  placeholder="Relation (e.g. Spouse)"
+                  className="text-sm"
+                />
+                <Input
+                  value={nomineePhone}
+                  onChange={(e) => setNomineePhone(e.target.value.replace(/[^0-9]/g, ""))}
+                  inputMode="numeric"
+                  maxLength={10}
+                  placeholder="Phone"
+                  className="text-sm"
+                />
+              </div>
+            </div>
 
             <div className="bg-amber-50 border border-amber-100 rounded-xl p-3 flex items-start gap-2">
               <AlertTriangle className="w-4 h-4 text-amber-500 shrink-0 mt-0.5" />
