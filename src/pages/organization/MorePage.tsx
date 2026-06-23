@@ -437,7 +437,7 @@ function NotificationsSubPage({ onBack }: { onBack: () => void }) {
   const ITEMS = [
     { key: "newCollection"    as const, label: "New Collection",    desc: "When any agent records a collection"      },
     { key: "newCustomer"      as const, label: "New Customer",      desc: "When a customer joins your organization"  },
-    { key: "newCollector"     as const, label: "New Collector",     desc: "When an agent accepts an invitation"      },
+    { key: "newCollector"     as const, label: "New Collector",     desc: "When a new collector is added"            },
     { key: "missedCollection" as const, label: "Collection Missed", desc: "When an EMI installment is past due"      },
     { key: "systemAlerts"     as const, label: "System Alerts",     desc: "Platform updates & important notices"     },
   ];

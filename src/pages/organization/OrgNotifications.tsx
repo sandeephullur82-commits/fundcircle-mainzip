@@ -87,7 +87,7 @@ export default function OrgNotifications() {
             )}
           </h2>
           <p className="text-slate-500 text-sm mt-0.5">
-            Real-time alerts for collections, invitations, and system events.
+            Real-time alerts for collections, new members, and system events.
           </p>
         </div>
         {unreadCount > 0 && (

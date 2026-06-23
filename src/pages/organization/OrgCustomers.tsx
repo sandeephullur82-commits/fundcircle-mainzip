@@ -102,7 +102,7 @@ export default function OrgCustomers() {
   const [currentPage, setCurrentPage] = useState(1);
 
   // ── Dialogs ─────────────────────────────────────────────────────────────────
-  const [isInviteOpen, setIsInviteOpen] = useState(false);
+  const [isAddOpen, setIsAddOpen] = useState(false);
   const [isValidating, setIsValidating] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [collectingCustomer, setCollectingCustomer] = useState<any>(null);
@@ -267,10 +267,10 @@ export default function OrgCustomers() {
   useEffect(() => { setCurrentPage(1); }, [searchTerm, filterTab, agentFilter, sortBy]);
 
   useEffect(() => {
-    if (isInviteOpen && collectorsForAssignment.length === 1) {
+    if (isAddOpen && collectorsForAssignment.length === 1) {
       setSelectedCollectorId(collectorsForAssignment[0].id);
     }
-  }, [isInviteOpen, collectorsForAssignment.length]);
+  }, [isAddOpen, collectorsForAssignment.length]);
 
   // ── Form helpers ────────────────────────────────────────────────────────────
   const resetForm = () => {
@@ -486,7 +486,7 @@ export default function OrgCustomers() {
             <span>Customer limit reached</span>
           </div>
         ) : (
-          <Dialog open={isInviteOpen} onOpenChange={open => { setIsInviteOpen(open); if (!open) resetForm(); }}>
+          <Dialog open={isAddOpen} onOpenChange={open => { setIsAddOpen(open); if (!open) resetForm(); }}>
             <DialogTrigger render={
               <Button className="shrink-0 bg-indigo-600 hover:bg-indigo-700 gap-1.5">
                 <Plus className="w-4 h-4" /> Add Customer
@@ -528,7 +528,7 @@ export default function OrgCustomers() {
                     <KeyRound className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
                     <p className="text-xs text-amber-700">Customer will be prompted to set a new password on first sign in.</p>
                   </div>
-                  <Button className="w-full" onClick={() => { setIsInviteOpen(false); resetForm(); }}>Done</Button>
+                  <Button className="w-full" onClick={() => { setIsAddOpen(false); resetForm(); }}>Done</Button>
                 </div>
               ) : (
                 <form onSubmit={handleAddCustomer} className="space-y-4 mt-2">

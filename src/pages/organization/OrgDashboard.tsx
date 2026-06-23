@@ -378,8 +378,8 @@ export default function OrgDashboard() {
               {[
                 { label: "Organization Profile", sub: "Edit org name & details",   icon: Building2,  action: () => { setActiveTab("more"); setTimeout(() => window.dispatchEvent(new CustomEvent("fundcircle:morePage", { detail: "organization" })), 80); } },
                 { label: "Billing & Subscription", sub: "Plan, usage & invoices",  icon: Wallet,     action: () => setActiveTab("billing") },
-                { label: "Invite Collector",       sub: "Add a field agent",        icon: UserCheck,  action: () => setActiveTab("agents")  },
-                { label: "Invite Customer",        sub: "Add a new customer",       icon: Users,      action: () => setActiveTab("customers") },
+                { label: "Add Collector",          sub: "Add a field agent",        icon: UserCheck,  action: () => setActiveTab("agents")  },
+                { label: "Add Customer",           sub: "Add a new customer",       icon: Users,      action: () => setActiveTab("customers") },
               ].map((item) => {
                 const Icon = item.icon;
                 return (

@@ -7,7 +7,7 @@ import { useState } from "react";
 const faqs = [
   {
     q: "How do I add a new Pigmy Collector to my organization?",
-    a: "Go to your Owner Dashboard → Agents tab → click 'Invite Agent'. Enter their email address and they'll receive an invitation to join your workspace as a Pigmy Collector.",
+    a: "Go to your Owner Dashboard → Agents tab → click 'Add Agent'. Fill in their details and a Clerk account will be created instantly. Share the generated credentials with them to log in.",
   },
   {
     q: "Can I use FundCircle on mobile?",

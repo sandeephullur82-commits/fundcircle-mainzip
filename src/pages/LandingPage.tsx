@@ -29,9 +29,9 @@ import {
 const featureItems = [
   { title: "Real-time Collection Tracking", icon: BarChart3, desc: "Live Firestore sync across all devices instantly." },
   { title: "Multi-Tenant Organizations", icon: Layers, desc: "Isolated workspaces with full data separation." },
-  { title: "Enterprise Authentication", icon: ShieldCheck, desc: "Enterprise-grade auth with OTP verification and org invitations." },
+  { title: "Enterprise Authentication", icon: ShieldCheck, desc: "Enterprise-grade auth with OTP verification and direct account creation." },
   { title: "Firestore Realtime Sync", icon: Database, desc: "Every action updates dashboards instantly." },
-  { title: "Agent Management", icon: Users, desc: "Invite, track, and manage field collectors." },
+  { title: "Agent Management", icon: Users, desc: "Add, track, and manage field collectors." },
   { title: "Customer Wallet Tracking", icon: Wallet, desc: "Savings history and balance at a glance." },
   { title: "Daily Analytics", icon: Sparkles, desc: "Smart daily and monthly collection reports." },
   { title: "Mobile Friendly", icon: Globe, desc: "Works perfectly on any device, anywhere." },
@@ -40,8 +40,8 @@ const featureItems = [
 
 const workflowSteps = [
   { label: "Organization Registration", desc: "Owner registers publicly and creates their organization." },
-  { label: "Invite Agents", desc: "Send email invitations to pigmy collectors." },
-  { label: "Invite Customers", desc: "Onboard savings customers via secure invite link." },
+  { label: "Add Agents", desc: "Owner adds pigmy collectors directly to the organization." },
+  { label: "Add Customers", desc: "Onboard savings customers instantly — no invite link needed." },
   { label: "Daily Collections", desc: "Agents collect daily savings and record transactions." },
   { label: "Realtime Sync", desc: "Firestore instantly syncs all dashboards." },
   { label: "Analytics Dashboard", desc: "Track trends, balances, and performance." },

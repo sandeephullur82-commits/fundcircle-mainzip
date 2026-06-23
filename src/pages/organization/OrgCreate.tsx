@@ -247,7 +247,7 @@ export default function OrgCreate() {
               <div className="p-3.5 bg-slate-50 border border-slate-100 rounded-2xl flex gap-2 items-start">
                 <Shield className="w-4 h-4 text-blue-600 shrink-0 mt-0.5" />
                 <p className="text-[10px] text-slate-500 leading-relaxed">
-                  Upon workspace initialization, you will be designated as the **Primary Operator Trustee**. You can invite field collection agents via email invitations.
+                  Upon workspace initialization, you will be designated as the **Primary Operator Trustee**. You can add field collection agents directly to your organization.
                 </p>
               </div>
             </>

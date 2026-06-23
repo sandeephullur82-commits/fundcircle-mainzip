@@ -522,7 +522,7 @@ export default function OrgSettings() {
                     <legend className="sr-only">Notification preferences</legend>
                     {([
                       { key: "notifNewCollection" as const, label: "New Collection Recorded", desc: "Notify when any agent records a collection.", value: notifNewCollection },
-                      { key: "notifNewMember"     as const, label: "New Member Joined",       desc: "Notify when an invited agent or customer accepts the invitation.", value: notifNewMember },
+                      { key: "notifNewMember"     as const, label: "New Member Added",         desc: "Notify when a new agent or customer is added to the organization.", value: notifNewMember },
                       { key: "notifLoanApproval"  as const, label: "Loan Approval Requests",  desc: "Notify when a customer submits a new loan application.", value: notifLoanApproval },
                     ] as const).map((item) => (
                       <div

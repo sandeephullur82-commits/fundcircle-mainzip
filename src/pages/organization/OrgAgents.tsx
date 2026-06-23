@@ -109,7 +109,7 @@ export default function OrgAgents() {
     INACTIVE:        { label: "Inactive",       className: "bg-slate-50 text-slate-600 border-slate-200" },
     ARCHIVED:        { label: "Archived",       className: "bg-red-50 text-red-600 border-red-100" },
     PENDING_SETUP:   { label: "Setup Pending",  className: "bg-amber-50 text-amber-700 border-amber-100" },
-    PENDING_INVITED: { label: "Invited",        className: "bg-violet-50 text-violet-700 border-violet-100" },
+    PENDING_INVITED: { label: "Active",         className: "bg-emerald-50 text-emerald-700 border-emerald-100" },
     SUSPENDED:       { label: "Suspended",      className: "bg-red-50 text-red-700 border-red-100" },
   };
 
