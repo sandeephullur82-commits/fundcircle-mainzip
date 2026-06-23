@@ -166,26 +166,16 @@ export default function ResetPasswordPage() {
       setPwError("Verification code missing. Please go back and re-enter the code.");
       return;
     }
-    if (newPassword.length < 8) {
-      setPwError("Password must be at least 8 characters.");
-      return;
-    }
-    if (!/[A-Z]/.test(newPassword)) {
-      setPwError("Password must include at least one uppercase letter.");
-      return;
-    }
-    if (!/[a-z]/.test(newPassword)) {
-      setPwError("Password must include at least one lowercase letter.");
-      return;
-    }
-    if (!/[0-9]/.test(newPassword)) {
-      setPwError("Password must include at least one number.");
-      return;
-    }
-    if (newPassword !== confirmPassword) {
-      setPwError("Passwords do not match.");
-      return;
-    }
+
+    // UI-level guards are handled by button disabled state.
+    // Only proceed to Clerk if all requirements pass.
+    if (
+      newPassword.length < 8 ||
+      !/[A-Z]/.test(newPassword) ||
+      !/[a-z]/.test(newPassword) ||
+      !/[0-9]/.test(newPassword) ||
+      newPassword !== confirmPassword
+    ) return;
 
     setPwError("");
     setSubmitting(true);
@@ -393,7 +383,16 @@ export default function ResetPasswordPage() {
 
             <button
               type="submit"
-              disabled={submitting || !newPassword || !confirmPassword}
+              disabled={
+                submitting ||
+                !newPassword ||
+                !confirmPassword ||
+                newPassword.length < 8 ||
+                !/[A-Z]/.test(newPassword) ||
+                !/[a-z]/.test(newPassword) ||
+                !/[0-9]/.test(newPassword) ||
+                newPassword !== confirmPassword
+              }
               className="flex w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-violet-600 to-blue-600 px-4 py-3 text-sm font-semibold text-white shadow-lg shadow-violet-900/30 transition hover:from-violet-500 hover:to-blue-500 disabled:cursor-not-allowed disabled:opacity-55"
             >
               {submitting ? (
