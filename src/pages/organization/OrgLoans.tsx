@@ -830,6 +830,7 @@ export default function OrgLoans() {
         actorId={user?.id || ""}
         actorName={actorName}
         organizationId={orgId}
+        organizationName={organization?.name || ""}
         onClose={() => setApproveApp(null)}
       />
 
@@ -842,6 +843,7 @@ export default function OrgLoans() {
         actorId={user?.id || ""}
         actorName={actorName}
         organizationId={orgId}
+        organizationName={organization?.name || ""}
         onClose={() => setApproveLoanItem(null)}
       />
 

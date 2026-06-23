@@ -1,214 +1,221 @@
-import {
-  collection, query, where, getDocs, limit,
-} from "firebase/firestore";
+import { collection, query, where, getDocs, limit } from "firebase/firestore";
 import { db } from "./firebase";
 
-export interface EligibilityCheck {
-  id: string;
+export type RiskLevel = "LOW" | "MEDIUM" | "HIGH";
+
+export interface RiskFactor {
   label: string;
-  description: string;
-  status: "PASS" | "FAIL" | "WARN" | "LOADING" | "SKIP";
-  detail?: string;
+  value: string;
+  impact: "positive" | "neutral" | "negative";
+  detail: string;
 }
 
-export interface EligibilityResult {
-  eligible: boolean;
-  checks: EligibilityCheck[];
-  blockers: string[];
-  warnings: string[];
+export interface RiskResult {
+  level: RiskLevel;
+  score: number;
+  factors: RiskFactor[];
+  summary: string;
 }
 
-function toDate(ts: any): Date {
-  if (!ts) return new Date(0);
-  if (ts?.toDate) return ts.toDate();
-  if (ts instanceof Date) return ts;
-  return new Date(ts);
-}
-
-function monthsDiff(from: Date, to: Date): number {
-  return (to.getFullYear() - from.getFullYear()) * 12 + (to.getMonth() - from.getMonth());
-}
-
-export async function checkLoanEligibility(params: {
+export interface LoanCustomerData {
   customerId: string;
   organizationId: string;
-  customerCreatedAt?: any;
-  minAccountAgeMonths?: number;
-  minSavingsBalance?: number;
-}): Promise<EligibilityResult> {
+  monthlyIncome?: number;
+  loanAmount: number;
+  emiAmount: number;
+  activeLoansCount?: number;
+  overdueCount?: number;
+}
+
+/**
+ * Pure risk calculator — runs synchronously on already-fetched data.
+ * No savings data used.
+ */
+export function calculateRiskLevel(data: LoanCustomerData): RiskResult {
   const {
-    customerId,
-    organizationId,
-    customerCreatedAt,
-    minAccountAgeMonths = 1,
-    minSavingsBalance = 0,
-  } = params;
+    monthlyIncome = 0,
+    loanAmount,
+    emiAmount,
+    activeLoansCount = 0,
+    overdueCount = 0,
+  } = data;
 
-  const checks: EligibilityCheck[] = [];
-  const blockers: string[] = [];
-  const warnings: string[] = [];
+  let score = 0;
+  const factors: RiskFactor[] = [];
 
-  // ── 1. No active loan ──────────────────────────────────────────────────────
-  try {
-    const activeStatuses = ["ACTIVE", "OVERDUE", "PARTIALLY_PAID"];
-    const loanQ = query(
-      collection(db, "loans"),
-      where("customerId", "==", customerId),
-      where("organizationId", "==", organizationId),
-      limit(20)
-    );
-    const loanSnap = await getDocs(loanQ);
-    const hasActiveLoan = loanSnap.docs.some((d) =>
-      activeStatuses.includes((d.data().status || "").toUpperCase())
-    );
-
-    if (hasActiveLoan) {
-      checks.push({
-        id: "no_active_loan",
-        label: "No Active Loan",
-        description: "Customer must not have an existing active loan",
-        status: "FAIL",
-        detail: "Customer already has an active loan. It must be fully repaid first.",
+  // ── 1. Debt-to-Income ratio ──────────────────────────────────────────────────
+  if (monthlyIncome > 0) {
+    const dti = (emiAmount / monthlyIncome) * 100;
+    if (dti < 30) {
+      score += 0;
+      factors.push({
+        label: "Debt-to-Income Ratio",
+        value: `${Math.round(dti)}%`,
+        impact: "positive",
+        detail: "EMI is less than 30% of monthly income — healthy repayment capacity.",
       });
-      blockers.push("Customer has an active loan");
+    } else if (dti < 50) {
+      score += 2;
+      factors.push({
+        label: "Debt-to-Income Ratio",
+        value: `${Math.round(dti)}%`,
+        impact: "neutral",
+        detail: "EMI is 30–50% of monthly income — moderate repayment burden.",
+      });
     } else {
-      checks.push({
-        id: "no_active_loan",
-        label: "No Active Loan",
-        description: "Customer must not have an existing active loan",
-        status: "PASS",
-        detail: "No active loans found.",
+      score += 4;
+      factors.push({
+        label: "Debt-to-Income Ratio",
+        value: `${Math.round(dti)}%`,
+        impact: "negative",
+        detail: "EMI exceeds 50% of monthly income — high repayment stress.",
       });
     }
-  } catch {
-    checks.push({
-      id: "no_active_loan",
-      label: "No Active Loan",
-      description: "Customer must not have an existing active loan",
-      status: "WARN",
-      detail: "Could not verify — proceed with caution.",
-    });
-    warnings.push("Could not verify active loan status");
-  }
-
-  // ── 2. No overdue EMI ──────────────────────────────────────────────────────
-  try {
-    const overdueQ = query(
-      collection(db, "loan_installments"),
-      where("customerId", "==", customerId),
-      where("organizationId", "==", organizationId),
-      where("status", "==", "OVERDUE"),
-      limit(1)
-    );
-    const overdueSnap = await getDocs(overdueQ);
-    const hasOverdue = !overdueSnap.empty;
-
-    if (hasOverdue) {
-      checks.push({
-        id: "no_overdue_emi",
-        label: "No Overdue EMI",
-        description: "All previous installments must be paid on time",
-        status: "FAIL",
-        detail: "Customer has overdue EMI installments that must be cleared first.",
-      });
-      blockers.push("Customer has overdue EMI installments");
-    } else {
-      checks.push({
-        id: "no_overdue_emi",
-        label: "No Overdue EMI",
-        description: "All previous installments must be paid on time",
-        status: "PASS",
-        detail: "No overdue installments found.",
-      });
-    }
-  } catch {
-    checks.push({
-      id: "no_overdue_emi",
-      label: "No Overdue EMI",
-      description: "All previous installments must be paid on time",
-      status: "WARN",
-      detail: "Could not verify — proceed with caution.",
-    });
-    warnings.push("Could not verify overdue EMI status");
-  }
-
-  // ── 3. Minimum account age ─────────────────────────────────────────────────
-  if (customerCreatedAt) {
-    const createdDate = toDate(customerCreatedAt);
-    const now = new Date();
-    const ageMonths = monthsDiff(createdDate, now);
-    const passed = ageMonths >= minAccountAgeMonths;
-
-    checks.push({
-      id: "account_age",
-      label: "Account Age",
-      description: `Account must be at least ${minAccountAgeMonths} month(s) old`,
-      status: passed ? "PASS" : "WARN",
-      detail: passed
-        ? `Account is ${ageMonths} month(s) old.`
-        : `Account is only ${ageMonths} month(s) old (min: ${minAccountAgeMonths}).`,
-    });
-    if (!passed) warnings.push(`Account age is less than ${minAccountAgeMonths} month(s)`);
   } else {
-    checks.push({
-      id: "account_age",
-      label: "Account Age",
-      description: `Account must be at least ${minAccountAgeMonths} month(s) old`,
-      status: "SKIP",
-      detail: "Account creation date not available.",
+    score += 1;
+    factors.push({
+      label: "Monthly Income",
+      value: "Not declared",
+      impact: "neutral",
+      detail: "No income data on record. Manual verification recommended.",
     });
   }
 
-  // ── 4. Minimum savings balance ─────────────────────────────────────────────
-  if (minSavingsBalance > 0) {
-    try {
-      const savQ = query(
-        collection(db, "savings_accounts"),
+  // ── 2. Existing active loans ─────────────────────────────────────────────────
+  if (activeLoansCount === 0) {
+    score += 0;
+    factors.push({
+      label: "Existing Loans",
+      value: "None",
+      impact: "positive",
+      detail: "No active loans. Clean loan history.",
+    });
+  } else if (activeLoansCount === 1) {
+    score += 2;
+    factors.push({
+      label: "Existing Loans",
+      value: `${activeLoansCount} active`,
+      impact: "neutral",
+      detail: "Customer has one existing active loan.",
+    });
+  } else {
+    score += 5;
+    factors.push({
+      label: "Existing Loans",
+      value: `${activeLoansCount} active`,
+      impact: "negative",
+      detail: "Multiple active loans significantly increase default risk.",
+    });
+  }
+
+  // ── 3. Overdue EMIs ──────────────────────────────────────────────────────────
+  if (overdueCount === 0) {
+    score += 0;
+    factors.push({
+      label: "Payment History",
+      value: "No overdues",
+      impact: "positive",
+      detail: "All previous installments paid on time.",
+    });
+  } else if (overdueCount <= 2) {
+    score += 3;
+    factors.push({
+      label: "Payment History",
+      value: `${overdueCount} overdue EMI(s)`,
+      impact: "neutral",
+      detail: "A few overdue installments. Verify reason before approving.",
+    });
+  } else {
+    score += 6;
+    factors.push({
+      label: "Payment History",
+      value: `${overdueCount} overdue EMI(s)`,
+      impact: "negative",
+      detail: "Significant overdue history — high likelihood of default.",
+    });
+  }
+
+  // ── 4. Loan amount vs income ─────────────────────────────────────────────────
+  if (monthlyIncome > 0) {
+    const loanToAnnualIncome = loanAmount / (monthlyIncome * 12);
+    if (loanToAnnualIncome < 2) {
+      score += 0;
+      factors.push({
+        label: "Loan Affordability",
+        value: `${Math.round(loanToAnnualIncome * 100) / 100}× annual income`,
+        impact: "positive",
+        detail: "Loan amount is well within annual income range.",
+      });
+    } else if (loanToAnnualIncome < 4) {
+      score += 1;
+      factors.push({
+        label: "Loan Affordability",
+        value: `${Math.round(loanToAnnualIncome * 100) / 100}× annual income`,
+        impact: "neutral",
+        detail: "Loan is moderate relative to annual income.",
+      });
+    } else {
+      score += 3;
+      factors.push({
+        label: "Loan Affordability",
+        value: `${Math.round(loanToAnnualIncome * 100) / 100}× annual income`,
+        impact: "negative",
+        detail: "Loan amount is significantly higher than annual income.",
+      });
+    }
+  }
+
+  // ── Determine risk level ─────────────────────────────────────────────────────
+  let level: RiskLevel;
+  let summary: string;
+
+  if (score <= 2) {
+    level = "LOW";
+    summary = "Customer shows strong repayment capacity with clean credit history.";
+  } else if (score <= 6) {
+    level = "MEDIUM";
+    summary = "Moderate risk. Verify income and existing obligations before approving.";
+  } else {
+    level = "HIGH";
+    summary = "High risk detected. Careful review required before approval.";
+  }
+
+  return { level, score, factors, summary };
+}
+
+/**
+ * Async helper — fetches active loan count and overdue EMI count for a customer.
+ * No savings data touched.
+ */
+export async function fetchCustomerLoanData(
+  customerId: string,
+  organizationId: string
+): Promise<{ activeLoansCount: number; overdueCount: number }> {
+  const ACTIVE_STATUSES = ["ACTIVE", "OVERDUE", "PARTIALLY_PAID"];
+
+  const [loanSnap, overdueSnap] = await Promise.all([
+    getDocs(
+      query(
+        collection(db, "loans"),
         where("customerId", "==", customerId),
         where("organizationId", "==", organizationId),
-        limit(1)
-      );
-      const savSnap = await getDocs(savQ);
-      if (savSnap.empty) {
-        checks.push({
-          id: "savings_balance",
-          label: "Savings Balance",
-          description: `Minimum savings balance of ₹${minSavingsBalance.toLocaleString()} required`,
-          status: "WARN",
-          detail: "No savings account found.",
-        });
-        warnings.push("No savings account found");
-      } else {
-        const balance = savSnap.docs[0].data().totalBalance || 0;
-        const passed = balance >= minSavingsBalance;
-        checks.push({
-          id: "savings_balance",
-          label: "Savings Balance",
-          description: `Minimum savings balance of ₹${minSavingsBalance.toLocaleString()} required`,
-          status: passed ? "PASS" : "WARN",
-          detail: `Current balance: ₹${Number(balance).toLocaleString()}${!passed ? ` (min: ₹${minSavingsBalance.toLocaleString()})` : ""}`,
-        });
-        if (!passed) warnings.push(`Savings balance below minimum (₹${balance.toLocaleString()} < ₹${minSavingsBalance.toLocaleString()})`);
-      }
-    } catch {
-      checks.push({
-        id: "savings_balance",
-        label: "Savings Balance",
-        description: `Minimum savings balance of ₹${minSavingsBalance.toLocaleString()} required`,
-        status: "WARN",
-        detail: "Could not verify savings balance.",
-      });
-    }
-  } else {
-    checks.push({
-      id: "savings_balance",
-      label: "Savings Balance",
-      description: "Savings balance check",
-      status: "SKIP",
-      detail: "No minimum savings balance configured.",
-    });
-  }
+        limit(20)
+      )
+    ),
+    getDocs(
+      query(
+        collection(db, "loan_installments"),
+        where("customerId", "==", customerId),
+        where("organizationId", "==", organizationId),
+        where("status", "==", "OVERDUE"),
+        limit(20)
+      )
+    ),
+  ]);
 
-  const eligible = blockers.length === 0;
-  return { eligible, checks, blockers, warnings };
+  const activeLoansCount = loanSnap.docs.filter((d) =>
+    ACTIVE_STATUSES.includes((d.data().status || "").toUpperCase())
+  ).length;
+
+  return { activeLoansCount, overdueCount: overdueSnap.size };
 }
