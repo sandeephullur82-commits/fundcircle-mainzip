@@ -9,6 +9,19 @@ import { doc, updateDoc, serverTimestamp } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import { toast } from "sonner";
 import type { Membership } from "@/types";
+import SecuritySection from "@/components/ui/SecuritySection";
+
+function SecuritySectionCustomer() {
+  return (
+    <div className="space-y-3">
+      <div className="flex items-center gap-2 pb-1">
+        <Shield className="w-4 h-4 text-slate-500" />
+        <h3 className="text-xs font-bold text-slate-600 dark:text-slate-400 uppercase tracking-wider">Security</h3>
+      </div>
+      <SecuritySection title={false} />
+    </div>
+  );
+}
 
 interface Props {
   user: any;
@@ -763,6 +776,9 @@ export default function ProfileTab({ user, membershipId, membershipDoc, nomineeL
           <p className="text-sm font-semibold text-emerald-700 dark:text-emerald-400">Changes saved successfully</p>
         </div>
       )}
+
+      {/* ── Security ─────────────────────────────────────────────────────── */}
+      <SecuritySectionCustomer />
 
       {/* ── Sign Out ──────────────────────────────────────────────────────── */}
       <SignOutButton>

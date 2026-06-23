@@ -1,109 +1,88 @@
 import React, { useState, useEffect } from "react";
-import { useUser, useClerk, useSession } from "@clerk/clerk-react";
+import { useUser, useClerk, useOrganization } from "@clerk/clerk-react";
 import { useNavigate, Link } from "react-router-dom";
-import { motion } from "motion/react";
 import { toast } from "sonner";
-import { 
-  User, Mail, Shield, LogOut, Trash2, Camera, Check, 
-  Link2, Laptop, Clock, ArrowLeft, RefreshCw, Key, ChevronRight
+import {
+  User, Mail, Shield, LogOut, Trash2, Check,
+  ArrowLeft, RefreshCw, Phone, Lock,
 } from "lucide-react";
-import { useLanguage } from "@/lib/languageContext";
+import ProfileAvatarEditor from "@/components/ui/ProfileAvatarEditor";
+import SecuritySection from "@/components/ui/SecuritySection";
+import { membershipIdFor } from "@/lib/services";
+import { doc, setDoc, serverTimestamp } from "firebase/firestore";
+import { db } from "@/lib/firebase";
+import { useDocumentRealtime } from "@/lib/firestore-hooks";
 
-async function compressProfileImage(file: File, maxDim = 512, maxBytes = 300 * 1024): Promise<File> {
-  return new Promise((resolve) => {
-    const img = new Image();
-    img.onload = () => {
-      let w = img.width, h = img.height;
-      if (w > maxDim || h > maxDim) {
-        if (w > h) { h = Math.round((h * maxDim) / w); w = maxDim; }
-        else        { w = Math.round((w * maxDim) / h); h = maxDim; }
-      }
-      const canvas = document.createElement("canvas");
-      canvas.width = w; canvas.height = h;
-      canvas.getContext("2d")!.drawImage(img, 0, 0, w, h);
-      canvas.toBlob((blob) => {
-        if (!blob) { resolve(file); return; }
-        if (blob.size <= maxBytes) {
-          resolve(new File([blob], "profile.webp", { type: "image/webp" }));
-        } else {
-          canvas.toBlob(
-            (b2) => resolve(b2 ? new File([b2], "profile.jpg", { type: "image/jpeg" }) : file),
-            "image/jpeg", 0.75,
-          );
-        }
-      }, "image/webp", 0.85);
-    };
-    img.onerror = () => resolve(file);
-    img.src = URL.createObjectURL(file);
-  });
-}
+const nameRx = /^[A-Za-z\s.]*$/;
 
 export default function UserProfilePage() {
   const { isLoaded, isSignedIn, user } = useUser();
-  const { signOut, client } = useClerk();
-  const { session } = useSession();
+  const { signOut } = useClerk();
+  const { organization } = useOrganization();
   const navigate = useNavigate();
-  const { language } = useLanguage();
 
-  const [firstName, setFirstName] = useState("");
-  const [lastName, setLastName] = useState("");
-  const [isUpdating, setIsUpdating] = useState(false);
+  const membershipId = user && organization ? membershipIdFor(organization.id, user.id) : null;
+  const { data: membershipDoc } = useDocumentRealtime<any>("organizationMembers", membershipId);
+
+  const [firstName, setFirstName]           = useState("");
+  const [lastName, setLastName]             = useState("");
+  const [phone, setPhone]                   = useState("");
+  const [isUpdating, setIsUpdating]         = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
-  const [deleteInput, setDeleteInput] = useState("");
+  const [deleteInput, setDeleteInput]       = useState("");
+  const [nameErrors, setNameErrors]         = useState<Record<string, string>>({});
 
-  // Populate first/last name when user loaded
   useEffect(() => {
     if (user) {
       setFirstName(user.firstName || "");
       setLastName(user.lastName || "");
     }
-  }, [user]);
+  }, [user?.firstName, user?.lastName]);
+
+  useEffect(() => {
+    if (membershipDoc?.phone !== undefined) {
+      setPhone(membershipDoc.phone || "");
+    }
+  }, [membershipDoc?.phone]);
+
+  const validateName = () => {
+    const errs: Record<string, string> = {};
+    const fn = firstName.trim();
+    const ln = lastName.trim();
+    if (!fn) errs.firstName = "First name is required.";
+    else if (fn.length < 2) errs.firstName = "At least 2 characters.";
+    else if (!nameRx.test(fn)) errs.firstName = "Only letters, spaces and periods.";
+    if (ln && !nameRx.test(ln)) errs.lastName = "Only letters, spaces and periods.";
+    return errs;
+  };
 
   const handleUpdateProfile = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!user) return;
+    const errs = validateName();
+    if (Object.keys(errs).length) { setNameErrors(errs); return; }
+    setNameErrors({});
     setIsUpdating(true);
     try {
-      // Update real Clerk server profile
-      await user.update({
-        firstName: firstName.trim(),
-        lastName: lastName.trim()
-      });
-      toast.success("Profile saved successfully!");
+      await user.update({ firstName: firstName.trim(), lastName: lastName.trim() });
+
+      if (membershipId && phone !== undefined) {
+        const cleanPhone = phone.replace(/\D/g, "").slice(0, 10);
+        await setDoc(doc(db, "organizationMembers", membershipId), {
+          fullName: `${firstName.trim()} ${lastName.trim()}`.trim(),
+          phone: cleanPhone,
+          updatedAt: serverTimestamp(),
+        }, { merge: true });
+        await setDoc(doc(db, "users", user.id), {
+          name: `${firstName.trim()} ${lastName.trim()}`.trim(),
+          phone: cleanPhone,
+          updatedAt: serverTimestamp(),
+        }, { merge: true });
+      }
+
+      toast.success("Profile updated successfully!");
     } catch (err: any) {
-      console.error(err);
-      toast.error(err.errors?.[0]?.message || err.message || "Failed to update profile");
-    } finally {
-      setIsUpdating(false);
-    }
-  };
-
-  const handleProfileImageChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file || !user) return;
-    // Reset input so the same file can be re-selected if needed
-    e.target.value = "";
-
-    const ALLOWED = ["image/jpeg", "image/png", "image/webp"];
-    if (!ALLOWED.includes(file.type)) {
-      toast.error("Only JPG, PNG, or WEBP images are allowed.");
-      return;
-    }
-    if (file.size > 5 * 1024 * 1024) {
-      toast.error("Image must be under 5 MB.");
-      return;
-    }
-
-    setIsUpdating(true);
-    const uploadToast = toast.loading("Uploading…");
-    try {
-      // Compress: resize to 512×512 max, WebP ≤ 300 KB
-      const compressed = await compressProfileImage(file);
-      await user.setProfileImage({ file: compressed });
-      toast.success("Profile photo updated!", { id: uploadToast });
-    } catch (err: any) {
-      console.error(err);
-      toast.error(err.errors?.[0]?.message || "Upload failed. Please try again.", { id: uploadToast });
+      toast.error(err?.errors?.[0]?.message || err.message || "Failed to update profile");
     } finally {
       setIsUpdating(false);
     }
@@ -112,29 +91,22 @@ export default function UserProfilePage() {
   const handleLogout = async () => {
     try {
       await signOut();
-      toast.success("Signed out successfully!");
       navigate("/");
-    } catch (err) {
+    } catch {
       toast.error("Logout failed");
     }
   };
 
   const handleDeleteAccount = async () => {
-    if (deleteInput !== "DELETE") {
-      return toast.error("Please type DELETE to confirm");
-    }
+    if (deleteInput !== "DELETE") return toast.error("Please type DELETE to confirm");
     if (!user) return;
-
     setIsUpdating(true);
     try {
-      // Direct deletion of real account from Clerk database
       await user.delete();
-      toast.success("Your profile ledger has been permanently erased.");
       await signOut();
       navigate("/");
     } catch (err: any) {
-      console.error(err);
-      toast.error(err.errors?.[0]?.message || "Action requires recent sign-in validation. Please relogin and try again");
+      toast.error(err?.errors?.[0]?.message || "Action requires recent sign-in. Please re-login and try again.");
     } finally {
       setIsUpdating(false);
     }
@@ -144,8 +116,8 @@ export default function UserProfilePage() {
     return (
       <div className="min-h-screen bg-slate-50 flex items-center justify-center">
         <div className="flex flex-col items-center gap-2">
-          <RefreshCw className="w-6 h-6 text-blue-600 animate-spin" />
-          <span className="text-xs text-slate-400 font-semibold uppercase tracking-wider">Syncing Profile...</span>
+          <RefreshCw className="w-6 h-6 text-sky-600 animate-spin" />
+          <span className="text-xs text-slate-400 font-semibold uppercase tracking-wider">Loading Profile…</span>
         </div>
       </div>
     );
@@ -157,8 +129,8 @@ export default function UserProfilePage() {
         <div className="max-w-md w-full bg-white border border-slate-200 rounded-3xl p-8 shadow-xl space-y-4">
           <Shield className="w-12 h-12 text-red-500 mx-auto" />
           <h1 className="text-xl font-bold text-slate-800">Authentication Required</h1>
-          <p className="text-sm text-slate-500">You must be logged in to access and manage your profile records.</p>
-          <Link to="/" className="inline-block bg-blue-600 hover:bg-blue-700 text-white rounded-xl px-5 py-2.5 text-xs font-bold transition-all">
+          <p className="text-sm text-slate-500">You must be signed in to manage your profile.</p>
+          <Link to="/" className="inline-block bg-sky-600 hover:bg-sky-700 text-white rounded-xl px-5 py-2.5 text-xs font-bold transition-all">
             Return Home
           </Link>
         </div>
@@ -166,94 +138,132 @@ export default function UserProfilePage() {
     );
   }
 
+  const initials = (user.firstName?.charAt(0) || user.fullName?.charAt(0) || "U").toUpperCase();
+
   return (
     <div className="min-h-screen bg-slate-50 py-8 px-4">
       <div className="max-w-2xl mx-auto space-y-6">
-        
-        {/* Back Link */}
-        <div id="btn-back-wrapper" className="flex justify-between items-center px-1">
+
+        {/* Back link */}
+        <div className="flex justify-between items-center px-1">
           <Link
-            id="profile-back-link"
             to="/router"
-            className="inline-flex items-center gap-1.5 text-xs font-bold text-slate-500 hover:text-slate-800"
+            className="inline-flex items-center gap-1.5 text-xs font-bold text-slate-500 hover:text-slate-800 transition-colors"
           >
-            <ArrowLeft className="w-4 h-4" /> Return to Dashboard
+            <ArrowLeft className="w-4 h-4" /> Back to Dashboard
           </Link>
-          <div className="text-xs text-slate-400 font-bold uppercase tracking-wider">Account Ledger Security</div>
+          <span className="text-xs text-slate-400 font-bold uppercase tracking-wider">Account Settings</span>
         </div>
 
-        {/* PROFILE HEADER CARD */}
-        <div className="bg-white border border-slate-200/80 rounded-3xl p-6 md:p-8 shadow-md flex flex-col md:flex-row items-center gap-6">
-          {/* Avatar Area */}
-          <div className="relative shrink-0">
-            <div className="w-24 h-24 rounded-full overflow-hidden border-2 border-slate-200 shadow-inner bg-slate-100 flex items-center justify-center">
-              {user.imageUrl ? (
-                <img referrerPolicy="no-referrer" src={user.imageUrl} alt={user.fullName || "User"} className="w-full h-full object-cover" />
-              ) : (
-                <User className="w-12 h-12 text-slate-400" />
+        {/* ── Profile Header ─────────────────────────────────────────────────── */}
+        <div className="bg-white border border-slate-200 rounded-3xl p-6 md:p-8 shadow-sm">
+          <div className="flex flex-col sm:flex-row items-center gap-6">
+            {/* Avatar with upload/remove */}
+            <ProfileAvatarEditor
+              fallbackLetter={initials}
+              accentColor="sky"
+              size="xl"
+              membershipId={membershipId}
+              userId={user.id}
+            />
+
+            <div className="flex-1 text-center sm:text-left space-y-1.5 min-w-0">
+              <h1 className="text-2xl font-black text-slate-900 truncate">
+                {user.fullName || "Your Account"}
+              </h1>
+              <p className="text-sm text-slate-500 flex items-center justify-center sm:justify-start gap-1.5">
+                <Mail className="w-4 h-4 text-slate-400 shrink-0" />
+                {user.primaryEmailAddress?.emailAddress}
+              </p>
+              {organization && (
+                <p className="text-xs text-slate-400 font-medium">{organization.name}</p>
               )}
             </div>
-            {/* Change photo button — always visible as explicit action, not a hidden hover trigger */}
-            {isUpdating ? (
-              <div className="absolute -bottom-1 -right-1 w-7 h-7 bg-blue-600 rounded-full flex items-center justify-center shadow">
-                <RefreshCw className="w-3.5 h-3.5 text-white animate-spin" />
-              </div>
-            ) : (
-              <label className="absolute -bottom-1 -right-1 w-7 h-7 bg-blue-600 hover:bg-blue-700 rounded-full flex items-center justify-center shadow cursor-pointer transition-colors" title="Change profile photo">
-                <Camera className="w-3.5 h-3.5 text-white" />
-                <input
-                  type="file"
-                  accept="image/jpeg,image/png,image/webp"
-                  onChange={handleProfileImageChange}
-                  className="hidden"
-                />
-              </label>
-            )}
-          </div>
-
-          <div className="flex-1 text-center md:text-left space-y-1.5 min-w-0">
-            <div className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md bg-blue-50 text-blue-600 font-bold text-[10px] uppercase">
-              Trustee Level: Agent
-            </div>
-            <h1 className="text-2xl font-black text-slate-900 truncate">{user.fullName || "Trustee Account"}</h1>
-            <p className="text-sm text-slate-500 truncate flex items-center justify-center md:justify-start gap-1.5">
-              <Mail className="w-4 h-4 text-slate-400 shrink-0" /> {user.primaryEmailAddress?.emailAddress}
-            </p>
           </div>
         </div>
 
-        {/* PERSONAL DETAIL SETTING */}
-        <div id="personal-detail-card" className="bg-white border border-slate-200/85 rounded-3xl p-6 md:p-8 shadow-sm space-y-5">
-          <h2 className="text-md font-extrabold text-slate-800 pb-3 border-b border-slate-100">Personal Details</h2>
-          <form onSubmit={handleUpdateProfile} className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div className="space-y-1.5">
-              <label htmlFor="pf-fname-input" className="text-xs font-bold text-slate-500 uppercase tracking-wide">First Name</label>
-              <input
-                id="pf-fname-input"
-                type="text"
-                value={firstName}
-                onChange={(e) => setFirstName(e.target.value)}
-                className="h-11 w-full px-3.5 rounded-xl border border-slate-200 bg-slate-50/20 text-sm whitespace-nowrap focus:bg-white focus:outline-none focus:ring-4 focus:ring-blue-500/10 focus:border-blue-500"
-              />
-            </div>
-            
-            <div className="space-y-1.5">
-              <label htmlFor="pf-lname-input" className="text-xs font-bold text-slate-500 uppercase tracking-wide">Last Name</label>
-              <input
-                id="pf-lname-input"
-                type="text"
-                value={lastName}
-                onChange={(e) => setLastName(e.target.value)}
-                className="h-11 w-full px-3.5 rounded-xl border border-slate-200 bg-slate-50/20 text-sm whitespace-nowrap focus:bg-white focus:outline-none focus:ring-4 focus:ring-blue-500/10 focus:border-blue-500"
-              />
+        {/* ── Personal Details ───────────────────────────────────────────────── */}
+        <div className="bg-white border border-slate-200 rounded-3xl p-6 md:p-8 shadow-sm space-y-5">
+          <h2 className="text-sm font-extrabold text-slate-700 uppercase tracking-wider pb-3 border-b border-slate-100">
+            Personal Details
+          </h2>
+          <form onSubmit={handleUpdateProfile} className="space-y-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              {/* First Name */}
+              <div className="space-y-1.5">
+                <label className="text-xs font-bold text-slate-500 uppercase tracking-wide">First Name</label>
+                <input
+                  type="text"
+                  value={firstName}
+                  onChange={e => {
+                    setFirstName(e.target.value);
+                    setNameErrors(p => ({ ...p, firstName: "" }));
+                  }}
+                  placeholder="First name"
+                  className={`h-11 w-full px-3.5 rounded-xl border text-sm focus:outline-none focus:ring-4 transition-colors ${
+                    nameErrors.firstName
+                      ? "border-red-400 bg-red-50 focus:ring-red-400/10"
+                      : "border-slate-200 bg-slate-50/50 focus:bg-white focus:ring-sky-500/10 focus:border-sky-500"
+                  }`}
+                />
+                {nameErrors.firstName && <p className="text-[11px] text-red-500">{nameErrors.firstName}</p>}
+              </div>
+
+              {/* Last Name */}
+              <div className="space-y-1.5">
+                <label className="text-xs font-bold text-slate-500 uppercase tracking-wide">Last Name</label>
+                <input
+                  type="text"
+                  value={lastName}
+                  onChange={e => {
+                    setLastName(e.target.value);
+                    setNameErrors(p => ({ ...p, lastName: "" }));
+                  }}
+                  placeholder="Last name"
+                  className={`h-11 w-full px-3.5 rounded-xl border text-sm focus:outline-none focus:ring-4 transition-colors ${
+                    nameErrors.lastName
+                      ? "border-red-400 bg-red-50 focus:ring-red-400/10"
+                      : "border-slate-200 bg-slate-50/50 focus:bg-white focus:ring-sky-500/10 focus:border-sky-500"
+                  }`}
+                />
+                {nameErrors.lastName && <p className="text-[11px] text-red-500">{nameErrors.lastName}</p>}
+              </div>
             </div>
 
-            <div className="md:col-span-2 pt-2 text-right">
+            {/* Phone */}
+            {membershipId && (
+              <div className="space-y-1.5">
+                <label className="text-xs font-bold text-slate-500 uppercase tracking-wide">Phone Number</label>
+                <div className="relative">
+                  <Phone className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                  <input
+                    type="tel"
+                    inputMode="numeric"
+                    maxLength={10}
+                    value={phone}
+                    onChange={e => setPhone(e.target.value.replace(/\D/g, "").slice(0, 10))}
+                    placeholder="10-digit mobile number"
+                    className="h-11 w-full pl-10 pr-3.5 rounded-xl border border-slate-200 bg-slate-50/50 text-sm focus:bg-white focus:outline-none focus:ring-4 focus:ring-sky-500/10 focus:border-sky-500 transition-colors"
+                  />
+                </div>
+              </div>
+            )}
+
+            {/* Email (read-only) */}
+            <div className="space-y-1.5">
+              <label className="text-xs font-bold text-slate-500 uppercase tracking-wide">Email Address</label>
+              <div className="h-11 flex items-center gap-2.5 px-3.5 rounded-xl border border-slate-200 bg-slate-50 text-sm text-slate-500">
+                <Lock className="w-4 h-4 text-slate-400 shrink-0" />
+                {user.primaryEmailAddress?.emailAddress}
+              </div>
+              <p className="text-[11px] text-slate-400">Manage email addresses in the Security section below.</p>
+            </div>
+
+            <div className="pt-1 flex justify-end">
               <button
-                id="profile-save-btn"
                 type="submit"
                 disabled={isUpdating}
-                className="h-11 px-6 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-bold text-xs shadow-sm cursor-pointer transition-all active:scale-[0.98] inline-flex items-center gap-1.5"
+                className="h-11 px-6 bg-sky-600 hover:bg-sky-700 disabled:opacity-60 text-white rounded-xl font-bold text-sm flex items-center gap-2 transition-colors active:scale-[0.98]"
               >
                 {isUpdating ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
                 Save Changes
@@ -262,129 +272,85 @@ export default function UserProfilePage() {
           </form>
         </div>
 
-        {/* CONNECTED ACCOUNTS SECTION */}
-        <div id="connected-accounts-card" className="bg-white border border-slate-200/85 rounded-3xl p-6 md:p-8 shadow-sm space-y-4">
-          <h2 className="text-md font-extrabold text-slate-800 pb-3 border-b border-slate-100">Connected Accounts</h2>
-          <div className="space-y-3.5">
-            {user.externalAccounts.map((account) => (
-              <div key={account.id} className="flex justify-between items-center p-3.5 bg-slate-50/80 rounded-2xl border border-slate-100">
-                <div className="flex items-center gap-2.5">
-                  <Link2 className="w-5 h-5 text-slate-400" />
-                  <div>
-                    <p className="text-xs font-bold text-slate-800 uppercase">{account.provider}</p>
-                    <p className="text-[11px] text-slate-500">{account.emailAddress}</p>
-                  </div>
-                </div>
-                <div className="px-3 py-1 rounded-full bg-emerald-50 border border-emerald-150 text-[10px] font-bold text-emerald-600 uppercase">
-                  Connected
-                </div>
-              </div>
-            ))}
-            {user.externalAccounts.length === 0 && (
-              <div className="p-3.5 bg-slate-50/50 text-slate-400 text-xs font-semibold rounded-2xl text-center border border-dashed border-slate-200">
-                No external OAuth accounts linked to this profile.
-              </div>
-            )}
-          </div>
+        {/* ── Security Section ───────────────────────────────────────────────── */}
+        <div className="bg-white border border-slate-200 rounded-3xl p-6 md:p-8 shadow-sm space-y-4">
+          <h2 className="text-sm font-extrabold text-slate-700 uppercase tracking-wider pb-3 border-b border-slate-100 flex items-center gap-2">
+            <Shield className="w-4 h-4 text-slate-500" /> Security
+          </h2>
+          <SecuritySection title={false} />
         </div>
 
-        {/* SECURITY & ACTIVE SESSIONS SECTION */}
-        <div id="active-sessions-card" className="bg-white border border-slate-200/85 rounded-3xl p-6 md:p-8 shadow-sm space-y-4">
-          <h2 className="text-md font-extrabold text-slate-800 pb-3 border-b border-slate-100">Active Security Sessions</h2>
-          <div className="space-y-3">
-            <div className="flex justify-between items-center p-3.5 bg-blue-50/40 rounded-2xl border border-blue-100/60">
-              <div className="flex gap-2.5 items-center">
-                <Laptop className="w-5 h-5 text-blue-600 shrink-0" />
-                <div>
-                  <p className="text-xs font-bold text-slate-800">Current Web Session (Chrome/Firefox)</p>
-                  <p className="text-[10px] text-slate-500 flex items-center gap-1 font-semibold mt-1">
-                    <Clock className="w-3.5 h-3.5" /> Activated: May 26, 2026 (At: {new Date(session?.lastActiveAt || Date.now()).toLocaleTimeString()})
-                  </p>
-                </div>
-              </div>
-              <span className="px-2.5 py-0.5 bg-blue-100 text-blue-700 text-[9px] font-bold uppercase rounded-md">Live Action</span>
+        {/* ── Danger Zone ────────────────────────────────────────────────────── */}
+        <div className="bg-white border border-slate-200 rounded-3xl p-6 md:p-8 shadow-sm space-y-4">
+          <h2 className="text-sm font-extrabold text-slate-700 uppercase tracking-wider pb-3 border-b border-slate-100">
+            Account Actions
+          </h2>
+
+          {/* Logout */}
+          <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 p-4 bg-slate-50 rounded-2xl border border-slate-100">
+            <div>
+              <p className="text-sm font-semibold text-slate-800">Sign Out</p>
+              <p className="text-xs text-slate-500">Sign out of your current session on this device.</p>
             </div>
+            <button
+              onClick={handleLogout}
+              className="px-4 py-2 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 transition-colors"
+            >
+              <LogOut className="w-4 h-4" /> Sign Out
+            </button>
           </div>
-        </div>
 
-        {/* RED RISK TRIGGERS (LOGOUT & DELETE ACCOUNT) */}
-        <div id="risk-triggers-card" className="bg-white border border-slate-200/85 rounded-3xl p-6 md:p-8 shadow-sm space-y-5">
-          <h2 className="text-md font-extrabold text-slate-800 pb-3 border-b border-slate-100">Trust Options</h2>
-          <div className="space-y-4">
-            
-            {/* Standard SignOut */}
-            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 p-4 bg-slate-50 rounded-2xl border border-slate-100">
+          {/* Delete Account */}
+          <div className="p-4 bg-rose-50 rounded-2xl border border-rose-100 space-y-4">
+            <div className="flex justify-between items-center">
               <div>
-                <p className="text-xs font-bold text-slate-800">Logout of FundCircle</p>
-                <p className="text-[10px] text-slate-500">Sign out of your active browser session on this device safely.</p>
+                <p className="text-sm font-bold text-rose-900">Delete Account</p>
+                <p className="text-xs text-rose-500">Permanently deletes your account and all associated data.</p>
               </div>
-              <button
-                id="profile-logout-btn"
-                onClick={handleLogout}
-                className="px-4 py-2 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-xs font-extrabold flex items-center gap-1 cursor-pointer transition-colors"
-              >
-                <LogOut className="w-4 h-4" /> Logout Account
-              </button>
-            </div>
-
-            {/* Permanent Account Erase */}
-            <div className="p-4 bg-rose-50/50 rounded-2xl border border-rose-100/80 space-y-4">
-              <div className="flex justify-between items-center">
-                <div>
-                  <p className="text-xs font-bold text-rose-900">Erase Ledger Information Permanently</p>
-                  <p className="text-[10px] text-rose-500/90">This deletes your credentials, logs, and files completely from Clerk directories.</p>
-                </div>
-                {!showDeleteConfirm && (
-                  <button
-                    id="profile-delete-trigger"
-                    onClick={() => setShowDeleteConfirm(true)}
-                    className="h-9 px-4 border border-rose-200 bg-white hover:bg-rose-50 text-rose-600 rounded-xl text-xs font-bold transition-all"
-                  >
-                    Delete Account
-                  </button>
-                )}
-              </div>
-
-              {showDeleteConfirm && (
-                <div className="space-y-3.5 pt-3 border-t border-rose-200/40">
-                  <div className="p-3 bg-rose-50 rounded-xl border border-rose-150 text-[11px] text-rose-955 font-medium leading-relaxed">
-                     **CRITICAL NOTICE:** This operation is irreversible. All of your connected deposit ledgers will remain in the database, but your direct access login will be completely deleted.
-                  </div>
-                  <div className="space-y-1.5">
-                    <label htmlFor="dl-con-input" className="text-[10px] font-bold text-rose-700 uppercase">Type <span className="underline">DELETE</span> to proceed:</label>
-                    <div className="flex gap-2">
-                      <input
-                        id="dl-con-input"
-                        type="text"
-                        placeholder="Type DELETE..."
-                        value={deleteInput}
-                        onChange={(e) => setDeleteInput(e.target.value)}
-                        className="h-10 px-3.5 rounded-xl border border-rose-250 bg-white text-xs focus:ring-4 focus:ring-rose-500/10 focus:border-rose-500 text-rose-900 placeholder-rose-300 flex-1 focus:outline-none"
-                      />
-                      <button
-                        id="profile-delete-final-btn"
-                        onClick={handleDeleteAccount}
-                        disabled={isUpdating}
-                        className="h-10 px-4 bg-rose-600 hover:bg-rose-700 text-white rounded-xl text-xs font-bold inline-flex items-center gap-1 shadow-sm cursor-pointer transition-all"
-                      >
-                        <Trash2 className="w-4 h-4" /> Erase Now
-                      </button>
-                      <button
-                        id="profile-delete-cancel-btn"
-                        onClick={() => {
-                          setShowDeleteConfirm(false);
-                          setDeleteInput("");
-                        }}
-                        className="h-10 px-4 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-bold"
-                      >
-                        Cancel
-                      </button>
-                    </div>
-                  </div>
-                </div>
+              {!showDeleteConfirm && (
+                <button
+                  onClick={() => setShowDeleteConfirm(true)}
+                  className="h-9 px-4 border border-rose-200 bg-white hover:bg-rose-50 text-rose-600 rounded-xl text-xs font-bold transition-all"
+                >
+                  Delete Account
+                </button>
               )}
             </div>
 
+            {showDeleteConfirm && (
+              <div className="space-y-3 pt-3 border-t border-rose-200/40">
+                <p className="text-[11px] text-rose-700 font-medium leading-relaxed bg-rose-100/60 rounded-xl p-3">
+                  This is irreversible. Your login access will be permanently removed.
+                </p>
+                <div className="space-y-1.5">
+                  <label className="text-[10px] font-bold text-rose-700 uppercase">
+                    Type <span className="underline">DELETE</span> to confirm:
+                  </label>
+                  <div className="flex gap-2">
+                    <input
+                      type="text"
+                      placeholder="Type DELETE…"
+                      value={deleteInput}
+                      onChange={e => setDeleteInput(e.target.value)}
+                      className="h-10 px-3.5 rounded-xl border border-rose-200 bg-white text-xs focus:ring-4 focus:ring-rose-500/10 focus:border-rose-500 text-rose-900 placeholder-rose-300 flex-1 focus:outline-none"
+                    />
+                    <button
+                      onClick={handleDeleteAccount}
+                      disabled={isUpdating}
+                      className="h-10 px-4 bg-rose-600 hover:bg-rose-700 text-white rounded-xl text-xs font-bold inline-flex items-center gap-1 transition-all disabled:opacity-60"
+                    >
+                      <Trash2 className="w-4 h-4" /> Delete
+                    </button>
+                    <button
+                      onClick={() => { setShowDeleteConfirm(false); setDeleteInput(""); }}
+                      className="h-10 px-4 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-bold transition-colors"
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
         </div>
 

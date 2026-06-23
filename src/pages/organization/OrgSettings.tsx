@@ -8,6 +8,7 @@ import { toast } from "sonner";
 import ProfileAvatarEditor from "@/components/ui/ProfileAvatarEditor";
 import OrgLogoEditor from "@/components/ui/OrgLogoEditor";
 import AppSwitch from "@/components/ui/AppSwitch";
+import SecuritySection from "@/components/ui/SecuritySection";
 
 import {
   Settings,
@@ -19,6 +20,7 @@ import {
   ChevronRight,
   CheckCircle2,
   Lock,
+  Shield,
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -26,7 +28,7 @@ import { Label } from "@/components/ui/label";
 import FieldError from "@/components/ui/FieldError";
 import { sanitizeName, validatePhone10 } from "@/lib/validation";
 
-type SectionId = "organization" | "profile" | "notifications";
+type SectionId = "organization" | "profile" | "notifications" | "security";
 
 
 // ── Save button ────────────────────────────────────────────────────────────────
@@ -166,6 +168,7 @@ export default function OrgSettings() {
       await setDoc(doc(db, "organizations", organization.id), {
         name: sanitized, updatedAt: serverTimestamp(),
       }, { merge: true });
+      try { await organization.update({ name: sanitized }); } catch (_) {}
       setOrgName(sanitized);
       flashSaved(setOrgSaveState);
       toast.success("Organization settings saved.");
@@ -257,6 +260,7 @@ export default function OrgSettings() {
     { id: "organization",  label: "Organization",  icon: Building2 },
     { id: "profile",       label: "Profile",       icon: User      },
     { id: "notifications", label: "Notifications", icon: Bell      },
+    { id: "security",      label: "Security",      icon: Shield    },
   ];
 
   const isLoading = orgLoading || membershipLoading;
@@ -531,6 +535,22 @@ export default function OrgSettings() {
                     ))}
                   </fieldset>
                 )}
+              </CardContent>
+            </Card>
+          )}
+
+          {/* ── Security ─────────────────────────────────────────────── */}
+          {activeSection === "security" && (
+            <Card className="border-slate-200 shadow-sm rounded-2xl">
+              <CardHeader className="pb-4">
+                <CardTitle className="text-lg flex items-center gap-2">
+                  <Shield className="h-5 w-5 text-sky-500" />
+                  Security
+                </CardTitle>
+                <CardDescription>Manage your password, active sessions, and email addresses.</CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                <SecuritySection title={false} />
               </CardContent>
             </Card>
           )}

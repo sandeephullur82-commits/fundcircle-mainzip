@@ -5,10 +5,10 @@ import { doc, setDoc, serverTimestamp } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import ProfileAvatarEditor from "@/components/ui/ProfileAvatarEditor";
+import SecuritySection from "@/components/ui/SecuritySection";
 import {
   LogOut, Mail, Phone, BadgeCheck, Building2, Wifi, WifiOff,
-  RefreshCw, Shield, Eye, EyeOff, CheckCircle2, AlertTriangle,
-  Edit3, Save, X,
+  RefreshCw, CheckCircle2, AlertTriangle, Edit3, Save, X,
 } from "lucide-react";
 import { membershipIdFor } from "@/lib/services";
 import { toast } from "sonner";
@@ -16,147 +16,6 @@ import { toast } from "sonner";
 const nameRx = /^[A-Za-z\s.]*$/;
 
 function safeN(v: any) { const n = Number(v); return isFinite(n) ? n : 0; }
-
-// ── Inline Change Password (Clerk user.updatePassword) ───────────────────────
-function ChangePasswordSection() {
-  const { user } = useUser();
-  const [open,        setOpen]        = useState(false);
-  const [currentPwd,  setCurrentPwd]  = useState("");
-  const [newPwd,      setNewPwd]      = useState("");
-  const [confirmPwd,  setConfirmPwd]  = useState("");
-  const [showCurrent, setShowCurrent] = useState(false);
-  const [showNew,     setShowNew]     = useState(false);
-  const [loading,     setLoading]     = useState(false);
-  const [errors,      setErrors]      = useState<Record<string, string>>({});
-
-  const reset = () => {
-    setCurrentPwd(""); setNewPwd(""); setConfirmPwd("");
-    setErrors({}); setShowCurrent(false); setShowNew(false);
-  };
-
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    const errs: Record<string, string> = {};
-    if (!currentPwd)        errs.current  = "Current password is required.";
-    if (newPwd.length < 8)  errs.newPwd   = "New password must be at least 8 characters.";
-    if (newPwd !== confirmPwd) errs.confirm = "Passwords do not match.";
-    if (Object.keys(errs).length > 0) { setErrors(errs); return; }
-
-    setLoading(true);
-    setErrors({});
-    try {
-      await (user as any)?.updatePassword({ currentPassword: currentPwd, newPassword: newPwd });
-      toast.success("Password updated successfully!");
-      reset();
-      setOpen(false);
-    } catch (err: any) {
-      const msg = err?.errors?.[0]?.longMessage || err?.message || "Failed to update password.";
-      toast.error(msg);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  return (
-    <div className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
-      <button
-        onClick={() => { setOpen(!open); if (open) reset(); }}
-        className="w-full flex items-center justify-between px-5 py-4"
-      >
-        <div className="flex items-center gap-3">
-          <div className="w-9 h-9 bg-slate-100 rounded-xl flex items-center justify-center">
-            <Shield className="w-4 h-4 text-slate-600" />
-          </div>
-          <div className="text-left">
-            <p className="text-sm font-semibold text-slate-900">Change Password</p>
-            <p className="text-xs text-slate-400">Update your account password</p>
-          </div>
-        </div>
-        <div className={`w-6 h-6 flex items-center justify-center text-slate-400 transition-transform ${open ? "rotate-180" : ""}`}>
-          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-          </svg>
-        </div>
-      </button>
-
-      {open && (
-        <form onSubmit={handleSubmit} className="border-t border-slate-100 px-5 pb-5 pt-4 space-y-3">
-          {/* Current Password */}
-          <div className="space-y-1">
-            <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Current Password</label>
-            <div className="relative">
-              <input
-                type={showCurrent ? "text" : "password"}
-                value={currentPwd}
-                onChange={(e) => setCurrentPwd(e.target.value)}
-                placeholder="Enter current password"
-                className={`w-full h-11 px-3 pr-10 rounded-xl border text-sm focus:outline-none focus:ring-2 ${
-                  errors.current
-                    ? "border-red-400 bg-red-50 focus:ring-red-400/30"
-                    : "border-slate-200 bg-slate-50 focus:ring-emerald-400/30 focus:border-emerald-400"
-                }`}
-              />
-              <button type="button" onClick={() => setShowCurrent(!showCurrent)}
-                className="absolute right-3 top-1/2 -translate-y-1/2">
-                {showCurrent ? <EyeOff className="w-4 h-4 text-slate-400" /> : <Eye className="w-4 h-4 text-slate-400" />}
-              </button>
-            </div>
-            {errors.current && <p className="text-[11px] text-red-500">{errors.current}</p>}
-          </div>
-
-          {/* New Password */}
-          <div className="space-y-1">
-            <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">New Password</label>
-            <div className="relative">
-              <input
-                type={showNew ? "text" : "password"}
-                value={newPwd}
-                onChange={(e) => setNewPwd(e.target.value)}
-                placeholder="Min 8 characters"
-                className={`w-full h-11 px-3 pr-10 rounded-xl border text-sm focus:outline-none focus:ring-2 ${
-                  errors.newPwd
-                    ? "border-red-400 bg-red-50 focus:ring-red-400/30"
-                    : "border-slate-200 bg-slate-50 focus:ring-emerald-400/30 focus:border-emerald-400"
-                }`}
-              />
-              <button type="button" onClick={() => setShowNew(!showNew)}
-                className="absolute right-3 top-1/2 -translate-y-1/2">
-                {showNew ? <EyeOff className="w-4 h-4 text-slate-400" /> : <Eye className="w-4 h-4 text-slate-400" />}
-              </button>
-            </div>
-            {errors.newPwd && <p className="text-[11px] text-red-500">{errors.newPwd}</p>}
-          </div>
-
-          {/* Confirm Password */}
-          <div className="space-y-1">
-            <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Confirm New Password</label>
-            <input
-              type="password"
-              value={confirmPwd}
-              onChange={(e) => setConfirmPwd(e.target.value)}
-              placeholder="Repeat new password"
-              className={`w-full h-11 px-3 rounded-xl border text-sm focus:outline-none focus:ring-2 ${
-                errors.confirm
-                  ? "border-red-400 bg-red-50 focus:ring-red-400/30"
-                  : "border-slate-200 bg-slate-50 focus:ring-emerald-400/30 focus:border-emerald-400"
-              }`}
-            />
-            {errors.confirm && <p className="text-[11px] text-red-500">{errors.confirm}</p>}
-          </div>
-
-          <button
-            type="submit"
-            disabled={loading}
-            className="w-full h-11 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white rounded-xl font-semibold text-sm flex items-center justify-center gap-2 transition-colors"
-          >
-            {loading && <RefreshCw className="w-4 h-4 animate-spin" />}
-            {loading ? "Updating…" : "Update Password"}
-          </button>
-        </form>
-      )}
-    </div>
-  );
-}
 
 // ── Logout Confirmation ───────────────────────────────────────────────────────
 function LogoutSection() {
@@ -199,7 +58,7 @@ function LogoutSection() {
 // ── Sync Status ───────────────────────────────────────────────────────────────
 function SyncStatus() {
   const [isOnline, setIsOnline] = useState(navigator.onLine);
-  const [syncMsg,  setSyncMsg]  = useState<string | null>(null);
+  const [syncMsg, setSyncMsg] = useState<string | null>(null);
 
   useEffect(() => {
     const onOnline  = () => { setIsOnline(true);  setSyncMsg("Back online — syncing data…"); setTimeout(() => setSyncMsg(null), 5000); };
@@ -214,16 +73,12 @@ function SyncStatus() {
 
   return (
     <div className={`flex items-center gap-3 px-5 py-4 rounded-2xl border ${
-      isOnline
-        ? "bg-emerald-50 border-emerald-100"
-        : "bg-amber-50 border-amber-100"
+      isOnline ? "bg-emerald-50 border-emerald-100" : "bg-amber-50 border-amber-100"
     }`}>
       <div className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 ${
         isOnline ? "bg-emerald-100" : "bg-amber-100"
       }`}>
-        {isOnline
-          ? <Wifi   className="w-4 h-4 text-emerald-600" />
-          : <WifiOff className="w-4 h-4 text-amber-600" />}
+        {isOnline ? <Wifi className="w-4 h-4 text-emerald-600" /> : <WifiOff className="w-4 h-4 text-amber-600" />}
       </div>
       <div className="flex-1 min-w-0">
         <p className={`text-sm font-semibold ${isOnline ? "text-emerald-800" : "text-amber-800"}`}>
@@ -251,7 +106,7 @@ function InlineProfileEditor({ membershipId, membershipDoc, userId }: {
   const [fullName, setFullName] = useState("");
   const [phone, setPhone]     = useState("");
   const [saving, setSaving]   = useState(false);
-  const [errors, setErrors]   = useState<Record<string,string>>({});
+  const [errors, setErrors]   = useState<Record<string, string>>({});
 
   const open = () => {
     setFullName(membershipDoc?.fullName || user?.fullName || "");
@@ -263,7 +118,7 @@ function InlineProfileEditor({ membershipId, membershipDoc, userId }: {
   const cancel = () => setEditing(false);
 
   const save = async () => {
-    const errs: Record<string,string> = {};
+    const errs: Record<string, string> = {};
     const name = fullName.trim();
     if (!name || name.length < 2) errs.fullName = "Name must be at least 2 characters.";
     else if (!nameRx.test(name))   errs.fullName = "Only letters, spaces, and periods allowed.";
@@ -346,26 +201,24 @@ function InlineProfileEditor({ membershipId, membershipDoc, userId }: {
   );
 }
 
-// ── Main More/Profile Page ────────────────────────────────────────────────────
+// ── Main Profile Page ─────────────────────────────────────────────────────────
 export default function AgentProfile() {
   const { user }         = useUser();
   const { organization } = useOrganization();
 
-  const agentId = user?.id    || "";
+  const agentId      = user?.id    || "";
   const membershipId = user && organization ? membershipIdFor(organization.id, user.id) : null;
 
-  const { data: membershipDoc } = useDocumentRealtime<any>(
-    "organizationMembers",
-    membershipId
-  );
+  const { data: membershipDoc } = useDocumentRealtime<any>("organizationMembers", membershipId);
 
-  const shortId = agentId ? `FC-${agentId.slice(-6).toUpperCase()}` : "—";
-  const displayName = membershipDoc?.fullName || user?.fullName || "Agent";
+  const shortId      = agentId ? `FC-${agentId.slice(-6).toUpperCase()}` : "—";
+  const displayName  = membershipDoc?.fullName || user?.fullName || "Agent";
   const displayPhone = membershipDoc?.phone || "";
 
   return (
     <div className="space-y-4 max-w-xl mx-auto">
-      {/* ── Profile Card ──────────────────────────────────────────────────── */}
+
+      {/* ── Profile Card ───────────────────────────────────────────────────── */}
       <div className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
         {/* Green banner */}
         <div className="bg-gradient-to-br from-emerald-500 to-emerald-700 h-20" />
@@ -427,13 +280,13 @@ export default function AgentProfile() {
         </div>
       </div>
 
-      {/* ── Sync Status ───────────────────────────────────────────────────── */}
+      {/* ── Sync Status ─────────────────────────────────────────────────────── */}
       <SyncStatus />
 
-      {/* ── Security ──────────────────────────────────────────────────────── */}
-      <ChangePasswordSection />
+      {/* ── Security ────────────────────────────────────────────────────────── */}
+      <SecuritySection />
 
-      {/* ── Sign Out ──────────────────────────────────────────────────────── */}
+      {/* ── Sign Out ────────────────────────────────────────────────────────── */}
       <LogoutSection />
 
       {/* Bottom spacer for mobile nav */}
