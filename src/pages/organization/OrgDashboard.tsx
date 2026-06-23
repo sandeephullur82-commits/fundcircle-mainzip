@@ -1,11 +1,14 @@
 import { useOrganization, useUser, SignOutButton } from "@clerk/clerk-react";
 import {
   LogOut, Users, Wallet, CreditCard, FileText, Settings,
-  Bell, LayoutDashboard, MoreHorizontal, ChevronRight, ChevronDown,
+  Bell, LayoutDashboard, MoreHorizontal, ChevronRight,
   ArrowUpCircle, X, Plus, UserPlus, UserCheck,
-  Landmark, IndianRupee, CheckCircle2, BarChart2, ClipboardList,
+  Landmark, IndianRupee, BarChart2, ClipboardList,
   User, Building2, UserCog,
 } from "lucide-react";
+import QuickAddCustomerDialog from "@/components/org/QuickAddCustomerDialog";
+import QuickAddAgentDialog from "@/components/org/QuickAddAgentDialog";
+import QuickNewLoanDialog from "@/components/org/QuickNewLoanDialog";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { normalizeClerkRole, isAgentRole, isCustomerRole, isOwnerRole } from "@/lib/auth/get-user-role";
 import { Button } from "@/components/ui/button";
@@ -53,6 +56,9 @@ export default function OrgDashboard() {
   const [fabOpen, setFabOpen] = useState(false);
   const [orgActionsOpen, setOrgActionsOpen] = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);
+  const [fabCustomerOpen, setFabCustomerOpen] = useState(false);
+  const [fabAgentOpen, setFabAgentOpen] = useState(false);
+  const [fabLoanOpen, setFabLoanOpen] = useState(false);
 
   // Track whether Clerk has successfully loaded at least once.
   // After the first successful load we never return the full skeleton again —
@@ -209,19 +215,10 @@ export default function OrgDashboard() {
       {/* Mobile Header */}
       <div className="md:hidden bg-white border-b border-slate-100 px-4 py-2.5 flex items-center justify-between sticky top-0 z-20">
         {/* Left — FundCircle brand */}
-        <div className="flex items-center gap-1.5 shrink-0">
+        <div className="flex items-center gap-2 shrink-0">
           <BrandMark size="sm" />
           <span className="font-extrabold text-slate-900 text-sm tracking-tight">FundCircle</span>
         </div>
-        {/* Center — org switcher chip */}
-        <button
-          onClick={() => setOrgActionsOpen(true)}
-          className="flex items-center gap-1 px-3 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 active:bg-slate-300 transition-colors max-w-[130px]"
-          aria-label="Organization actions"
-        >
-          <span className="font-semibold text-slate-700 text-xs truncate">{orgName}</span>
-          <ChevronDown className="w-3 h-3 text-slate-400 shrink-0" />
-        </button>
         {/* Right — profile avatar */}
         <button
           onClick={() => setProfileOpen(true)}
@@ -231,7 +228,7 @@ export default function OrgDashboard() {
           <Avatar className="h-8 w-8">
             <AvatarImage src={user?.imageUrl} />
             <AvatarFallback className="bg-sky-100 text-sky-700 text-sm font-bold">
-              {user?.firstName?.charAt(0) || "O"}
+              {(user?.firstName?.charAt(0) || user?.fullName?.charAt(0) || "O").toUpperCase()}
             </AvatarFallback>
           </Avatar>
           {unreadCount > 0 && (
@@ -352,9 +349,17 @@ export default function OrgDashboard() {
           open={fabOpen}
           setOpen={setFabOpen}
           onAction={(tab) => { setActiveTab(tab); setFabOpen(false); }}
+          onOpenCustomer={() => { setFabOpen(false); setFabCustomerOpen(true); }}
+          onOpenAgent={() => { setFabOpen(false); setFabAgentOpen(true); }}
+          onOpenLoan={() => { setFabOpen(false); setFabLoanOpen(true); }}
           orgId={organization?.id || ""}
         />
       )}
+
+      {/* Quick-add dialogs (opened from FAB) */}
+      <QuickAddCustomerDialog open={fabCustomerOpen} onOpenChange={setFabCustomerOpen} />
+      <QuickAddAgentDialog open={fabAgentOpen} onOpenChange={setFabAgentOpen} />
+      <QuickNewLoanDialog open={fabLoanOpen} onOpenChange={setFabLoanOpen} />
 
       {/* ── Org Actions Sheet (bottom, tapping org name ▼) ─────────────────── */}
       <Sheet open={orgActionsOpen} onOpenChange={setOrgActionsOpen}>
@@ -487,12 +492,11 @@ const FAB_MARGIN = 16;
 const MOB_NAV_H = 56;
 
 const FAB_ACTIONS = [
-  { id: "addCustomer",      label: "Add Customer",        icon: UserPlus,     tab: "customers",   color: "#2563eb" },
-  { id: "addAgent",         label: "Add Agent",           icon: UserCheck,    tab: "agents",      color: "#0284c7" },
-  { id: "newLoan",          label: "New Loan",            icon: Landmark,     tab: "loans",       color: "#4f46e5" },
-  { id: "recordCollection", label: "Record Collection",   icon: IndianRupee,  tab: "collections", color: "#0d9488" },
-  { id: "approveLoan",      label: "Approve Loan",        icon: CheckCircle2, tab: "loans",       color: "#ea580c" },
-  { id: "generateReport",   label: "Generate Report",     icon: BarChart2,    tab: "reports",     color: "#9333ea" },
+  { id: "addCustomer",      label: "Add Customer",        icon: UserPlus,    tab: "customers",   color: "#2563eb", modal: "customer" },
+  { id: "addAgent",         label: "Add Agent",           icon: UserCheck,   tab: "agents",      color: "#0284c7", modal: "agent"    },
+  { id: "newLoan",          label: "New Loan",            icon: Landmark,    tab: "loans",       color: "#4f46e5", modal: "loan"     },
+  { id: "recordCollection", label: "Record Collection",   icon: IndianRupee, tab: "collections", color: "#0d9488", modal: null       },
+  { id: "generateReport",   label: "Generate Report",     icon: BarChart2,   tab: "reports",     color: "#9333ea", modal: null       },
 ] as const;
 
 /** Returns the height of the bottom nav bar for the current viewport width. */
@@ -561,11 +565,14 @@ function lsWrite(orgId: string, xPercent: number, yPercent: number) {
 }
 
 function QuickActionsFAB({
-  open, setOpen, onAction, orgId,
+  open, setOpen, onAction, onOpenCustomer, onOpenAgent, onOpenLoan, orgId,
 }: {
   open: boolean;
   setOpen: (v: boolean) => void;
   onAction: (tab: string) => void;
+  onOpenCustomer: () => void;
+  onOpenAgent: () => void;
+  onOpenLoan: () => void;
   orgId: string;
 }) {
   // ─── pos tracks the FAB BUTTON's own top-left corner in viewport pixels ────
@@ -714,7 +721,13 @@ function QuickActionsFAB({
   };
 
   // ── Layout ─────────────────────────────────────────────────────────────────
-  const handleAction = (tab: string) => { setOpen(false); onAction(tab); };
+  const handleFabItemClick = (action: typeof FAB_ACTIONS[number]) => {
+    setOpen(false);
+    if (action.modal === "customer") { onOpenCustomer(); return; }
+    if (action.modal === "agent")    { onOpenAgent();    return; }
+    if (action.modal === "loan")     { onOpenLoan();     return; }
+    onAction(action.tab);
+  };
 
   const vw = window.innerWidth;
   const vh = window.innerHeight;
@@ -864,7 +877,7 @@ function QuickActionsFAB({
               <button
                 tabIndex={visible ? 0 : -1}
                 aria-label={action.label}
-                onClick={() => handleAction(action.tab)}
+                onClick={() => handleFabItemClick(action)}
                 style={{
                   width:          DIAL_ITEM_SIZE,
                   height:         DIAL_ITEM_SIZE,
