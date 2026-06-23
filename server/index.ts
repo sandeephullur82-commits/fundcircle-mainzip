@@ -999,7 +999,7 @@ app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
   res.status(500).json({ error: err?.message || "Internal server error" });
 });
 
-const PORT = process.env.API_PORT ? parseInt(process.env.API_PORT) : 3001;
+const PORT = process.env.API_PORT ? parseInt(process.env.API_PORT) : 3002;
 app.listen(PORT, "0.0.0.0", () => {
   console.log(`[FC API] Server running on http://localhost:${PORT}`);
 });
