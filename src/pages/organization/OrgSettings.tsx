@@ -22,6 +22,10 @@ import {
   Lock,
   Shield,
   Smartphone,
+  CreditCard,
+  QrCode,
+  ToggleLeft,
+  ToggleRight,
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -29,7 +33,7 @@ import { Label } from "@/components/ui/label";
 import FieldError from "@/components/ui/FieldError";
 import { sanitizeName, validatePhone10 } from "@/lib/validation";
 
-type SectionId = "organization" | "profile" | "notifications" | "security";
+type SectionId = "organization" | "profile" | "notifications" | "security" | "payments";
 
 
 // ── Save button ────────────────────────────────────────────────────────────────
@@ -100,9 +104,16 @@ export default function OrgSettings() {
 
   // ── Organization form ──────────────────────────────────────────────────────
   const [orgName, setOrgName] = useState("");
-  const [upiId,   setUpiId]   = useState("");
   const [orgErrors, setOrgErrors] = useState<Record<string, string>>({});
   const [orgSaveState, setOrgSaveState] = useState<SaveState>("idle");
+
+  // ── Payment settings ───────────────────────────────────────────────────────
+  const [upiId,        setUpiId]        = useState("");
+  const [merchantName, setMerchantName] = useState("");
+  const [upiDefaultNote, setUpiDefaultNote] = useState("");
+  const [upiEnabled,   setUpiEnabled]   = useState(true);
+  const [paymentErrors,   setPaymentErrors]   = useState<Record<string, string>>({});
+  const [paymentSaveState, setPaymentSaveState] = useState<SaveState>("idle");
 
   // ── Profile form ───────────────────────────────────────────────────────────
   const [fullName, setFullName] = useState("");
@@ -124,11 +135,23 @@ export default function OrgSettings() {
     if (orgLoaded.current) return;
     setOrgName(orgDoc.name || organization?.name || "");
     setUpiId(orgDoc.upiId || "");
+    setMerchantName(orgDoc.merchantName || "");
+    setUpiDefaultNote(orgDoc.upiDefaultNote || "");
+    setUpiEnabled(orgDoc.upiEnabled !== false);
     setNotifNewCollection(orgDoc.settings?.notifNewCollection ?? true);
     setNotifNewMember(orgDoc.settings?.notifNewMember ?? true);
     setNotifLoanApproval(orgDoc.settings?.notifLoanApproval ?? true);
     orgLoaded.current = true;
   }, [orgDoc, orgLoading, organization?.name]);
+
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const section = (e as CustomEvent<string>).detail as SectionId;
+      setActiveSection(section);
+    };
+    window.addEventListener("fundcircle:settingsSection", handler);
+    return () => window.removeEventListener("fundcircle:settingsSection", handler);
+  }, []);
 
   useEffect(() => {
     if (membershipLoading || !membershipDoc) return;
@@ -168,10 +191,8 @@ export default function OrgSettings() {
     setOrgSaveState("saving");
     try {
       const sanitized = sanitizeName(trimmed) || trimmed;
-      const cleanUpi  = upiId.trim().toLowerCase();
       await setDoc(doc(db, "organizations", organization.id), {
         name: sanitized,
-        upiId: cleanUpi || null,
         updatedAt: serverTimestamp(),
       }, { merge: true });
       try { await organization.update({ name: sanitized }); } catch (_) {}
@@ -262,8 +283,44 @@ export default function OrgSettings() {
     }
   };
 
+  // ── Save payment settings ──────────────────────────────────────────────────
+  const savePaymentSettings = async () => {
+    if (!organization?.id) return;
+    const cleanUpi  = upiId.trim().toLowerCase();
+    const errors: Record<string, string> = {};
+    if (cleanUpi && !/^[a-zA-Z0-9._+\-]{3,}@[a-zA-Z]{3,}$/.test(cleanUpi)) {
+      errors.upiId = "Invalid UPI ID. Example: merchant@okaxis or 9876543210@ybl";
+    }
+    if (Object.keys(errors).length) { setPaymentErrors(errors); return; }
+    setPaymentErrors({});
+    setPaymentSaveState("saving");
+    try {
+      await setDoc(doc(db, "organizations", organization.id), {
+        upiId:          cleanUpi || null,
+        merchantName:   merchantName.trim() || null,
+        upiDefaultNote: upiDefaultNote.trim() || null,
+        upiEnabled,
+        updatedAt: serverTimestamp(),
+      }, { merge: true });
+      flashSaved(setPaymentSaveState);
+      toast.success("Payment settings saved.");
+      try {
+        await createAuditLog({
+          organizationId: organization.id,
+          actorId: actorInfo.id, actorRole: actorInfo.role, actorName: actorInfo.name,
+          action: "SETTINGS_UPDATED", entityType: "Organization", entityId: organization.id,
+          metadata: { field: "paymentSettings" },
+        });
+      } catch (_) {}
+    } catch {
+      toast.error("Failed to save payment settings.");
+      setPaymentSaveState("idle");
+    }
+  };
+
   const sections: { id: SectionId; label: string; icon: React.ComponentType<any> }[] = [
     { id: "organization",  label: "Organization",  icon: Building2 },
+    { id: "payments",      label: "Payments",      icon: CreditCard },
     { id: "profile",       label: "Profile",       icon: User      },
     { id: "notifications", label: "Notifications", icon: Bell      },
     { id: "security",      label: "Security",      icon: Shield    },
@@ -377,34 +434,6 @@ export default function OrgSettings() {
                     </div>
 
                     <div className="grid gap-2">
-                      <Label htmlFor="upi-id" className="text-slate-700 font-medium flex items-center gap-1.5">
-                        <Smartphone className="h-3.5 w-3.5 text-indigo-500" />
-                        Merchant UPI ID
-                        <span className="text-slate-400 font-normal text-xs ml-1">(for EMI collections)</span>
-                      </Label>
-                      <Input
-                        id="upi-id"
-                        type="text"
-                        inputMode="email"
-                        value={upiId}
-                        onChange={(e) => {
-                          setUpiId(e.target.value.toLowerCase());
-                          setOrgErrors((p) => ({ ...p, upiId: "" }));
-                        }}
-                        placeholder="yourorg@upi  or  9876543210@paytm"
-                        maxLength={80}
-                        aria-invalid={!!orgErrors.upiId}
-                        className={`rounded-xl h-11 font-mono text-sm ${orgErrors.upiId ? "border-red-400 focus-visible:ring-red-300" : ""}`}
-                      />
-                      {orgErrors.upiId
-                        ? <FieldError error={orgErrors.upiId} />
-                        : <p className="text-[11px] text-slate-400 leading-relaxed">
-                            Agents will use this UPI ID to generate QR codes and collect EMI payments via PhonePe, Google Pay, Paytm, or BHIM.
-                          </p>
-                      }
-                    </div>
-
-                    <div className="grid gap-2">
                       <Label className="text-slate-700 font-medium">Owner Email</Label>
                       <div
                         role="textbox"
@@ -422,6 +451,139 @@ export default function OrgSettings() {
               </CardContent>
             </Card>
             </>
+          )}
+
+          {/* ── Payments ─────────────────────────────────────────────── */}
+          {activeSection === "payments" && (
+            <Card className="border-slate-200 shadow-sm rounded-2xl">
+              <CardHeader className="pb-4">
+                <CardTitle className="text-lg flex items-center gap-2">
+                  <CreditCard className="h-5 w-5 text-indigo-500" />
+                  Payment Settings
+                </CardTitle>
+                <CardDescription>Configure UPI to accept digital payments from customers and agents.</CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-6">
+                {orgLoading ? (
+                  <div role="status" aria-label="Loading payment settings">
+                    <SkeletonField />
+                    <div className="mt-5"><SkeletonField /></div>
+                    <div className="mt-5"><SkeletonField /></div>
+                  </div>
+                ) : (
+                  <>
+                    {/* Enable/Disable toggle */}
+                    <div className="flex items-center justify-between rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
+                      <div className="flex items-center gap-3">
+                        <QrCode className="h-5 w-5 text-indigo-500 shrink-0" />
+                        <div>
+                          <p className="text-sm font-semibold text-slate-800">UPI Payments</p>
+                          <p className="text-xs text-slate-500">Enable QR-based UPI collection during EMI recording</p>
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setUpiEnabled(!upiEnabled)}
+                        aria-label={upiEnabled ? "Disable UPI payments" : "Enable UPI payments"}
+                        className="shrink-0 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400 focus-visible:ring-offset-2 rounded-full"
+                      >
+                        {upiEnabled
+                          ? <ToggleRight className="h-8 w-8 text-indigo-600" />
+                          : <ToggleLeft className="h-8 w-8 text-slate-400" />
+                        }
+                      </button>
+                    </div>
+
+                    {/* Merchant Name */}
+                    <div className="grid gap-2">
+                      <Label htmlFor="merchant-name" className="text-slate-700 font-medium">
+                        Merchant / Business Name
+                        <span className="text-slate-400 font-normal text-xs ml-1">(optional)</span>
+                      </Label>
+                      <Input
+                        id="merchant-name"
+                        type="text"
+                        value={merchantName}
+                        onChange={(e) => setMerchantName(e.target.value.slice(0, 50))}
+                        placeholder={orgDoc?.name || "Your business name"}
+                        maxLength={50}
+                        className="rounded-xl h-11"
+                      />
+                      <p className="text-[11px] text-slate-400">
+                        Shown to customers during UPI payment. Defaults to your organization name if left empty.
+                      </p>
+                    </div>
+
+                    {/* UPI ID */}
+                    <div className="grid gap-2">
+                      <Label htmlFor="upi-id" className="text-slate-700 font-medium flex items-center gap-1.5">
+                        <Smartphone className="h-3.5 w-3.5 text-indigo-500" />
+                        Merchant UPI ID
+                      </Label>
+                      <Input
+                        id="upi-id"
+                        type="text"
+                        inputMode="email"
+                        value={upiId}
+                        onChange={(e) => {
+                          setUpiId(e.target.value.toLowerCase().replace(/\s/g, ""));
+                          setPaymentErrors((p) => ({ ...p, upiId: "" }));
+                        }}
+                        placeholder="yourorg@okaxis  or  9876543210@ybl"
+                        maxLength={80}
+                        aria-invalid={!!paymentErrors.upiId}
+                        className={`rounded-xl h-11 font-mono text-sm ${paymentErrors.upiId ? "border-red-400 focus-visible:ring-red-300" : ""}`}
+                      />
+                      {paymentErrors.upiId
+                        ? <FieldError error={paymentErrors.upiId} />
+                        : <p className="text-[11px] text-slate-400 leading-relaxed">
+                            Agents use this UPI ID to generate QR codes during EMI collection. Accepted by PhonePe, Google Pay, Paytm &amp; BHIM.
+                          </p>
+                      }
+
+                      {/* Live QR preview */}
+                      {upiId.trim() && (
+                        <div className="mt-2 flex flex-col items-center gap-2 rounded-xl border border-indigo-100 bg-indigo-50 p-4">
+                          <p className="text-[11px] font-semibold text-indigo-700 uppercase tracking-wide">QR Preview</p>
+                          <div className="p-2 rounded-xl border-2 border-indigo-200 bg-white shadow-sm">
+                            <img
+                              src={`https://api.qrserver.com/v1/create-qr-code/?size=140x140&data=${encodeURIComponent(`upi://pay?pa=${encodeURIComponent(upiId.trim())}&pn=${encodeURIComponent(merchantName.trim() || orgDoc?.name || "Merchant")}&cu=INR`)}&bgcolor=ffffff&color=1e1b4b&margin=6&qzone=1`}
+                              alt="UPI QR preview"
+                              width={140}
+                              height={140}
+                              className="rounded-lg"
+                            />
+                          </div>
+                          <p className="text-[10px] text-indigo-600 font-mono">{upiId.trim()}</p>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Default Payment Note */}
+                    <div className="grid gap-2">
+                      <Label htmlFor="upi-note" className="text-slate-700 font-medium">
+                        Default Payment Note
+                        <span className="text-slate-400 font-normal text-xs ml-1">(optional)</span>
+                      </Label>
+                      <Input
+                        id="upi-note"
+                        type="text"
+                        value={upiDefaultNote}
+                        onChange={(e) => setUpiDefaultNote(e.target.value.slice(0, 80))}
+                        placeholder="e.g. EMI Payment, Monthly Installment"
+                        maxLength={80}
+                        className="rounded-xl h-11 text-sm"
+                      />
+                      <p className="text-[11px] text-slate-400">
+                        Pre-filled in the UPI transaction note. Customers can still edit this in their UPI app.
+                      </p>
+                    </div>
+
+                    <SaveButton onClick={savePaymentSettings} state={paymentSaveState} label="Save Payment Settings" />
+                  </>
+                )}
+              </CardContent>
+            </Card>
           )}
 
           {/* ── Profile ──────────────────────────────────────────────── */}

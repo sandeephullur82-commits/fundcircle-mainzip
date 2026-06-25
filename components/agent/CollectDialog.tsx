@@ -8,9 +8,9 @@ import {
   CreditCard, Banknote, Loader2, AlertTriangle, CheckCircle2,
   TrendingDown, ChevronRight, ZapOff, Sparkles, Smartphone,
   WifiOff, ExternalLink, XCircle, RefreshCw, QrCode, CheckCheck,
+  Settings, ArrowRight,
 } from "lucide-react";
-import { getDoc, doc } from "firebase/firestore";
-import { db } from "@/lib/firebase";
+import { useDocumentRealtime } from "@/lib/firestore-hooks";
 import { Loan, LoanInstallment } from "@/types";
 import {
   recordGeneralCollection,
@@ -153,18 +153,17 @@ export default function CollectDialog({
   const [submitting,      setSubmitting]      = useState(false);
   const [receipt,         setReceipt]         = useState<ReceiptData | null>(null);
 
-  const [orgUpiId,  setOrgUpiId]  = useState<string>("");
+  const { data: orgData } = useDocumentRealtime<any>("organizations", orgId || null);
+  const orgUpiId     = (orgData?.upiId || "") as string;
+  const upiEnabled   = orgData?.upiEnabled !== false;
+  const merchantName = (orgData?.merchantName || orgName) as string;
+
   const [upiTxnRef, setUpiTxnRef] = useState<string>("");
   const [upiStatus, setUpiStatus] = useState<UpiStatus>("idle");
   const [isOnline,  setIsOnline]  = useState(navigator.onLine);
   const [qrError,   setQrError]   = useState(false);
 
-  useEffect(() => {
-    if (!orgId) return;
-    getDoc(doc(db, "organizations", orgId))
-      .then((snap) => { if (snap.exists()) setOrgUpiId(snap.data().upiId || ""); })
-      .catch(() => {});
-  }, [orgId]);
+  const isOwner = collectedByRole === "OWNER";
 
   useEffect(() => {
     const up   = () => setIsOnline(true);
@@ -252,8 +251,8 @@ export default function CollectDialog({
 
   const upiString = useMemo(() => {
     if (!orgUpiId || numAmount <= 0) return "";
-    return buildUpiString(orgUpiId, orgName, numAmount, upiNote);
-  }, [orgUpiId, orgName, numAmount, upiNote]);
+    return buildUpiString(orgUpiId, merchantName, numAmount, upiNote);
+  }, [orgUpiId, merchantName, numAmount, upiNote]);
 
   const qrCodeUrl = useMemo(() => {
     if (!upiString) return "";
@@ -603,6 +602,9 @@ export default function CollectDialog({
                     <UpiPaymentPanel
                       isOnline={isOnline}
                       orgUpiId={orgUpiId}
+                      upiEnabled={upiEnabled}
+                      isOwner={isOwner}
+                      merchantName={merchantName}
                       qrCodeUrl={qrCodeUrl}
                       upiString={upiString}
                       amount={numAmount}
@@ -621,6 +623,12 @@ export default function CollectDialog({
                       onFailed={() => { setUpiStatus("idle"); setUpiTxnRef(""); }}
                       onTxnRefChange={setUpiTxnRef}
                       onCancel={onClose}
+                      onConfigureUpi={() => {
+                        onClose();
+                        window.dispatchEvent(new CustomEvent("fundcircle:switchTab", { detail: "settings" }));
+                        setTimeout(() => window.dispatchEvent(new CustomEvent("fundcircle:settingsSection", { detail: "payments" })), 120);
+                      }}
+                      onSwitchToCash={() => setPaymentMode("CASH")}
                     />
                   ) : (
                     <div className="flex gap-3">
@@ -714,6 +722,9 @@ export default function CollectDialog({
 interface UpiPanelProps {
   isOnline: boolean;
   orgUpiId: string;
+  upiEnabled: boolean;
+  isOwner: boolean;
+  merchantName: string;
   qrCodeUrl: string;
   upiString: string;
   amount: number;
@@ -732,12 +743,16 @@ interface UpiPanelProps {
   onFailed: () => void;
   onTxnRefChange: (v: string) => void;
   onCancel: () => void;
+  onConfigureUpi: () => void;
+  onSwitchToCash: () => void;
 }
 
 function UpiPaymentPanel({
-  isOnline, orgUpiId, qrCodeUrl, upiString, amount, custName, orgName,
+  isOnline, orgUpiId, upiEnabled, isOwner, merchantName,
+  qrCodeUrl, upiString, amount, custName, orgName,
   upiNote, loanId, installmentNo, upiStatus, upiTxnRef, submitting,
   qrError, onQrError, onLaunch, onConfirm, onFailed, onTxnRefChange, onCancel,
+  onConfigureUpi, onSwitchToCash,
 }: UpiPanelProps) {
 
   if (!isOnline) {
@@ -748,30 +763,92 @@ function UpiPaymentPanel({
           <p className="text-sm font-semibold text-slate-700">UPI unavailable offline</p>
         </div>
         <p className="text-xs text-slate-500 leading-relaxed">
-          UPI payments require an internet connection. Please connect to the internet or switch to Cash payment mode.
+          UPI payments require an internet connection. Switch to Cash to record this collection.
         </p>
         <div className="flex gap-2 pt-1">
-          <Button type="button" variant="outline" className="flex-1 h-10 text-sm" onClick={onCancel}>
-            Cancel
+          <Button type="button" variant="outline" className="flex-1 h-10 text-sm" onClick={onCancel}>Cancel</Button>
+          <Button type="button" className="flex-1 h-10 text-sm bg-emerald-600 hover:bg-emerald-700 text-white" onClick={onSwitchToCash}>
+            <Banknote className="w-3.5 h-3.5 mr-1.5" />Use Cash
           </Button>
         </div>
       </div>
     );
   }
 
-  if (!orgUpiId) {
-    return (
-      <div className="rounded-2xl border border-amber-200 bg-amber-50 p-5 space-y-3">
-        <div className="flex items-center gap-2.5">
-          <AlertTriangle className="w-5 h-5 text-amber-500" />
-          <p className="text-sm font-semibold text-amber-800">UPI not configured</p>
+  if (!orgUpiId || !upiEnabled) {
+    if (isOwner) {
+      return (
+        <div className="rounded-2xl border border-indigo-200 bg-gradient-to-b from-indigo-50 to-white p-5 space-y-4">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-xl bg-indigo-100 flex items-center justify-center shrink-0">
+              <QrCode className="w-5 h-5 text-indigo-600" />
+            </div>
+            <div>
+              <p className="text-sm font-bold text-indigo-900">
+                {!orgUpiId ? "UPI not configured" : "UPI payments disabled"}
+              </p>
+              <p className="text-xs text-indigo-600">
+                {!orgUpiId
+                  ? "Add your merchant UPI ID to accept digital payments."
+                  : "Enable UPI in Payment Settings to accept digital payments."}
+              </p>
+            </div>
+          </div>
+          <div className="rounded-xl bg-indigo-50 border border-indigo-100 p-3 space-y-1.5">
+            <p className="text-[11px] font-semibold text-indigo-700 uppercase tracking-wide">What you'll get</p>
+            <ul className="space-y-1">
+              {["QR code for customers to scan", "Instant UPI payment tracking", "Auto-linked to EMI receipts"].map((f) => (
+                <li key={f} className="flex items-center gap-2 text-xs text-indigo-700">
+                  <CheckCircle2 className="w-3.5 h-3.5 text-indigo-400 shrink-0" />{f}
+                </li>
+              ))}
+            </ul>
+          </div>
+          <Button
+            type="button"
+            onClick={onConfigureUpi}
+            className="w-full h-11 bg-indigo-600 hover:bg-indigo-700 text-white font-semibold gap-2 text-sm"
+          >
+            <Settings className="w-4 h-4" />
+            Configure UPI
+            <ArrowRight className="w-4 h-4 ml-auto" />
+          </Button>
+          <div className="flex gap-2 pt-1 border-t border-indigo-100">
+            <Button type="button" variant="outline" className="flex-1 h-9 text-sm" onClick={onCancel}>Cancel</Button>
+            <Button type="button" variant="outline" className="flex-1 h-9 text-sm text-emerald-700 border-emerald-200 hover:bg-emerald-50" onClick={onSwitchToCash}>
+              <Banknote className="w-3.5 h-3.5 mr-1.5" />Use Cash
+            </Button>
+          </div>
         </div>
-        <p className="text-xs text-amber-700 leading-relaxed">
-          Your organization hasn't set up a UPI ID yet. Ask the owner to add a merchant UPI ID in Organization Settings.
-        </p>
-        <Button type="button" variant="outline" className="w-full h-10 text-sm border-amber-300" onClick={onCancel}>
-          Cancel
-        </Button>
+      );
+    }
+
+    return (
+      <div className="rounded-2xl border border-slate-200 bg-white p-5 space-y-4">
+        <div className="flex items-center gap-3">
+          <div className="w-10 h-10 rounded-xl bg-slate-100 flex items-center justify-center shrink-0">
+            <ZapOff className="w-5 h-5 text-slate-400" />
+          </div>
+          <div>
+            <p className="text-sm font-bold text-slate-800">UPI not set up</p>
+            <p className="text-xs text-slate-500">The organization owner needs to configure UPI payments.</p>
+          </div>
+        </div>
+        <div className="rounded-xl bg-amber-50 border border-amber-100 p-3">
+          <p className="text-xs text-amber-800 leading-relaxed">
+            Contact your organization owner to add a merchant UPI ID in Settings, or collect this payment in cash.
+          </p>
+        </div>
+        <div className="flex gap-2">
+          <Button type="button" variant="outline" className="flex-1 h-10 text-sm" onClick={onCancel}>Cancel</Button>
+          <Button
+            type="button"
+            className="flex-1 h-10 text-sm bg-emerald-600 hover:bg-emerald-700 text-white"
+            onClick={onSwitchToCash}
+          >
+            <Banknote className="w-3.5 h-3.5 mr-1.5" />Use Cash
+          </Button>
+        </div>
       </div>
     );
   }
@@ -814,9 +891,12 @@ function UpiPaymentPanel({
             {installmentNo && (
               <p className="text-[10px] text-slate-500">EMI #{installmentNo} · {loanId.slice(-8).toUpperCase()}</p>
             )}
-            <div className="inline-flex items-center gap-1.5 mt-1 px-3 py-1.5 rounded-lg bg-slate-100 border border-slate-200">
-              <Smartphone className="w-3 h-3 text-slate-500 shrink-0" />
-              <span className="text-xs font-mono text-slate-700 font-semibold">{orgUpiId}</span>
+            <div className="flex flex-col items-center gap-1 mt-1">
+              <p className="text-[11px] font-semibold text-slate-600">{merchantName}</p>
+              <div className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-100 border border-slate-200">
+                <Smartphone className="w-3 h-3 text-slate-500 shrink-0" />
+                <span className="text-xs font-mono text-slate-700 font-semibold">{orgUpiId}</span>
+              </div>
             </div>
           </div>
         </div>
@@ -839,8 +919,9 @@ function UpiPaymentPanel({
         </p>
 
         <div className="flex gap-2 pt-1 border-t border-indigo-100">
-          <Button type="button" variant="outline" className="flex-1 h-9 text-sm" onClick={onCancel}>
-            Cancel
+          <Button type="button" variant="outline" className="flex-1 h-9 text-sm" onClick={onCancel}>Cancel</Button>
+          <Button type="button" variant="outline" className="flex-1 h-9 text-sm text-emerald-700 border-emerald-200 hover:bg-emerald-50" onClick={onSwitchToCash}>
+            <Banknote className="w-3.5 h-3.5 mr-1" />Use Cash
           </Button>
         </div>
       </div>
