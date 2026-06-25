@@ -28,7 +28,6 @@ import {
   ToggleLeft,
   ToggleRight,
   LogOut,
-  ExternalLink,
   HelpCircle,
   FileText,
   Info,
@@ -44,7 +43,7 @@ import { Label } from "@/components/ui/label";
 import FieldError from "@/components/ui/FieldError";
 import { sanitizeName, validatePhone10 } from "@/lib/validation";
 
-type SectionId = "organization" | "profile" | "notifications" | "security" | "payments" | "more";
+type SectionId = "organization" | "profile" | "notifications" | "security" | "payments";
 
 
 // ── Save button ────────────────────────────────────────────────────────────────
@@ -331,12 +330,20 @@ export default function OrgSettings() {
   };
 
   const sections: { id: SectionId; label: string; icon: React.ComponentType<any> }[] = [
-    { id: "organization",  label: "Organization",  icon: Building2       },
-    { id: "payments",      label: "Payments",      icon: CreditCard      },
-    { id: "profile",       label: "Profile",       icon: User            },
+    { id: "organization",  label: "Organization",  icon: Building2         },
+    { id: "payments",      label: "Payments",      icon: CreditCard        },
+    { id: "profile",       label: "Profile",       icon: User              },
     { id: "notifications", label: "Preferences",   icon: SlidersHorizontal },
-    { id: "security",      label: "Security",      icon: Shield          },
-    { id: "more",          label: "More",          icon: Info            },
+    { id: "security",      label: "Security",      icon: Shield            },
+  ];
+
+  const navActions: { label: string; icon: React.ComponentType<any>; action: () => void }[] = [
+    { label: "Billing",            icon: Wallet,       action: () => window.dispatchEvent(new CustomEvent("fundcircle:switchTab", { detail: "billing" }))   },
+    { label: "Audit Logs",         icon: ClipboardList, action: () => window.dispatchEvent(new CustomEvent("fundcircle:switchTab", { detail: "auditLogs" })) },
+    { label: "Support",            icon: HelpCircle,   action: () => window.open("mailto:support@fundcircle.app", "_blank")                                  },
+    { label: "About FundCircle",   icon: Info,         action: () => {}                                                                                       },
+    { label: "Privacy Policy",     icon: Lock,         action: () => window.open("/privacy-policy", "_blank")                                                 },
+    { label: "Terms & Conditions", icon: FileText,     action: () => window.open("/terms-and-conditions", "_blank")                                           },
   ];
 
   const isLoading = orgLoading || membershipLoading;
@@ -357,6 +364,7 @@ export default function OrgSettings() {
 
         {/* ── Sidebar nav ─────────────────────────────────────────────── */}
         <nav aria-label="Settings sections" className="rounded-2xl border border-slate-200 bg-white p-2 shadow-sm h-fit">
+          {/* Main sections */}
           {sections.map((s) => {
             const isActive = activeSection === s.id;
             return (
@@ -385,6 +393,42 @@ export default function OrgSettings() {
               </button>
             );
           })}
+
+          {/* Divider */}
+          <div className="my-1.5 mx-2 border-t border-slate-100" />
+
+          {/* Action items */}
+          {navActions.map((item) => {
+            const Icon = item.icon;
+            return (
+              <button
+                key={item.label}
+                type="button"
+                onClick={item.action}
+                className="w-full flex items-center justify-between gap-3 px-4 py-3 rounded-xl text-sm font-medium transition-all duration-150 outline-none min-h-[48px] text-slate-600 hover:bg-slate-50 hover:text-slate-900 focus-visible:ring-2 focus-visible:ring-sky-400 focus-visible:ring-offset-1"
+              >
+                <div className="flex items-center gap-2.5">
+                  <Icon className="h-4 w-4 text-slate-400" />
+                  {item.label}
+                </div>
+                <ChevronRight className="h-3.5 w-3.5 opacity-30" />
+              </button>
+            );
+          })}
+
+          {/* Divider */}
+          <div className="my-1.5 mx-2 border-t border-slate-100" />
+
+          {/* Sign Out */}
+          <SignOutButton>
+            <button
+              type="button"
+              className="w-full flex items-center gap-2.5 px-4 py-3 rounded-xl text-sm font-medium transition-all duration-150 outline-none min-h-[48px] text-red-500 hover:bg-red-50 hover:text-red-600 focus-visible:ring-2 focus-visible:ring-red-400 focus-visible:ring-offset-1"
+            >
+              <LogOut className="h-4 w-4" />
+              Sign Out
+            </button>
+          </SignOutButton>
         </nav>
 
         {/* ── Content panels ──────────────────────────────────────────── */}
@@ -801,87 +845,6 @@ export default function OrgSettings() {
                 <SecuritySection title={false} />
               </CardContent>
             </Card>
-          )}
-
-          {/* ── More / Supported Features ────────────────────────── */}
-          {activeSection === "more" && (
-            <div className="space-y-4">
-              <Card className="border-slate-200 shadow-sm rounded-2xl">
-                <CardHeader className="pb-3">
-                  <CardTitle className="text-base flex items-center gap-2">
-                    <Wallet className="h-4 w-4 text-sky-500" />
-                    Supported Features
-                  </CardTitle>
-                </CardHeader>
-                <CardContent className="p-0">
-                  {[
-                    { label: "Billing",          desc: "Plans, usage & invoices",        icon: Wallet,       action: () => { window.dispatchEvent(new CustomEvent("fundcircle:switchTab", { detail: "billing" })); }    },
-                    { label: "Audit Logs",       desc: "Full activity history",           icon: ClipboardList, action: () => { window.dispatchEvent(new CustomEvent("fundcircle:switchTab", { detail: "auditLogs" })); } },
-                    { label: "Support",          desc: "Get help & contact us",          icon: HelpCircle,   action: () => { window.open("mailto:support@fundcircle.app", "_blank"); }                                  },
-                    { label: "About FundCircle", desc: "Version 1.0.0 · Build 2025.1",  icon: Info,         action: () => {}                                                                                           },
-                  ].map((item, idx, arr) => {
-                    const Icon = item.icon;
-                    return (
-                      <button
-                        key={item.label}
-                        type="button"
-                        onClick={item.action}
-                        className={`w-full flex items-center gap-3 px-5 py-4 text-left hover:bg-slate-50 active:bg-slate-100 transition-colors ${idx < arr.length - 1 ? "border-b border-slate-100" : ""}`}
-                      >
-                        <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-slate-100 shrink-0">
-                          <Icon className="h-4 w-4 text-slate-500" />
-                        </div>
-                        <div className="flex-1 min-w-0">
-                          <p className="text-sm font-semibold text-slate-800">{item.label}</p>
-                          <p className="text-xs text-slate-400 mt-0.5">{item.desc}</p>
-                        </div>
-                        <ChevronRight className="h-4 w-4 text-slate-300 shrink-0" />
-                      </button>
-                    );
-                  })}
-                </CardContent>
-              </Card>
-
-              <Card className="border-slate-200 shadow-sm rounded-2xl">
-                <CardContent className="p-0">
-                  {[
-                    { label: "Privacy Policy",     href: "/privacy-policy",         icon: Lock     },
-                    { label: "Terms & Conditions", href: "/terms-and-conditions",   icon: FileText },
-                  ].map((item, idx, arr) => {
-                    const Icon = item.icon;
-                    return (
-                      <a
-                        key={item.label}
-                        href={item.href}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className={`flex items-center gap-3 px-5 py-4 hover:bg-slate-50 transition-colors ${idx < arr.length - 1 ? "border-b border-slate-100" : ""}`}
-                      >
-                        <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-slate-100 shrink-0">
-                          <Icon className="h-4 w-4 text-slate-500" />
-                        </div>
-                        <p className="flex-1 text-sm font-semibold text-slate-800">{item.label}</p>
-                        <ExternalLink className="h-4 w-4 text-slate-300 shrink-0" />
-                      </a>
-                    );
-                  })}
-                </CardContent>
-              </Card>
-
-              <SignOutButton>
-                <button
-                  type="button"
-                  className="w-full flex items-center justify-center gap-2.5 py-3.5 rounded-2xl border border-red-100 bg-red-50 text-red-600 hover:bg-red-100 active:bg-red-200 font-semibold text-sm transition-colors shadow-sm"
-                >
-                  <LogOut className="h-4 w-4" />
-                  Sign Out
-                </button>
-              </SignOutButton>
-
-              <p className="text-center text-xs text-slate-400">
-                © {new Date().getFullYear()} FundCircle · Version 1.0.0
-              </p>
-            </div>
           )}
 
         </main>
