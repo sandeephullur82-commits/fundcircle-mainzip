@@ -91,7 +91,7 @@ export default function AgentDashboard() {
           <button className="w-8 h-8 rounded-full bg-slate-100 flex items-center justify-center relative">
             <Bell className="w-4 h-4 text-slate-500" />
           </button>
-          <button onClick={() => setActiveTab("more")} className="shrink-0">
+          <button onClick={() => setActiveTab("profile")} aria-label="My Profile" className="shrink-0">
             <Avatar className="h-8 w-8 ring-2 ring-emerald-500/30">
               <AvatarImage src={user?.imageUrl} />
               <AvatarFallback className="bg-emerald-100 text-emerald-700 text-xs font-bold">

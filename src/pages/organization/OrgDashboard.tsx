@@ -56,7 +56,6 @@ export default function OrgDashboard() {
   };
   const [fabOpen, setFabOpen] = useState(false);
   const [orgActionsOpen, setOrgActionsOpen] = useState(false);
-  const [profileOpen, setProfileOpen] = useState(false);
   const [fabCustomerOpen, setFabCustomerOpen] = useState(false);
   const [fabAgentOpen, setFabAgentOpen] = useState(false);
   const [fabLoanOpen, setFabLoanOpen] = useState(false);
@@ -240,8 +239,11 @@ export default function OrgDashboard() {
           </button>
           {/* Profile avatar */}
           <button
-            onClick={() => setProfileOpen(true)}
-            aria-label="Profile menu"
+            onClick={() => {
+              setActiveTab("more");
+              setTimeout(() => window.dispatchEvent(new CustomEvent("fundcircle:morePage", { detail: "profile" })), 80);
+            }}
+            aria-label="My Profile"
             className="relative flex-shrink-0 rounded-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-400 focus-visible:ring-offset-2"
           >
             <Avatar className="h-8 w-8">
@@ -426,76 +428,6 @@ export default function OrgDashboard() {
         </SheetContent>
       </Sheet>
 
-      {/* ── Profile sheet (avatar tap → quick nav to More sub-pages) ────────── */}
-      <Sheet open={profileOpen} onOpenChange={setProfileOpen}>
-        <SheetContent side="right" className="md:hidden w-[300px] p-0 focus:outline-none">
-          <div className="flex flex-col h-full">
-            {/* Avatar hero */}
-            <div className="flex flex-col items-center gap-3 px-6 py-8 bg-gradient-to-br from-sky-50 to-indigo-50 border-b border-slate-100">
-              <Avatar className="h-16 w-16 ring-2 ring-white shadow-md">
-                <AvatarImage src={user?.imageUrl} />
-                <AvatarFallback className="bg-gradient-to-br from-sky-400 to-indigo-500 text-white text-2xl font-bold">
-                  {user?.firstName?.charAt(0) || "O"}
-                </AvatarFallback>
-              </Avatar>
-              <div className="text-center min-w-0">
-                <p className="font-bold text-slate-900 text-base">{user?.fullName || "Owner"}</p>
-                <p className="text-xs text-slate-400 mt-0.5 truncate max-w-[220px]">{user?.primaryEmailAddress?.emailAddress}</p>
-                <span className="inline-flex items-center mt-2 px-2.5 py-0.5 rounded-full bg-sky-100 text-sky-700 text-xs font-semibold">
-                  Owner
-                </span>
-              </div>
-            </div>
-            {/* Quick nav */}
-            <div className="flex-1 overflow-y-auto py-2 px-2">
-              {[
-                { label: "My Profile",      icon: User,     sub: "Edit name & phone",       morePage: "profile"       },
-                { label: "Notifications",   icon: Bell,     sub: "Inbox & alert preferences", morePage: "notifications", badge: unreadCount || 0 },
-                { label: "Support",         icon: UserCog,  sub: "Help & contact us",        morePage: "support"       },
-              ].map((item, idx) => {
-                const Icon = item.icon;
-                return (
-                  <button
-                    key={idx}
-                    onClick={() => {
-                      setActiveTab("more");
-                      setTimeout(() => window.dispatchEvent(new CustomEvent("fundcircle:morePage", { detail: item.morePage })), 80);
-                      setProfileOpen(false);
-                    }}
-                    className="w-full flex items-center gap-3 px-3 py-3 rounded-2xl text-left hover:bg-slate-50 active:bg-slate-100 transition-all"
-                  >
-                    <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-slate-100 shrink-0">
-                      <Icon className="w-4 h-4 text-slate-500" />
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm font-semibold text-slate-800">{item.label}</p>
-                      <p className="text-xs text-slate-400 truncate">{item.sub}</p>
-                    </div>
-                    {(item as any).badge > 0 ? (
-                      <span className="flex h-5 min-w-5 items-center justify-center rounded-full bg-red-500 text-white text-xs font-bold px-1">
-                        {(item as any).badge}
-                      </span>
-                    ) : (
-                      <ChevronRight className="w-4 h-4 text-slate-300 shrink-0" />
-                    )}
-                  </button>
-                );
-              })}
-            </div>
-            {/* Sign out */}
-            <div className="shrink-0 px-2 py-3 border-t border-slate-100">
-              <SignOutButton>
-                <button className="w-full flex items-center gap-3 px-3 py-3 rounded-2xl text-left text-red-600 hover:bg-red-50 active:bg-red-100 transition-all">
-                  <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-red-50 shrink-0">
-                    <LogOut className="w-4 h-4 text-red-500" />
-                  </div>
-                  <span className="text-sm font-semibold">Sign Out</span>
-                </button>
-              </SignOutButton>
-            </div>
-          </div>
-        </SheetContent>
-      </Sheet>
     </div>
   );
 }
