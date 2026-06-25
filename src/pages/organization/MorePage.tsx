@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useMemo } from "react";
-import { useUser, useOrganization, SignOutButton } from "@clerk/clerk-react";
+import { useUser, useOrganization, useOrganizationList, SignOutButton } from "@clerk/clerk-react";
 import { useNavigate } from "react-router-dom";
 import AppSwitch from "@/components/ui/AppSwitch";
 import {
@@ -19,7 +19,7 @@ import {
   FileText, Star, ExternalLink, Check,
   IndianRupee, UserPlus, UserCheck, AlertCircle, BellOff,
   CheckCheck, Trash2, TrendingDown, CheckCircle2,
-  SlidersHorizontal, Settings,
+  SlidersHorizontal, Settings, KeyRound, Smartphone, QrCode, Palette, AppWindow, ShieldCheck,
 } from "lucide-react";
 import { formatDistanceToNow, isToday, isYesterday } from "date-fns";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
@@ -31,7 +31,7 @@ import { BrandMark } from "@/components/BrandLogo";
 import ProfileAvatarEditor from "@/components/ui/ProfileAvatarEditor";
 import OrgLogoEditor from "@/components/ui/OrgLogoEditor";
 
-type MoreSubPage = "list" | "profile" | "organization" | "notifications" | "notifSettings" | "support" | "about";
+type MoreSubPage = "list" | "profile" | "organization" | "notifications" | "notifSettings" | "support" | "about" | "settings";
 
 function switchTab(tab: string) {
   window.dispatchEvent(new CustomEvent("fundcircle:switchTab", { detail: tab }));
@@ -843,6 +843,108 @@ function AboutSubPage({ onBack }: { onBack: () => void }) {
   );
 }
 
+// ── SETTINGS SUB-PAGE ──────────────────────────────────────────────────────────
+function SettingsSubPage({ onBack, onNavigateTo }: { onBack: () => void; onNavigateTo: (p: MoreSubPage) => void }) {
+  const navigate = useNavigate();
+  const { organization } = useOrganization();
+  const { userMemberships } = useOrganizationList({ userMemberships: true });
+
+  const activeMembership = userMemberships?.data?.find(
+    (m) => m.organization?.id === organization?.id
+  );
+  const isOwner = activeMembership?.role === "org:admin";
+
+  const handleOrgSettings = () => {
+    window.dispatchEvent(new CustomEvent("fundcircle:switchTab", { detail: "settings" }));
+  };
+  const handleUpiSettings = () => {
+    window.dispatchEvent(new CustomEvent("fundcircle:switchTab", { detail: "settings" }));
+    setTimeout(() => window.dispatchEvent(new CustomEvent("fundcircle:settingsSection", { detail: "payments" })), 80);
+  };
+
+  type SettingsItem = { label: string; sub: string; icon: React.ElementType; action: () => void };
+  type SettingsGroup = { heading: string; items: SettingsItem[] };
+
+  const GROUPS: SettingsGroup[] = [
+    {
+      heading: "Account",
+      items: [
+        { label: "Account Settings",  sub: "Name, photo & contact info",          icon: User,        action: () => onNavigateTo("profile")       },
+        { label: "Security",          sub: "Password & login security",            icon: ShieldCheck, action: () => onNavigateTo("profile")       },
+        { label: "Change Password",   sub: "Update your account password",         icon: KeyRound,    action: () => navigate("/auth/change-password") },
+        { label: "Active Sessions",   sub: "Devices signed in to your account",   icon: Smartphone,  action: () => {}                            },
+      ],
+    },
+    ...(isOwner ? [{
+      heading: "Organization",
+      items: [
+        { label: "Organization Settings", sub: "Business info, logo & details",          icon: Building2, action: handleOrgSettings },
+        { label: "UPI & Payments",         sub: "UPI ID, QR code & payment setup",       icon: QrCode,    action: handleUpiSettings  },
+      ] as SettingsItem[],
+    }] : []),
+    {
+      heading: "Preferences",
+      items: [
+        { label: "Notification Preferences", sub: "Alerts & notification types",   icon: Bell,    action: () => onNavigateTo("notifications") },
+        { label: "Appearance",               sub: "Theme & display options",        icon: Palette, action: () => {}                           },
+        { label: "Privacy",                  sub: "Data & privacy controls",        icon: Lock,    action: () => navigate("/privacy-policy")   },
+        { label: "App Preferences",          sub: "Defaults & display options",     icon: AppWindow, action: () => {}                         },
+      ],
+    },
+    {
+      heading: "About",
+      items: [
+        { label: "About FundCircle", sub: "Version, licenses & legal", icon: Info, action: () => onNavigateTo("about") },
+      ],
+    },
+  ];
+
+  return (
+    <div>
+      <SubPageHeader title="Settings" onBack={onBack} />
+      <p className="text-[9px] font-bold tracking-widest text-slate-300 uppercase mb-5 select-none text-center">
+        SETTINGS PAGE LOADED
+      </p>
+      <div className="space-y-5">
+        {GROUPS.map((group) => (
+          <div key={group.heading}>
+            <p className="text-[11px] font-bold tracking-widest text-slate-400 uppercase mb-2 px-1">
+              {group.heading}
+            </p>
+            <div className="bg-white rounded-2xl border border-slate-100 overflow-hidden">
+              {group.items.map((item, idx) => {
+                const Icon = item.icon;
+                return (
+                  <button
+                    key={item.label}
+                    onClick={item.action}
+                    className={`w-full flex items-center gap-3.5 px-4 py-4 text-left hover:bg-slate-50 active:bg-slate-100 transition-colors ${idx < group.items.length - 1 ? "border-b border-slate-50" : ""}`}
+                  >
+                    <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-slate-100 shrink-0">
+                      <Icon className="w-4.5 h-4.5 text-slate-500" />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-semibold text-slate-800 leading-tight">{item.label}</p>
+                      <p className="text-xs text-slate-400 leading-tight mt-0.5 truncate">{item.sub}</p>
+                    </div>
+                    <ChevronRight className="w-4 h-4 text-slate-300 shrink-0" />
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        ))}
+        <SignOutButton>
+          <button className="w-full flex items-center justify-center gap-2.5 py-3.5 rounded-2xl border border-red-100 bg-red-50 text-red-600 hover:bg-red-100 active:bg-red-200 font-semibold text-sm transition-colors">
+            <LogOut className="w-4 h-4" />
+            Sign Out
+          </button>
+        </SignOutButton>
+      </div>
+    </div>
+  );
+}
+
 // ── MAIN MORE PAGE ─────────────────────────────────────────────────────────────
 const MORE_ITEMS = [
   { id: "profile",       label: "My Profile",       sub: "Photo, name, phone & role",      icon: User,          color: "sky",     internal: true,  route: null },
@@ -855,7 +957,7 @@ const MORE_ITEMS = [
   { id: "billing",       label: "Billing",           sub: "Plan, usage & invoices",          icon: Wallet,        color: "rose",    internal: false, route: null },
   { id: "support",       label: "Support",           sub: "Get help & contact us",           icon: MessageCircle, color: "teal",    internal: true,  route: null },
   { id: "about",         label: "About FundCircle",  sub: "Version, privacy & terms",        icon: Info,          color: "slate",   internal: true,  route: null },
-  { id: "settings",      label: "Settings",          sub: "Account, security & preferences", icon: Settings,      color: "violet",  internal: false, route: "/settings" },
+  { id: "settings",      label: "Settings",          sub: "Account, security & preferences", icon: Settings,      color: "violet",  internal: true,  route: null },
 ] as const;
 
 const COLOR_CLS: Record<string, string> = {
@@ -873,7 +975,6 @@ const COLOR_CLS: Record<string, string> = {
 export default function MorePage() {
   const { user } = useUser();
   const { organization } = useOrganization();
-  const navigate = useNavigate();
   const membershipId = user && organization ? membershipIdFor(organization.id, user.id) : null;
   const { data: membershipDoc } = useDocumentRealtime<any>("organizationMembers", membershipId);
 
@@ -904,6 +1005,7 @@ export default function MorePage() {
         {page === "notifSettings" && <NotifSettingsSubPage  onBack={() => setPage("notifications")} />}
         {page === "support"       && <SupportSubPage        onBack={() => setPage("list")} />}
         {page === "about"         && <AboutSubPage          onBack={() => setPage("list")} />}
+        {page === "settings"      && <SettingsSubPage       onBack={() => setPage("list")} onNavigateTo={setPage} />}
       </div>
     );
   }
@@ -945,14 +1047,12 @@ export default function MorePage() {
             <button
               key={item.id + idx}
               onClick={() => {
-            if (item.route) {
-              navigate(item.route);
-            } else if (item.internal) {
-              setPage(item.id as MoreSubPage);
-            } else {
-              switchTab(item.id);
-            }
-          }}
+                if (item.internal) {
+                  setPage(item.id as MoreSubPage);
+                } else {
+                  switchTab(item.id);
+                }
+              }}
               className={`w-full flex items-center gap-3.5 px-4 py-4 text-left hover:bg-slate-50 active:bg-slate-100 transition-colors ${!isLast ? "border-b border-slate-50" : ""}`}
             >
               <div className={`flex h-10 w-10 items-center justify-center rounded-2xl shrink-0 ${colorCls}`}>

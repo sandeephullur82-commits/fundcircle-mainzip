@@ -36,7 +36,6 @@ import OrgSelectorPage from "./pages/OrgSelectorPage";
 import UserProfilePage from "./pages/UserProfilePage";
 import WorkspaceSelectionPage from "./pages/WorkspaceSelectionPage";
 import DebugUserDoc from "./components/DebugUserDoc";
-import SettingsPage from "./pages/SettingsPage";
 
 const clerkPubKey = import.meta.env.VITE_CLERK_PUBLISHABLE_KEY;
 
@@ -520,8 +519,6 @@ export default function App() {
               <Route path="/dashboard/collector/*" element={<Navigate to="/dashboard/agent" replace />} />
               <Route path="/dashboard/operator/*"  element={<Navigate to="/dashboard/owner" replace />} />
               <Route path="/dashboard/*"           element={<Navigate to="/router" replace />} />
-
-              <Route path="/settings" element={<ProtectedRoute><SettingsPage /></ProtectedRoute>} />
 
               <Route path="/debug-user" element={<ProtectedRoute><DebugUserDoc /></ProtectedRoute>} />
 
